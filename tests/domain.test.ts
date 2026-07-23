@@ -1,0 +1,40 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { activeXp, canAwardQuest, defaultSettings, nextRecurringInstance, progressFromXp, rankForLevel, type Quest, type XpTransaction } from "../app/domain.ts";
+
+test("level requirements grow and total XP maps to the correct level", () => {
+  assert.deepEqual(progressFromXp(0, defaultSettings), { level: 1, current: 0, needed: 100, percent: 0 });
+  assert.equal(progressFromXp(100, defaultSettings).level, 2);
+  assert.equal(progressFromXp(224, defaultSettings).level, 2);
+  assert.equal(progressFromXp(225, defaultSettings).level, 3);
+});
+
+test("rank thresholds are configurable", () => {
+  assert.equal(rankForLevel(1, defaultSettings.ranks), "E");
+  assert.equal(rankForLevel(40, defaultSettings.ranks), "C");
+  assert.equal(rankForLevel(100, defaultSettings.ranks), "S");
+});
+
+test("one quest instance cannot award XP twice", () => {
+  const transactions: XpTransaction[] = [{ id: "tx", questId: "q1", amount: 20, kind: "quest", attributeId: "a", skillId: "s", createdAt: new Date().toISOString() }];
+  assert.equal(canAwardQuest("q1", transactions), false);
+  assert.equal(canAwardQuest("q2", transactions), true);
+});
+
+test("undo reverses only the target quest transaction", () => {
+  const transactions: XpTransaction[] = [
+    { id: "one", questId: "q1", amount: 20, kind: "quest", attributeId: "a", skillId: "s", createdAt: "2026-01-01", reversedAt: "2026-01-02" },
+    { id: "two", questId: "q2", amount: 25, kind: "quest", attributeId: "a", skillId: "s", createdAt: "2026-01-01" },
+  ];
+  assert.equal(activeXp(transactions), 25);
+});
+
+test("recurring quest creates a separate dated instance", () => {
+  const quest: Quest = { id: "q1", title: "Daily", description: "", type: "Daily", attributeId: "a", skillId: "s", xp: 10, date: "2026-07-23T10:00:00.000Z", deadline: "2026-07-23T12:00:00.000Z", recurrence: "daily", difficulty: "Normal", completionConditions: "", failureConsequence: "", status: "completed", createdAt: "2026-07-23", updatedAt: "2026-07-23" };
+  const next = nextRecurringInstance(quest, new Date("2026-07-23T13:00:00.000Z"));
+  assert.ok(next);
+  assert.notEqual(next.id, quest.id);
+  assert.equal(next.seriesId, quest.id);
+  assert.equal(next.date, "2026-07-24T10:00:00.000Z");
+  assert.equal(next.status, "active");
+});

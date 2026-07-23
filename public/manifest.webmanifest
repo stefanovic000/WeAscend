@@ -1,0 +1,12 @@
+{
+  "name": "ASCEND — Solo Progress System",
+  "short_name": "ASCEND",
+  "description": "Local-first sistem za lični napredak",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070812",
+  "theme_color": "#070812",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
