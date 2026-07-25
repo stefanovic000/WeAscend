@@ -1,4 +1,4 @@
-import { MongoClient, ServerApiVersion, type Collection } from "mongodb";
+import type { Collection, MongoClient } from "mongodb";
 import type { AppState } from "../app/domain";
 
 export interface StateDocument {
@@ -20,15 +20,18 @@ function connectionUri() {
 
 async function getClient() {
   if (!clientPromise) {
-    const client = new MongoClient(connectionUri(), {
-      appName: "ascend-solo-progress",
-      maxPoolSize: 4,
-      minPoolSize: 0,
-      serverSelectionTimeoutMS: 6000,
-      socketTimeoutMS: 12000,
-      serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
-    });
-    clientPromise = client.connect().catch(error => {
+    const uri = connectionUri();
+    clientPromise = import("mongodb").then(({ MongoClient: RuntimeMongoClient, ServerApiVersion }) => {
+      const client = new RuntimeMongoClient(uri, {
+        appName: "ascend-solo-progress",
+        maxPoolSize: 4,
+        minPoolSize: 0,
+        serverSelectionTimeoutMS: 6000,
+        socketTimeoutMS: 12000,
+        serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
+      });
+      return client.connect();
+    }).catch(error => {
       clientPromise = null;
       throw error;
     });
