@@ -13,7 +13,7 @@ export interface Settings {
   notifications: boolean;
 }
 export interface Attribute { id: string; name: string; color: string; createdAt: string; updatedAt: string }
-export interface Skill { id: string; attributeId: string; name: string; createdAt: string; updatedAt: string }
+export interface Skill { id: string; attributeId: string; name: string; createdAt: string; updatedAt: string; deletedAt?: string }
 export interface Quest {
   id: string;
   title: string;
@@ -143,38 +143,38 @@ export function isValidBackup(value: unknown): value is AppState {
     !!x.settings && Array.isArray(x.settings.ranks);
 }
 
+export function isValidCloudState(value: unknown): value is AppState {
+  if (!isValidBackup(value)) return false;
+  const activeAwards = new Set<string>();
+  for (const transaction of value.transactions) {
+    if (!Number.isFinite(transaction.amount) || transaction.amount < 0 || !transaction.questId) return false;
+    if (!transaction.reversedAt) {
+      if (activeAwards.has(transaction.questId)) return false;
+      activeAwards.add(transaction.questId);
+    }
+  }
+  return value.quests.every(quest => Number.isFinite(quest.xp) && quest.xp >= 0);
+}
+
 export function makeInitialState(): AppState {
-  const now = new Date();
-  const stamp = now.toISOString();
-  const todayAt = (h: number, m = 0) => {
-    const d = new Date(now); d.setHours(h, m, 0, 0); return d.toISOString();
-  };
-  const intelligence = "attr-intelligence";
-  const strength = "attr-strength";
-  const university = "skill-university";
-  const spanish = "skill-spanish";
-  const gym = "skill-gym";
   return {
     version: 1,
     settings: defaultSettings,
-    attributes: [
-      { id: intelligence, name: "Intelligence", color: "#866bff", createdAt: stamp, updatedAt: stamp },
-      { id: strength, name: "Strength", color: "#32d6c5", createdAt: stamp, updatedAt: stamp },
-    ],
-    skills: [
-      { id: university, attributeId: intelligence, name: "University", createdAt: stamp, updatedAt: stamp },
-      { id: spanish, attributeId: intelligence, name: "Spanish", createdAt: stamp, updatedAt: stamp },
-      { id: gym, attributeId: strength, name: "Gym", createdAt: stamp, updatedAt: stamp },
-    ],
-    quests: [
-      { id: "quest-main", title: "Duboki rad: ključni projekat", description: "Jedan fokus blok bez prekida.", type: "Main", attributeId: intelligence, skillId: university, xp: 40, date: todayAt(9), deadline: todayAt(12), recurrence: "none", difficulty: "Hard", completionConditions: "90 minuta fokusiranog rada", failureConsequence: "", status: "active", createdAt: stamp, updatedAt: stamp },
-      { id: "quest-spanish", title: "Španski — aktivno ponavljanje", description: "Govorne kartice i 10 novih reči.", type: "Daily", attributeId: intelligence, skillId: spanish, xp: 10, date: todayAt(17), deadline: todayAt(19), recurrence: "daily", difficulty: "Normal", completionConditions: "30 minuta aktivne vežbe", failureConsequence: "", status: "active", createdAt: stamp, updatedAt: stamp },
-      { id: "quest-gym", title: "Trening snage", description: "Planirani trening A.", type: "Mandatory", attributeId: strength, skillId: gym, xp: 25, date: todayAt(18, 30), deadline: todayAt(21), recurrence: "weekly", difficulty: "Hard", completionConditions: "Završen plan treninga", failureConsequence: "Sledećeg jutra 20 min šetnje bez telefona", status: "active", createdAt: stamp, updatedAt: stamp },
-    ],
+    attributes: [],
+    skills: [],
+    quests: [],
     transactions: [],
-    bosses: [
-      { id: "boss-exam", title: "Završni ispit", dungeon: "Letnji semestar", stage: "Finalna provera", entryConditions: "Svi pripremni moduli završeni", preparationQuestIds: ["quest-main"], date: new Date(now.getTime() + 14 * 86400000).toISOString(), clearCondition: "Ocena 6 ili viša", xp: 300, attemptXp: 0, status: "active", result: "", createdAt: stamp, updatedAt: stamp },
-    ],
+    bosses: [],
     levelEvents: [],
   };
+}
+
+export function isUntouchedDemoState(state: AppState) {
+  return state.transactions.length === 0 &&
+    state.attributes.length === 2 &&
+    state.skills.length === 3 &&
+    state.quests.length === 3 &&
+    state.bosses.length === 1 &&
+    state.quests.some(quest => quest.id === "quest-main") &&
+    state.bosses.some(boss => boss.id === "boss-exam");
 }

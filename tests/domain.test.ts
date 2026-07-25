@@ -1,6 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activeXp, canAwardQuest, defaultSettings, nextRecurringInstance, progressFromXp, rankForLevel, type Quest, type XpTransaction } from "../app/domain.ts";
+import { activeXp, canAwardQuest, defaultSettings, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type Quest, type XpTransaction } from "../app/domain.ts";
+
+test("initial state is completely empty at level 1 with zero XP", () => {
+  const state = makeInitialState();
+  assert.equal(activeXp(state.transactions), 0);
+  assert.equal(progressFromXp(0, state.settings).level, 1);
+  assert.deepEqual(state.attributes, []);
+  assert.deepEqual(state.skills, []);
+  assert.deepEqual(state.quests, []);
+  assert.deepEqual(state.bosses, []);
+});
 
 test("level requirements grow and total XP maps to the correct level", () => {
   assert.deepEqual(progressFromXp(0, defaultSettings), { level: 1, current: 0, needed: 100, percent: 0 });
@@ -37,4 +47,17 @@ test("recurring quest creates a separate dated instance", () => {
   assert.equal(next.seriesId, quest.id);
   assert.equal(next.date, "2026-07-24T10:00:00.000Z");
   assert.equal(next.status, "active");
+});
+
+test("cloud validation rejects duplicate active XP awards and negative XP", () => {
+  const state = makeInitialState();
+  const transaction: XpTransaction = { id: "tx-1", questId: "q1", amount: 20, kind: "quest", attributeId: "a", skillId: "s", createdAt: "2026-01-01" };
+  state.transactions = [transaction, { ...transaction, id: "tx-2" }];
+  assert.equal(isValidCloudState(state), false);
+
+  state.transactions = [{ ...transaction, amount: -1 }];
+  assert.equal(isValidCloudState(state), false);
+
+  state.transactions = [transaction, { ...transaction, id: "tx-2", reversedAt: "2026-01-02" }];
+  assert.equal(isValidCloudState(state), true);
 });
