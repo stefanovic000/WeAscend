@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { activeXp, canAwardQuest, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type AppState, type Boss, type Quest, type QuestType } from "./domain";
+import { activeXp, canAwardQuest, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type AppState, type Boss, type Quest, type QuestType, type XpTransaction } from "./domain";
 import { loadState, saveState } from "./db";
 import { translate, type Language, type TranslationKey } from "./i18n";
 import type { XpSuggestion } from "./xpAdvisor";
@@ -331,6 +331,14 @@ export default function SoloApp() {
   };
   const attrName = (id: string) => state.attributes.find(a => a.id === id)?.name ?? t("common.unassigned");
   const skillName = (id: string) => state.skills.find(s => s.id === id)?.name ?? t("common.general");
+  const transactionTitle = (transaction: XpTransaction) => {
+    const questTitle = state.quests.find(quest => quest.id === transaction.questId)?.title;
+    if (questTitle) return questTitle;
+    if (transaction.questId.startsWith("boss:")) {
+      return state.bosses.find(boss => `boss:${boss.id}` === transaction.questId)?.title ?? t("dashboard.bossEncounter");
+    }
+    return t("common.deletedQuest");
+  };
   const attrColor = (id: string) => state.attributes.find(a => a.id === id)?.color ?? "#866bff";
   const availableSkills = state.skills.filter(skill => !skill.deletedAt);
   const activeQuests = state.quests.filter(q => q.status === "active");
@@ -635,7 +643,7 @@ export default function SoloApp() {
       <section className="achievements">
         <div className="section-title"><div><span>04</span><p>{t("dashboard.feed")}</p><h2>{t("dashboard.achievements")}</h2></div></div>
         <div className="achievement-grid">
-          {recent.length ? recent.map(tx => <div className="achievement" key={tx.id}><i>✦</i><div><strong>{t("dashboard.questCleared")}</strong><span>{state.quests.find(q => q.id === tx.questId)?.title ?? t("dashboard.bossEncounter")}</span></div><b>+{tx.amount}</b></div>) : <Empty title={t("dashboard.historyEmpty")} text={t("dashboard.historyEmptyText")} />}
+          {recent.length ? recent.map(tx => <div className="achievement" key={tx.id}><i>✦</i><div><strong>{t("dashboard.questCleared")}</strong><span>{transactionTitle(tx)}</span></div><b>+{tx.amount}</b></div>) : <Empty title={t("dashboard.historyEmpty")} text={t("dashboard.historyEmptyText")} />}
         </div>
       </section>
     </div>;
@@ -768,7 +776,7 @@ export default function SoloApp() {
         <section className="panel distribution"><div className="section-title"><div><p>{t("history.allocation")}</p><h2>{t("history.byAttribute")}</h2></div></div>{byAttribute.map(attr => <div className="dist-row" key={attr.id}><div><span><i style={{ background: attr.color }} />{attr.name}</span><strong>{attr.xp} XP</strong></div><div><i style={{ width: `${metrics.xp ? attr.xp / metrics.xp * 100 : 0}%`, background: attr.color }} /></div></div>)}</section>
       </div>
       <section className="panel ledger"><div className="section-title"><div><p>{t("history.audit")}</p><h2>{t("history.transactions")}</h2></div></div>
-        <div className="ledger-list">{[...state.transactions].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(tx => <div className={tx.reversedAt ? "reversed" : ""} key={tx.id}><span>{formatDate(tx.createdAt)}</span><strong>{state.quests.find(q => q.id === tx.questId)?.title ?? state.bosses.find(b => `boss:${b.id}` === tx.questId)?.title ?? t("history.systemEvent")}</strong><em>{attrName(tx.attributeId)} / {skillName(tx.skillId)}</em><b>{tx.reversedAt ? t("history.reversed") : `+${tx.amount} XP`}</b></div>)}</div>
+        <div className="ledger-list">{[...state.transactions].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(tx => <div className={tx.reversedAt ? "reversed" : ""} key={tx.id}><span>{formatDate(tx.createdAt)}</span><strong>{transactionTitle(tx)}</strong><em>{attrName(tx.attributeId)} / {skillName(tx.skillId)}</em><b>{tx.reversedAt ? t("history.reversed") : `+${tx.amount} XP`}</b></div>)}</div>
       </section>
     </div>;
   };
