@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { activeXp, canAwardQuest, defaultSettings, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type Quest, type XpTransaction } from "../app/domain.ts";
+import { parseXpSuggestion } from "../app/xpAdvisor.ts";
 
 test("initial state is completely empty at level 1 with zero XP", () => {
   const state = makeInitialState();
@@ -60,4 +61,14 @@ test("cloud validation rejects duplicate active XP awards and negative XP", () =
 
   state.transactions = [transaction, { ...transaction, id: "tx-2", reversedAt: "2026-01-02" }];
   assert.equal(isValidCloudState(state), true);
+});
+
+test("AI XP suggestions accept only the fair scale and bounded rationale", () => {
+  assert.deepEqual(
+    parseXpSuggestion({ xp: 20, confidence: "medium", rationale: "Jedan sat fokusiranog rada." }),
+    { xp: 20, confidence: "medium", rationale: "Jedan sat fokusiranog rada." },
+  );
+  assert.equal(parseXpSuggestion({ xp: 999, confidence: "high", rationale: "Previše." }), null);
+  assert.equal(parseXpSuggestion({ xp: 20, confidence: "certain", rationale: "Nevažeće." }), null);
+  assert.equal(parseXpSuggestion({ xp: 20, confidence: "low", rationale: "" }), null);
 });

@@ -3,6 +3,7 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { activeXp, canAwardQuest, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type AppState, type Boss, type Quest, type QuestType } from "./domain";
 import { loadState, saveState } from "./db";
+import type { XpSuggestion } from "./xpAdvisor";
 
 type View = "dashboard" | "quests" | "growth" | "bosses" | "history" | "settings";
 type SyncMode = "starting" | "online" | "syncing" | "offline" | "local";
@@ -55,9 +56,9 @@ function hasUserData(state: AppState) {
     state.transactions.length > 0 || state.bosses.length > 0 || state.levelEvents.length > 0;
 }
 
-async function cloudFetch(input: RequestInfo | URL, init?: RequestInit) {
+async function cloudFetch(input: RequestInfo | URL, init?: RequestInit, timeoutMs = 8_000) {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 8_000);
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(input, { ...init, signal: controller.signal });
   } finally {
@@ -73,6 +74,8 @@ export default function SoloApp() {
   const [authRequired, setAuthRequired] = useState(false);
   const [view, setView] = useState<View>("dashboard");
   const [questDraft, setQuestDraft] = useState<Quest | null>(null);
+  const [xpSuggestion, setXpSuggestion] = useState<XpSuggestion | null>(null);
+  const [xpEstimating, setXpEstimating] = useState(false);
   const [toast, setToast] = useState("");
   const [ceremony, setCeremony] = useState<{ eyebrow: string; title: string; text: string } | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ title: string; text: string; action: () => void } | null>(null);
@@ -370,6 +373,63 @@ export default function SoloApp() {
     setToast(exists ? "Quest izmenjen." : "Novi quest je aktivan.");
   };
 
+  const updateQuestDraft = (next: Quest) => {
+    setQuestDraft(next);
+    setXpSuggestion(null);
+  };
+
+  const estimateQuestXp = async () => {
+    if (!questDraft || !ensureWritable()) return;
+    if (!questDraft.title.trim()) {
+      setToast("Prvo unesi naziv questa.");
+      return;
+    }
+
+    const scheduledWindow = (new Date(questDraft.deadline).getTime() - new Date(questDraft.date).getTime()) / 60_000;
+    const plannedMinutes = Number.isFinite(scheduledWindow) && scheduledWindow > 0 && scheduledWindow <= 720
+      ? Math.round(scheduledWindow)
+      : undefined;
+
+    setXpEstimating(true);
+    setXpSuggestion(null);
+    try {
+      const response = await cloudFetch("/api/xp-estimate", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: questDraft.title,
+          description: questDraft.description,
+          type: questDraft.type,
+          difficulty: questDraft.difficulty,
+          attribute: attrName(questDraft.attributeId),
+          skill: skillName(questDraft.skillId),
+          completionConditions: questDraft.completionConditions,
+          plannedMinutes,
+        }),
+      }, 22_000);
+      const result = await response.json() as { suggestion?: XpSuggestion; code?: string };
+
+      if (!response.ok || !result.suggestion) {
+        const messages: Record<string, string> = {
+          ai_not_configured: "DeepSeek nije konfigurisan na serveru.",
+          ai_auth_failed: "DeepSeek API ključ nije ispravan.",
+          ai_balance_empty: "DeepSeek nalog nema dovoljno kredita.",
+          ai_rate_limited: "DeepSeek je trenutno ograničio zahteve. Pokušaj kasnije.",
+          ai_timeout: "DeepSeek nije odgovorio na vreme.",
+        };
+        setToast(messages[result.code ?? ""] ?? "AI procena trenutno nije dostupna.");
+        return;
+      }
+
+      setXpSuggestion(result.suggestion);
+    } catch {
+      setToast("AI procena trenutno nije dostupna.");
+    } finally {
+      setXpEstimating(false);
+    }
+  };
+
   const deleteQuest = (quest: Quest) => {
     if (!ensureWritable()) return;
     setConfirmAction({
@@ -436,6 +496,7 @@ export default function SoloApp() {
     const draft = blankQuest(state);
     const date = new Date(`${dateKey}T09:00:00`);
     const deadline = new Date(date.getTime() + 3600000);
+    setXpSuggestion(null);
     setQuestDraft({ ...draft, date: date.toISOString(), deadline: deadline.toISOString() });
   };
   const beginNewQuest = () => beginQuestOnDate(today);
@@ -498,7 +559,7 @@ export default function SoloApp() {
         </>}
         {quest.status === "completed" && <button onClick={() => undoQuest(quest)}>Undo</button>}
         {!compact && <>
-          <button onClick={() => ensureWritable() && setQuestDraft({ ...quest })}>Edit</button>
+          <button onClick={() => { if (ensureWritable()) { setXpSuggestion(null); setQuestDraft({ ...quest }); } }}>Edit</button>
           <button onClick={() => updateState(s => ({ ...s, quests: s.quests.map(q => q.id === quest.id ? { ...q, status: "archived" } : q) }))}>Archive</button>
           <button className="danger-link" onClick={() => deleteQuest(quest)}>Delete</button>
         </>}
@@ -726,18 +787,23 @@ export default function SoloApp() {
       <section className="modal quest-modal" role="dialog" aria-modal="true" aria-label="Quest editor">
         <header><div><p>MISSION EDITOR</p><h2>{state.quests.some(q => q.id === questDraft.id) ? "Edit Quest" : "Create New Quest"}</h2></div><button onClick={() => setQuestDraft(null)}>×</button></header>
         <div className="form-grid">
-          <Field label="Quest name" wide><input autoFocus value={questDraft.title} onChange={e => setQuestDraft({ ...questDraft, title: e.target.value })} placeholder="Npr. 50 min dubokog rada" /></Field>
-          <Field label="Description" wide><textarea value={questDraft.description} onChange={e => setQuestDraft({ ...questDraft, description: e.target.value })} placeholder="Kratak kontekst misije…" /></Field>
-          <Field label="Type"><select value={questDraft.type} onChange={e => setQuestDraft({ ...questDraft, type: e.target.value as QuestType })}>{state.settings.questTypes.map(t => <option key={t}>{t}</option>)}</select></Field>
-          <Field label="Difficulty"><select value={questDraft.difficulty} onChange={e => setQuestDraft({ ...questDraft, difficulty: e.target.value as Quest["difficulty"] })}>{["Easy", "Normal", "Hard", "Extreme"].map(x => <option key={x}>{x}</option>)}</select></Field>
-          <Field label="Attribute"><select value={questDraft.attributeId} onChange={e => { const id = e.target.value; setQuestDraft({ ...questDraft, attributeId: id, skillId: state.skills.find(s => s.attributeId === id && !s.deletedAt)?.id ?? "" }); }}>{state.attributes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>
-          <Field label="Skill"><select value={questDraft.skillId} onChange={e => setQuestDraft({ ...questDraft, skillId: e.target.value })}>{state.skills.filter(s => s.attributeId === questDraft.attributeId && (!s.deletedAt || s.id === questDraft.skillId)).map(s => <option key={s.id} value={s.id}>{s.name}{s.deletedAt ? " (deleted)" : ""}</option>)}</select></Field>
-          <Field label="XP reward"><input type="number" min="0" value={questDraft.xp} onChange={e => setQuestDraft({ ...questDraft, xp: Number(e.target.value) })} /></Field>
-          <Field label="Recurrence"><select value={questDraft.recurrence} onChange={e => setQuestDraft({ ...questDraft, recurrence: e.target.value as Quest["recurrence"] })}><option value="none">No repeat</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></Field>
-          <Field label="Date & time"><input type="datetime-local" value={isoLocal(questDraft.date)} onChange={e => setQuestDraft({ ...questDraft, date: fromLocal(e.target.value) })} /></Field>
-          <Field label="Deadline"><input type="datetime-local" value={isoLocal(questDraft.deadline)} onChange={e => setQuestDraft({ ...questDraft, deadline: fromLocal(e.target.value) })} /></Field>
-          <Field label="Completion condition" wide><input value={questDraft.completionConditions} onChange={e => setQuestDraft({ ...questDraft, completionConditions: e.target.value })} placeholder="Merljiv uslov za clear" /></Field>
-          {(questDraft.type === "Mandatory" || questDraft.type === "Correction") && <Field label="Failure consequence" wide><textarea value={questDraft.failureConsequence} onChange={e => setQuestDraft({ ...questDraft, failureConsequence: e.target.value })} placeholder="Praktična posledica koju si sam definisao" /></Field>}
+          <Field label="Quest name" wide><input autoFocus value={questDraft.title} onChange={e => updateQuestDraft({ ...questDraft, title: e.target.value })} placeholder="Npr. 50 min dubokog rada" /></Field>
+          <Field label="Description" wide><textarea value={questDraft.description} onChange={e => updateQuestDraft({ ...questDraft, description: e.target.value })} placeholder="Kratak kontekst misije…" /></Field>
+          <Field label="Type"><select value={questDraft.type} onChange={e => updateQuestDraft({ ...questDraft, type: e.target.value as QuestType })}>{state.settings.questTypes.map(t => <option key={t}>{t}</option>)}</select></Field>
+          <Field label="Difficulty"><select value={questDraft.difficulty} onChange={e => updateQuestDraft({ ...questDraft, difficulty: e.target.value as Quest["difficulty"] })}>{["Easy", "Normal", "Hard", "Extreme"].map(x => <option key={x}>{x}</option>)}</select></Field>
+          <Field label="Attribute"><select value={questDraft.attributeId} onChange={e => { const id = e.target.value; updateQuestDraft({ ...questDraft, attributeId: id, skillId: state.skills.find(s => s.attributeId === id && !s.deletedAt)?.id ?? "" }); }}>{state.attributes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>
+          <Field label="Skill"><select value={questDraft.skillId} onChange={e => updateQuestDraft({ ...questDraft, skillId: e.target.value })}>{state.skills.filter(s => s.attributeId === questDraft.attributeId && (!s.deletedAt || s.id === questDraft.skillId)).map(s => <option key={s.id} value={s.id}>{s.name}{s.deletedAt ? " (deleted)" : ""}</option>)}</select></Field>
+          <Field label="XP reward"><input type="number" min="0" value={questDraft.xp} onChange={e => updateQuestDraft({ ...questDraft, xp: Number(e.target.value) })} /></Field>
+          <Field label="Recurrence"><select value={questDraft.recurrence} onChange={e => updateQuestDraft({ ...questDraft, recurrence: e.target.value as Quest["recurrence"] })}><option value="none">No repeat</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></Field>
+          <div className="xp-advisor field wide">
+            <div><span>OPTIONAL AI ADVISOR</span><strong>DeepSeek XP procena</strong><p>Šalje podatke ovog questa samo kada klikneš. Predlog se ne primenjuje automatski.</p></div>
+            <button type="button" onClick={() => void estimateQuestXp()} disabled={xpEstimating}>{xpEstimating ? "Procenjujem…" : "Proceni XP"}</button>
+            {xpSuggestion && <div className="xp-suggestion"><span><b>{xpSuggestion.xp} XP</b><small>{xpSuggestion.confidence} confidence</small></span><p>{xpSuggestion.rationale}</p><button type="button" onClick={() => { setQuestDraft({ ...questDraft, xp: xpSuggestion.xp }); setXpSuggestion(null); }}>Primeni predlog</button></div>}
+          </div>
+          <Field label="Date & time"><input type="datetime-local" value={isoLocal(questDraft.date)} onChange={e => updateQuestDraft({ ...questDraft, date: fromLocal(e.target.value) })} /></Field>
+          <Field label="Deadline"><input type="datetime-local" value={isoLocal(questDraft.deadline)} onChange={e => updateQuestDraft({ ...questDraft, deadline: fromLocal(e.target.value) })} /></Field>
+          <Field label="Completion condition" wide><input value={questDraft.completionConditions} onChange={e => updateQuestDraft({ ...questDraft, completionConditions: e.target.value })} placeholder="Merljiv uslov za clear" /></Field>
+          {(questDraft.type === "Mandatory" || questDraft.type === "Correction") && <Field label="Failure consequence" wide><textarea value={questDraft.failureConsequence} onChange={e => updateQuestDraft({ ...questDraft, failureConsequence: e.target.value })} placeholder="Praktična posledica koju si sam definisao" /></Field>}
         </div>
         <footer><button onClick={() => setQuestDraft(null)}>Cancel</button><button className="primary" onClick={saveQuest}>Activate Quest</button></footer>
       </section>

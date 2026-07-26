@@ -58,6 +58,9 @@ Kopiraj `.env.example` u `.env.local`:
 MONGODB_URI=mongodb+srv://USER:PASSWORD@CLUSTER.mongodb.net/?retryWrites=true&w=majority
 MONGODB_DB=ascend
 OWNER_EMAIL=moja-adresa@example.com
+# Opcionalno:
+DEEPSEEK_API_KEY=sk-...
+DEEPSEEK_MODEL=deepseek-v4-flash
 ```
 
 Važno:
@@ -67,6 +70,7 @@ Važno:
 - `MONGODB_URI` mora biti označen kao secret.
 - Nikada ne stavljaj MongoDB URI u `VITE_*`, `NEXT_PUBLIC_*`, Git, JSON backup ili klijentski kod.
 - Ako lozinka sadrži `@`, `:`, `/`, `?`, `#` ili slične znakove, URL-encode-uj je pre umetanja u URI.
+- `DEEPSEEK_API_KEY` je opcionalna server-only tajna; bez nje sve osim AI XP procene radi normalno.
 
 Bez MongoDB konfiguracije aplikacija će prikazati lokalni cache, ali će ostati **READ-ONLY**. Ne postoji lokalni režim u kom su trajne izmene dozvoljene.
 
@@ -161,6 +165,20 @@ Brisanje skilla ne briše legitimno zarađen XP.
 ## Kalendar i planiranje
 
 Quest Manager podržava izbor budućeg datuma i mesečni kalendar. Ponavljajući quest dobija zasebnu instancu za svaki datum, pa završavanje jedne instance ne boduje ostale.
+
+## Opcioni DeepSeek XP advisor
+
+Quest editor ima dugme **Proceni XP**. DeepSeek dobija podatke samo kada korisnik klikne dugme i vraća predlog sa kratkim obrazloženjem.
+
+- AI procena nije obavezna i nikada se ne primenjuje automatski.
+- Korisnik bira **Primeni predlog** ili zadržava ručno uneti XP.
+- Dozvoljene AI vrednosti su ograničene na fer skalu: `0, 5, 10, 20, 30, 40, 50, 75, 100, 150, 200, 300, 400`.
+- Naziv, opis, tip, težina, attribute, skill, uslov završetka i razumno vreme planiranog prozora šalju se DeepSeek API-ju.
+- API ključ nikada ne dolazi u browser i nije deo backupa.
+- Server prekida DeepSeek zahtev nakon 20 sekundi.
+- Podrazumevani model je `deepseek-v4-flash` u non-thinking režimu radi manje potrošnje i bržeg odgovora; model se može promeniti preko `DEEPSEEK_MODEL`.
+
+Za produkciju dodaj `DEEPSEEK_API_KEY` kao Sites secret i napravi novi deployment. Ako ključ nije podešen, aplikacija prikazuje jasnu poruku, a ručno XP bodovanje ostaje dostupno.
 
 ## Telefon i PWA instalacija
 
@@ -266,3 +284,5 @@ npm run build
 - [Cloudflare Workers TCP sockets](https://developers.cloudflare.com/workers/runtime-apis/tcp-sockets/)
 - [Cloudflare Workers Node.js `net`](https://developers.cloudflare.com/workers/runtime-apis/nodejs/net/)
 - [Cloudflare Workers Node.js compatibility](https://developers.cloudflare.com/workers/runtime-apis/nodejs/)
+- [DeepSeek Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion)
+- [DeepSeek JSON Output](https://api-docs.deepseek.com/guides/json_mode/)
