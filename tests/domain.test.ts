@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activeXp, canAwardQuest, defaultSettings, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type Quest, type XpTransaction } from "../app/domain.ts";
+import { activeXp, canAwardQuest, defaultSettings, deleteAttributeFromState, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type Quest, type XpTransaction } from "../app/domain.ts";
 import { translate } from "../app/i18n.ts";
 import { parseXpSuggestion } from "../app/xpAdvisor.ts";
 
@@ -39,6 +39,32 @@ test("undo reverses only the target quest transaction", () => {
     { id: "two", questId: "q2", amount: 25, kind: "quest", attributeId: "a", skillId: "s", createdAt: "2026-01-01" },
   ];
   assert.equal(activeXp(transactions), 25);
+});
+
+test("deleting an attribute preserves old deleted skills and earned XP", () => {
+  const state = makeInitialState();
+  state.attributes = [{ id: "a", name: "Intelligence", color: "#866bff", createdAt: "2026-01-01", updatedAt: "2026-01-01" }];
+  state.skills = [{ id: "s", attributeId: "a", name: "University", createdAt: "2026-01-01", updatedAt: "2026-02-01", deletedAt: "2026-02-01" }];
+  state.transactions = [{ id: "tx", questId: "deleted-q", amount: 40, kind: "quest", attributeId: "a", skillId: "s", createdAt: "2026-01-15" }];
+
+  const next = deleteAttributeFromState(state, "a", "2026-03-01");
+
+  assert.equal(next.attributes[0]?.deletedAt, "2026-03-01");
+  assert.equal(next.attributes[0]?.name, "Intelligence");
+  assert.equal(next.skills[0]?.name, "University");
+  assert.equal(next.skills[0]?.deletedAt, "2026-02-01");
+  assert.equal(activeXp(next.transactions), 40);
+});
+
+test("deleting an unused attribute removes it and its unused skills completely", () => {
+  const state = makeInitialState();
+  state.attributes = [{ id: "a", name: "Unused", color: "#866bff", createdAt: "2026-01-01", updatedAt: "2026-01-01" }];
+  state.skills = [{ id: "s", attributeId: "a", name: "Unused skill", createdAt: "2026-01-01", updatedAt: "2026-01-01" }];
+
+  const next = deleteAttributeFromState(state, "a", "2026-03-01");
+
+  assert.deepEqual(next.attributes, []);
+  assert.deepEqual(next.skills, []);
 });
 
 test("recurring quest creates a separate dated instance", () => {

@@ -12,7 +12,7 @@ export interface Settings {
   animations: boolean;
   notifications: boolean;
 }
-export interface Attribute { id: string; name: string; color: string; createdAt: string; updatedAt: string }
+export interface Attribute { id: string; name: string; color: string; createdAt: string; updatedAt: string; deletedAt?: string }
 export interface Skill { id: string; attributeId: string; name: string; createdAt: string; updatedAt: string; deletedAt?: string }
 export interface Quest {
   id: string;
@@ -108,6 +108,35 @@ export function rankForLevel(level: number, ranks: RankRule[]) {
 
 export function activeXp(transactions: XpTransaction[]) {
   return transactions.reduce((sum, tx) => sum + (tx.reversedAt ? 0 : tx.amount), 0);
+}
+
+export function deleteAttributeFromState(state: AppState, attributeId: string, stamp = new Date().toISOString()): AppState {
+  const relatedSkills = state.skills.filter(skill => skill.attributeId === attributeId);
+  const hasHistory =
+    state.quests.some(quest => quest.attributeId === attributeId) ||
+    state.transactions.some(transaction => transaction.attributeId === attributeId) ||
+    relatedSkills.some(skill => !!skill.deletedAt);
+
+  if (!hasHistory) {
+    return {
+      ...state,
+      attributes: state.attributes.filter(attribute => attribute.id !== attributeId),
+      skills: state.skills.filter(skill => skill.attributeId !== attributeId),
+    };
+  }
+
+  return {
+    ...state,
+    attributes: state.attributes.map(attribute => attribute.id === attributeId
+      ? { ...attribute, deletedAt: stamp, updatedAt: stamp }
+      : attribute),
+    skills: state.skills.map(skill => skill.attributeId === attributeId
+      ? { ...skill, deletedAt: skill.deletedAt ?? stamp, updatedAt: stamp }
+      : skill),
+    quests: state.quests.map(quest => quest.attributeId === attributeId && quest.status === "active"
+      ? { ...quest, status: "archived", updatedAt: stamp }
+      : quest),
+  };
 }
 
 export function canAwardQuest(questId: string, transactions: XpTransaction[]) {

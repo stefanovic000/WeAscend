@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { activeXp, canAwardQuest, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type AppState, type Quest, type QuestType, type XpTransaction } from "./domain";
+import { activeXp, canAwardQuest, deleteAttributeFromState, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type AppState, type Quest, type QuestType, type XpTransaction } from "./domain";
 import { loadState, saveState } from "./db";
 import { translate, type Language, type TranslationKey } from "./i18n";
 import type { XpSuggestion } from "./xpAdvisor";
@@ -27,8 +27,8 @@ const views: { id: View; labelKey: TranslationKey; icon: string }[] = [
 const blankQuest = (state: AppState): Quest => {
   const now = new Date();
   const deadline = new Date(now.getTime() + 3600000);
-  const skill = state.skills.find(s => !s.deletedAt);
-  const attribute = state.attributes.find(a => a.id === skill?.attributeId);
+  const skill = state.skills.find(s => !s.deletedAt && state.attributes.some(a => a.id === s.attributeId && !a.deletedAt));
+  const attribute = state.attributes.find(a => a.id === skill?.attributeId && !a.deletedAt);
   return {
     id: crypto.randomUUID(), title: "", description: "", type: "Side",
     attributeId: attribute?.id ?? "", skillId: skill?.id ?? "", xp: 10,
@@ -340,7 +340,8 @@ export default function SoloApp() {
     return t("common.deletedQuest");
   };
   const attrColor = (id: string) => state.attributes.find(a => a.id === id)?.color ?? "#866bff";
-  const availableSkills = state.skills.filter(skill => !skill.deletedAt);
+  const availableAttributes = state.attributes.filter(attribute => !attribute.deletedAt);
+  const availableSkills = state.skills.filter(skill => !skill.deletedAt && availableAttributes.some(attribute => attribute.id === skill.attributeId));
   const activeQuests = state.quests.filter(q => q.status === "active");
   const todayQuests = activeQuests.filter(q => dayKey(q.date) === today);
   const mainQuest = todayQuests.find(q => q.type === "Main") ?? activeQuests.find(q => q.type === "Main");
@@ -516,9 +517,28 @@ export default function SoloApp() {
       },
     });
   };
+  const deleteAttribute = (attributeId: string) => {
+    if (!ensureWritable()) return;
+    const attribute = state.attributes.find(item => item.id === attributeId);
+    if (!attribute) return;
+    const relatedSkills = state.skills.filter(skill => skill.attributeId === attributeId);
+    const hasHistory =
+      state.quests.some(quest => quest.attributeId === attributeId) ||
+      state.transactions.some(tx => tx.attributeId === attributeId) ||
+      relatedSkills.some(skill => !!skill.deletedAt);
+    setConfirmAction({
+      title: t("attribute.deleteTitle", { name: attribute.name }),
+      text: hasHistory ? t("attribute.deleteHistory") : t("attribute.deleteClean"),
+      action: () => {
+        updateState(current => deleteAttributeFromState(current, attributeId));
+        setConfirmAction(null);
+        setToast(t("attribute.deleted"));
+      },
+    });
+  };
   const beginQuestOnDate = (dateKey: string, type: QuestType = "Side") => {
     if (!ensureWritable()) return;
-    if (state.attributes.length === 0 || availableSkills.length === 0) {
+    if (availableAttributes.length === 0 || availableSkills.length === 0) {
       setView("growth");
       setToast(t("attribute.skillFirst"));
       return;
@@ -699,7 +719,7 @@ export default function SoloApp() {
       <input aria-label={t("planner.searchLabel")} placeholder={t("planner.search")} value={filters.search} onChange={e => setFilters({ ...filters, search: e.target.value })} />
       <select value={filters.type} onChange={e => setFilters({ ...filters, type: e.target.value })}><option value="all">{t("planner.allTypes")}</option>{state.settings.questTypes.map(type => <option key={type} value={type}>{t(`type.${type}` as TranslationKey)}</option>)}</select>
       <select value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })}><option value="all">{t("planner.allStatuses")}</option>{(["active", "completed", "failed", "skipped", "archived"] as const).map(status => <option key={status} value={status}>{t(`status.${status}` as TranslationKey)}</option>)}</select>
-      <select value={filters.attribute} onChange={e => setFilters({ ...filters, attribute: e.target.value })}><option value="all">{t("planner.allAttributes")}</option>{state.attributes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
+      <select value={filters.attribute} onChange={e => setFilters({ ...filters, attribute: e.target.value })}><option value="all">{t("planner.allAttributes")}</option>{availableAttributes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
     </section>
     <div className="day-agenda-title"><div><p>{showAllDates ? t("planner.allMissions") : t("planner.dayAgenda")}</p><h2>{showAllDates ? t("planner.allPlanned") : selectedLabel}</h2></div><button onClick={() => setShowAllDates(!showAllDates)}>{showAllDates ? t("planner.showDay") : t("planner.showAll")}</button></div>
     <div className="quest-list full">{filteredQuests.length ? filteredQuests.map(q => renderQuestCard(q)) : <Empty title={t("quest.planEmpty")} text={t("quest.planEmptyText")} />}</div>
@@ -708,13 +728,13 @@ export default function SoloApp() {
 
   const Growth = () => <div className="screen">
     <header className="screen-header"><div><p>{t("growth.matrix")}</p><h1>{t("growth.title")}</h1><span>{t("growth.subtitle")}</span></div><button className="primary" onClick={addAttribute}>{t("growth.addAttribute")}</button></header>
-    <div className="attribute-grid">{state.attributes.length === 0 && <Empty title={t("growth.empty")} text={t("growth.emptyText")} />}{state.attributes.map(attr => {
+    <div className="attribute-grid">{availableAttributes.length === 0 && <Empty title={t("growth.empty")} text={t("growth.emptyText")} />}{availableAttributes.map(attr => {
       const skills = state.skills.filter(s => s.attributeId === attr.id && !s.deletedAt);
       const txs = state.transactions.filter(tx => tx.attributeId === attr.id && !tx.reversedAt);
       const xp = activeXp(txs);
-      const max = Math.max(...state.attributes.map(a => activeXp(state.transactions.filter(tx => tx.attributeId === a.id && !tx.reversedAt))), 1);
+      const max = Math.max(...availableAttributes.map(a => activeXp(state.transactions.filter(tx => tx.attributeId === a.id && !tx.reversedAt))), 1);
       return <section className="attribute-card" key={attr.id} style={{ "--attr": attr.color } as React.CSSProperties}>
-        <header><i>{attr.name.charAt(0)}</i><div><span>{t("growth.attribute")}</span><h2>{attr.name}</h2></div><strong>{xp}<small> XP</small></strong></header>
+        <header><i>{attr.name.charAt(0)}</i><div><span>{t("growth.attribute")}</span><h2>{attr.name}</h2></div><strong>{xp}<small> XP</small></strong><button className="attribute-delete" onClick={() => deleteAttribute(attr.id)} aria-label={t("attribute.deleteLabel", { name: attr.name })}>{t("common.delete")}</button></header>
         <div className="attr-track"><i style={{ width: `${xp / max * 100}%` }} /></div>
         <div className="skill-list">{skills.map(skill => {
           const skillTx = state.transactions.filter(tx => tx.skillId === skill.id && !tx.reversedAt);
@@ -819,7 +839,7 @@ export default function SoloApp() {
           <Field label={t("editor.description")} wide><textarea value={questDraft.description} onChange={e => updateQuestDraft({ ...questDraft, description: e.target.value })} placeholder={t("editor.descriptionPlaceholder")} /></Field>
           <Field label={t("editor.type")}><select value={questDraft.type} onChange={e => updateQuestDraft({ ...questDraft, type: e.target.value as QuestType })}>{state.settings.questTypes.map(type => <option key={type} value={type}>{t(`type.${type}` as TranslationKey)}</option>)}</select></Field>
           <Field label={t("editor.difficulty")}><select value={questDraft.difficulty} onChange={e => updateQuestDraft({ ...questDraft, difficulty: e.target.value as Quest["difficulty"] })}>{(["Easy", "Normal", "Hard", "Extreme"] as const).map(difficulty => <option key={difficulty} value={difficulty}>{t(`difficulty.${difficulty}` as TranslationKey)}</option>)}</select></Field>
-          <Field label={t("editor.attribute")}><select value={questDraft.attributeId} onChange={e => { const id = e.target.value; updateQuestDraft({ ...questDraft, attributeId: id, skillId: state.skills.find(s => s.attributeId === id && !s.deletedAt)?.id ?? "" }); }}>{state.attributes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>
+          <Field label={t("editor.attribute")}><select value={questDraft.attributeId} onChange={e => { const id = e.target.value; updateQuestDraft({ ...questDraft, attributeId: id, skillId: state.skills.find(s => s.attributeId === id && !s.deletedAt)?.id ?? "" }); }}>{availableAttributes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}{questDraft.attributeId && !availableAttributes.some(a => a.id === questDraft.attributeId) && <option value={questDraft.attributeId}>{attrName(questDraft.attributeId)} ({t("status.archived")})</option>}</select></Field>
           <Field label={t("editor.skill")}><select value={questDraft.skillId} onChange={e => updateQuestDraft({ ...questDraft, skillId: e.target.value })}>{state.skills.filter(s => s.attributeId === questDraft.attributeId && (!s.deletedAt || s.id === questDraft.skillId)).map(s => <option key={s.id} value={s.id}>{s.name}{s.deletedAt ? ` (${t("quest.deletedSkill")})` : ""}</option>)}</select></Field>
           <Field label={t("editor.reward")}><input type="number" min="0" value={questDraft.xp} onChange={e => updateQuestDraft({ ...questDraft, xp: Number(e.target.value) })} /></Field>
           <Field label={t("editor.recurrence")}><select value={questDraft.recurrence} onChange={e => updateQuestDraft({ ...questDraft, recurrence: e.target.value as Quest["recurrence"] })}><option value="none">{t("editor.none")}</option><option value="daily">{t("editor.daily")}</option><option value="weekly">{t("editor.weekly")}</option></select></Field>
