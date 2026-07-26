@@ -1,12 +1,18 @@
 {
+  "id": "/",
   "name": "WeSolo — Personal Progress System",
   "short_name": "WeSolo",
   "description": "Quests, skills, XP, ranks, and focused personal progress",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "any",
   "background_color": "#070812",
   "theme_color": "#070812",
+  "prefer_related_applications": false,
   "icons": [
-    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    { "src": "/icons/wesolo-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/wesolo-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/wesolo-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

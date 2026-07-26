@@ -5,7 +5,13 @@ export const metadata: Metadata = {
   title: "WeSolo — Personal Progress System",
   description: "Quests, skills, XP, ranks, and focused personal progress — synchronized across your devices.",
   manifest: "/manifest.webmanifest",
-  icons: { icon: "/favicon.svg", apple: "/favicon.svg" },
+  icons: {
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/icons/wesolo-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [{ url: "/icons/wesolo-192.png", sizes: "192x192", type: "image/png" }],
+  },
   openGraph: {
     title: "WeSolo — Personal Progress System",
     description: "Quests · Skills · XP · Ranks. Your focused personal progress system.",

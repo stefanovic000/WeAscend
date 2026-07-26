@@ -1,6 +1,12 @@
-const CACHE = "wesolo-shell-v3";
+const CACHE = "wesolo-shell-v4";
 self.addEventListener("install", event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(["/", "/manifest.webmanifest"])));
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll([
+    "/",
+    "/manifest.webmanifest",
+    "/icons/wesolo-192.png",
+    "/icons/wesolo-512.png",
+    "/icons/wesolo-maskable-512.png",
+  ])));
   self.skipWaiting();
 });
 self.addEventListener("activate", event => {
