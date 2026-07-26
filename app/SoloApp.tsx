@@ -58,6 +58,7 @@ function hasUserData(state: AppState) {
 export default function SoloApp() {
   const [state, setState] = useState<AppState | null>(null);
   const [syncMode, setSyncMode] = useState<SyncMode>("starting");
+  const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
   const [cloudUser, setCloudUser] = useState<{ email: string; name: string } | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
   const [view, setView] = useState<View>("dashboard");
@@ -162,7 +163,18 @@ export default function SoloApp() {
       cancelled = true;
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     };
-  }, []);
+  }, [bootstrapAttempt]);
+
+  useEffect(() => {
+    if (syncMode !== "local") return;
+    const retry = () => setBootstrapAttempt(attempt => attempt + 1);
+    const timer = window.setTimeout(retry, 12000);
+    window.addEventListener("online", retry);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("online", retry);
+    };
+  }, [syncMode]);
 
   const flushCloudState = useEffectEvent(async () => {
     const snapshot = pendingStateRef.current;
@@ -451,7 +463,13 @@ export default function SoloApp() {
     return <div className="screen dashboard-screen">
       <section className="hero">
         <div className="hero-copy">
-          <p className="system-label"><span /> SYSTEM ONLINE · LOCAL MODE</p>
+          <p className="system-label"><span /> {syncMode === "online"
+            ? "SYSTEM ONLINE · CLOUD SYNC"
+            : syncMode === "syncing"
+              ? "SYSTEM ONLINE · SYNCING"
+              : syncMode === "offline"
+                ? "SYSTEM OFFLINE · CACHE ONLY"
+                : "SYSTEM ONLINE · LOCAL MODE"}</p>
           <p className="kicker">CURRENT DIRECTIVE</p>
           <h1>Koja je moja<br /><em>sledeća misija?</em></h1>
           <p>Napredak se ne nagađa. Evidentira se.</p>
@@ -635,7 +653,7 @@ export default function SoloApp() {
   </div>;
 
   return <div className={`app-shell ${state.settings.animations ? "" : "reduce-motion"}`}>
-    {syncMode === "local" && <div className="sync-banner local">Cloud sync čeka MongoDB Atlas konekciju. Trenutno radi lokalni režim.</div>}
+    {syncMode === "local" && <div className="sync-banner local">Cloud trenutno nije dostupan. Automatski pokušavam ponovo…</div>}
     {syncMode === "syncing" && <div className="sync-banner syncing">Sinhronizujem izmene…</div>}
     <aside className="sidebar">
       <button className="brand" onClick={() => setView("dashboard")}><span>A</span><div><strong>ASCEND</strong><small>SOLO PROGRESS SYSTEM</small></div></button>
