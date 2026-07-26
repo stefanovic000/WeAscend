@@ -166,7 +166,7 @@ export default function SoloApp() {
   }, [bootstrapAttempt]);
 
   useEffect(() => {
-    if (syncMode !== "local") return;
+    if (syncMode !== "local" && syncMode !== "offline") return;
     const retry = () => setBootstrapAttempt(attempt => attempt + 1);
     const timer = window.setTimeout(retry, 12000);
     window.addEventListener("online", retry);
@@ -195,6 +195,15 @@ export default function SoloApp() {
       const result = await response.json() as CloudStateResponse;
 
       if (response.status === 401) {
+        const confirmed = lastSyncedRef.current;
+        if (confirmed) {
+          const restored: unknown = JSON.parse(confirmed);
+          if (isValidCloudState(restored)) {
+            pendingStateRef.current = restored;
+            setState(restored);
+            void saveState(restored);
+          }
+        }
         setAuthRequired(true);
         syncModeRef.current = "offline";
         setSyncMode("offline");
@@ -219,7 +228,20 @@ export default function SoloApp() {
     } catch {
       syncModeRef.current = "offline";
       setSyncMode("offline");
-      setToast("Veza sa cloud bazom je prekinuta. Izmene su privremeno zaključane.");
+      const confirmed = lastSyncedRef.current;
+      if (confirmed) {
+        try {
+          const restored: unknown = JSON.parse(confirmed);
+          if (isValidCloudState(restored)) {
+            pendingStateRef.current = restored;
+            setState(restored);
+            void saveState(restored);
+          }
+        } catch {
+          // Keep the already loaded read-only snapshot if the confirmed cache is unavailable.
+        }
+      }
+      setToast("Cloud čuvanje nije uspelo. Vraćena je poslednja potvrđena verzija.");
     } finally {
       syncInFlightRef.current = false;
       const pending = pendingStateRef.current;
@@ -257,12 +279,16 @@ export default function SoloApp() {
   if (authRequired) return <main className="auth-gate"><div className="auth-mark">A</div><p>ASCEND CLOUD</p><h1>Prijava je potrebna</h1><span>Prijavi se istim ChatGPT nalogom na telefonu i računaru da bi oba uređaja koristila iste podatke.</span><a href="/signin-with-chatgpt?return_to=%2F">Sign in with ChatGPT</a></main>;
   if (!state || !metrics) return <main className="loading"><div className="loader-mark">A</div><p>Povezujem sistem…</p></main>;
 
+  const readOnly = syncMode === "offline" || syncMode === "local";
+  const ensureWritable = () => {
+    if (!readOnly) return true;
+    setToast("READ-ONLY: poveži se sa cloud bazom da bi menjao podatke.");
+    return false;
+  };
   const updateState = (recipe: (current: AppState) => AppState) => {
-    if (syncMode === "offline") {
-      setToast("Izmene su zaključane dok se veza sa cloud bazom ne vrati.");
-      return;
-    }
+    if (!ensureWritable()) return false;
     setState(current => current ? recipe(current) : current);
+    return true;
   };
   const attrName = (id: string) => state.attributes.find(a => a.id === id)?.name ?? "Unassigned";
   const skillName = (id: string) => state.skills.find(s => s.id === id)?.name ?? "General";
@@ -273,6 +299,7 @@ export default function SoloApp() {
   const mainQuest = todayQuests.find(q => q.type === "Main") ?? activeQuests.find(q => q.type === "Main");
 
   const completeQuest = (quest: Quest) => {
+    if (!ensureWritable()) return;
     if (!canAwardQuest(quest.id, state.transactions)) {
       setToast("Ovaj quest je već bodovan.");
       return;
@@ -304,6 +331,7 @@ export default function SoloApp() {
   };
 
   const failQuest = (quest: Quest) => {
+    if (!ensureWritable()) return;
     updateState(s => ({ ...s, quests: s.quests.map(q => q.id === quest.id ? { ...q, status: "failed", updatedAt: new Date().toISOString() } : q) }));
     if (quest.type === "Mandatory" && quest.failureConsequence) {
       setCeremony({ eyebrow: "MANDATORY QUEST FAILED", title: "CONSEQUENCE ACTIVE", text: quest.failureConsequence });
@@ -311,6 +339,7 @@ export default function SoloApp() {
   };
 
   const undoQuest = (quest: Quest) => {
+    if (!ensureWritable()) return;
     const stamp = new Date().toISOString();
     updateState(s => ({
       ...s,
@@ -321,6 +350,7 @@ export default function SoloApp() {
   };
 
   const saveQuest = () => {
+    if (!ensureWritable()) return;
     if (!questDraft?.title.trim()) { setToast("Unesi naziv questa."); return; }
     if (!questDraft.attributeId || !questDraft.skillId) { setToast("Izaberi attribute i skill."); return; }
     const exists = state.quests.some(q => q.id === questDraft.id);
@@ -330,13 +360,17 @@ export default function SoloApp() {
     setToast(exists ? "Quest izmenjen." : "Novi quest je aktivan.");
   };
 
-  const deleteQuest = (quest: Quest) => setConfirmAction({
-    title: "Obrisati quest?",
-    text: "Quest će biti trajno uklonjen. Postojeće XP transakcije ostaju u istoriji radi integriteta.",
-    action: () => { updateState(s => ({ ...s, quests: s.quests.filter(q => q.id !== quest.id) })); setConfirmAction(null); setToast("Quest obrisan."); },
-  });
+  const deleteQuest = (quest: Quest) => {
+    if (!ensureWritable()) return;
+    setConfirmAction({
+      title: "Obrisati quest?",
+      text: "Quest će biti trajno uklonjen. Postojeće XP transakcije ostaju u istoriji radi integriteta.",
+      action: () => { updateState(s => ({ ...s, quests: s.quests.filter(q => q.id !== quest.id) })); setConfirmAction(null); setToast("Quest obrisan."); },
+    });
+  };
 
   const addAttribute = () => {
+    if (!ensureWritable()) return;
     setInputDialog({
       title: "New Attribute", label: "Naziv atributa", value: "", placeholder: "Npr. Intelligence",
       submitLabel: "Create Attribute", required: true,
@@ -348,6 +382,7 @@ export default function SoloApp() {
     });
   };
   const addSkill = (attributeId: string) => {
+    if (!ensureWritable()) return;
     setInputDialog({
       title: "New Skill", label: "Naziv skilla", value: "", placeholder: "Npr. University",
       submitLabel: "Create Skill", required: true,
@@ -359,6 +394,7 @@ export default function SoloApp() {
     });
   };
   const deleteSkill = (skillId: string) => {
+    if (!ensureWritable()) return;
     const skill = state.skills.find(item => item.id === skillId);
     if (!skill) return;
     const hasHistory = state.quests.some(quest => quest.skillId === skillId) || state.transactions.some(tx => tx.skillId === skillId);
@@ -381,6 +417,7 @@ export default function SoloApp() {
     });
   };
   const beginQuestOnDate = (dateKey: string) => {
+    if (!ensureWritable()) return;
     if (state.attributes.length === 0 || availableSkills.length === 0) {
       setView("growth");
       setToast("Prvo dodaj attribute i skill.");
@@ -408,6 +445,7 @@ export default function SoloApp() {
     setToast("Backup je preuzet.");
   };
   const importJson = async (file: File) => {
+    if (!ensureWritable()) return;
     try {
       const parsed: unknown = JSON.parse(await file.text());
       if (!isValidCloudState(parsed)) throw new Error("invalid");
@@ -450,7 +488,7 @@ export default function SoloApp() {
         </>}
         {quest.status === "completed" && <button onClick={() => undoQuest(quest)}>Undo</button>}
         {!compact && <>
-          <button onClick={() => setQuestDraft({ ...quest })}>Edit</button>
+          <button onClick={() => ensureWritable() && setQuestDraft({ ...quest })}>Edit</button>
           <button onClick={() => updateState(s => ({ ...s, quests: s.quests.map(q => q.id === quest.id ? { ...q, status: "archived" } : q) }))}>Archive</button>
           <button className="danger-link" onClick={() => deleteQuest(quest)}>Delete</button>
         </>}
@@ -574,6 +612,7 @@ export default function SoloApp() {
   </div>;
 
   const applyBossResult = (boss: Boss, cleared: boolean, result: string) => {
+    if (!ensureWritable()) return;
     const stamp = new Date().toISOString();
     const award = cleared ? boss.xp : boss.attemptXp;
     updateState(s => ({
@@ -587,6 +626,7 @@ export default function SoloApp() {
     else setCeremony({ eyebrow: "ENCOUNTER FAILED", title: "ANALYZE. ADAPT.", text: award ? `Attempt XP: +${award}. Zapiši correction quest.` : "0 XP. Pretvori analizu u sledeći Correction Quest." });
   };
   const resolveBoss = (boss: Boss, cleared: boolean) => {
+    if (!ensureWritable()) return;
     setInputDialog({
       title: cleared ? "Boss Clear Result" : "Encounter Analysis",
       label: cleared ? `Rezultat za “${boss.title}”` : "Kratka analiza neuspeha",
@@ -598,6 +638,7 @@ export default function SoloApp() {
     });
   };
   const addBoss = () => {
+    if (!ensureWritable()) return;
     setInputDialog({
       title: "New Boss", label: "Naziv Bossa", value: "", placeholder: "Npr. Završni ispit",
       submitLabel: "Create Boss", required: true,
@@ -648,18 +689,18 @@ export default function SoloApp() {
       <section className="settings-card"><header><i>R</i><div><h2>Rank Thresholds</h2><p>Podesi minimalni level za svaki rank.</p></div></header><div className="rank-settings">{state.settings.ranks.map((rank, index) => <Field label={`${rank.name}-Rank`} key={rank.name}><input type="number" min="1" value={rank.minLevel} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, ranks: s.settings.ranks.map((r, i) => i === index ? { ...r, minLevel: Math.max(1, Number(e.target.value)) } : r) } }))} /></Field>)}</div></section>
       <section className="settings-card"><header><i>◈</i><div><h2>Experience Rules</h2><p>Kontrole ponašanja i prikaza.</p></div></header><label className="toggle-row"><div><strong>Limit daily repeat</strong><span>Spreči više bodovanja iste dnevne instance.</span></div><input type="checkbox" checked={state.settings.dailyRepeatLimit} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, dailyRepeatLimit: e.target.checked } }))} /></label><label className="toggle-row"><div><strong>Animations</strong><span>Level-up i progress animacije.</span></div><input type="checkbox" checked={state.settings.animations} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, animations: e.target.checked } }))} /></label></section>
       <section className="settings-card"><header><i>⇅</i><div><h2>Backup & Restore</h2><p>Portable JSON kopija svih lokalnih podataka.</p></div></header><div className="button-row"><button className="primary" onClick={exportJson}>Export JSON</button><button onClick={() => importRef.current?.click()}>Import JSON</button><input ref={importRef} hidden type="file" accept="application/json" onChange={e => e.target.files?.[0] && importJson(e.target.files[0])} /></div></section>
-      <section className="settings-card danger-zone"><header><i>!</i><div><h2>Reset System</h2><p>Trajno briše sve podatke i vraća prazno početno stanje.</p></div></header><button onClick={() => setConfirmAction({ title: "Potpuni reset?", text: "Svi questovi, XP transakcije, bossovi i podešavanja biće obrisani na svim uređajima. Pre toga preporučujemo export.", action: () => { updateState(() => makeInitialState()); setConfirmAction(null); setToast("Sistem je resetovan."); } })}>Reset all data</button></section>
+      <section className="settings-card danger-zone"><header><i>!</i><div><h2>Reset System</h2><p>Trajno briše sve podatke i vraća prazno početno stanje.</p></div></header><button onClick={() => ensureWritable() && setConfirmAction({ title: "Potpuni reset?", text: "Svi questovi, XP transakcije, bossovi i podešavanja biće obrisani na svim uređajima. Pre toga preporučujemo export.", action: () => { updateState(() => makeInitialState()); setConfirmAction(null); setToast("Sistem je resetovan."); } })}>Reset all data</button></section>
     </div>
   </div>;
 
-  return <div className={`app-shell ${state.settings.animations ? "" : "reduce-motion"}`}>
-    {syncMode === "local" && <div className="sync-banner local">Cloud trenutno nije dostupan. Automatski pokušavam ponovo…</div>}
+  return <div className={`app-shell ${state.settings.animations ? "" : "reduce-motion"} ${readOnly ? "read-only" : ""}`}>
+    {readOnly && <div className={`sync-banner ${syncMode}`}><span>Cloud nije dostupan · <strong>READ-ONLY</strong></span><button onClick={() => setBootstrapAttempt(attempt => attempt + 1)}>Pokušaj sada</button></div>}
     {syncMode === "syncing" && <div className="sync-banner syncing">Sinhronizujem izmene…</div>}
     <aside className="sidebar">
       <button className="brand" onClick={() => setView("dashboard")}><span>A</span><div><strong>ASCEND</strong><small>SOLO PROGRESS SYSTEM</small></div></button>
       <nav>{views.map(item => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><i>{item.icon}</i><span>{item.label}</span>{item.id === "quests" && activeQuests.length > 0 && <b>{activeQuests.length}</b>}</button>)}</nav>
       <div className="sidebar-profile"><div>{metrics.rank}</div><span><strong>Hunter</strong><small>Level {metrics.progress.level} · {metrics.xp} XP</small></span></div>
-      <p className={`local-status ${syncMode}`}><i /> {syncMode === "online" ? "CLOUD · SYNCED" : syncMode === "syncing" ? "CLOUD · SYNCING" : syncMode === "offline" ? "CLOUD · OFFLINE" : "LOCAL · AUTO-SAVED"}</p>
+      <p className={`local-status ${syncMode}`}><i /> {syncMode === "online" ? "CLOUD · SYNCED" : syncMode === "syncing" ? "CLOUD · SYNCING" : "CLOUD · READ-ONLY"}</p>
     </aside>
     <main className="content">
       <div className="mobile-top"><button className="brand" onClick={() => setView("dashboard")}><span>A</span><strong>ASCEND</strong></button><button onClick={beginNewQuest}>＋</button></div>
@@ -671,8 +712,6 @@ export default function SoloApp() {
       {view === "settings" && SettingsView()}
     </main>
     <nav className="bottom-nav">{views.slice(0, 5).map(item => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><i>{item.icon}</i><span>{item.label}</span></button>)}</nav>
-    {syncMode === "offline" && <div className="offline-lock"><section><span>CONNECTION LOST</span><h2>Izmene su privremeno zaključane</h2><p>Prikazana je poslednja sačuvana kopija. Ponovo poveži internet da izbegnemo konflikt između uređaja.</p><button className="primary" onClick={() => window.location.reload()}>Try again</button></section></div>}
-
     {questDraft && <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && setQuestDraft(null)}>
       <section className="modal quest-modal" role="dialog" aria-modal="true" aria-label="Quest editor">
         <header><div><p>MISSION EDITOR</p><h2>{state.quests.some(q => q.id === questDraft.id) ? "Edit Quest" : "Create New Quest"}</h2></div><button onClick={() => setQuestDraft(null)}>×</button></header>
