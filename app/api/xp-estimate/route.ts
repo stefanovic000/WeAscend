@@ -102,7 +102,7 @@ export async function POST(request: Request) {
 Ovo je procena unapred, a ne provera izvršenja. Ne proveravaš da li je quest već završen, ne tražiš dokaz, potvrdu, dokument, fotografiju niti obrazloženje korisnika. Aplikacija zasebno vodi status završetka.
 
 Fer skala:
-- 0 XP: planiranje, pasivno gledanje, održavanje bez napretka
+- 0 XP: planiranje bez izvršenja, pasivno gledanje, odlaganje, distrakcija, čekanje, besciljno ponavljanje ili održavanje bez napretka
 - 5 XP: 10–20 min konkretnog lakog rada
 - 10 XP: 25–40 min fokusiranog rada
 - 20 XP: 45–60 min dubokog rada
@@ -112,6 +112,9 @@ Fer skala:
 - 200–400 XP: ispit, završen projekat ili pravi Boss rezultat
 
 Main Quest ne dobija automatski bonus. Difficulty je kontekst, ne slobodan množilac. Ako nema dovoljno podataka, budi konzervativan i koristi low confidence.
+Vreme samo po sebi nikada ne zaslužuje XP. Prvo proceni da li aktivnost proizvodi napredak, učenje, koristan rezultat ili zdravu održavajuću funkciju koju je korisnik izričito označio za bodovanje.
+Negativan ili očigledno neproduktivan quest dobija tačno 0 XP bez obzira na trajanje i težinu. Primeri: "vrtim se u krug 30 min", doomscrolling, svesno odlaganje, nasumično ponavljanje bez cilja, čekanje bez aktivnosti, samosabotiranje ili aktivnost koja poništava napredak.
+Neuspešan pokušaj ne dobija XP samo zato što je trajao. Može dobiti mali XP jedino kada quest eksplicitno zahteva koristan izlaz iz pokušaja, poput zapisane analize greške, identifikovanog blokera, naučene lekcije ili correction plana. Nemoj pretpostaviti takav izlaz ako nije naveden.
 Quest zakazan za budućnost predstavlja nameravanu aktivnost; nemoj ga nazivati pukim planiranjem. Planiranje je 0 XP samo kada je ono samo po sebi sadržaj zadatka.
 Nikada ne izmišljaj trajanje. Koristi trajanje samo ako je korisnik izričito napisao u nazivu, opisu ili uslovu završetka.
 Ako opis i uslov završetka nedostaju, proceni samo ono što zaista piše u nazivu i u obrazloženju jasno reci da nedostaje merljiv rezultat.

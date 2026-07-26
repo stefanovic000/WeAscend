@@ -790,7 +790,7 @@ export default function SoloApp() {
           <Field label="XP reward"><input type="number" min="0" value={questDraft.xp} onChange={e => updateQuestDraft({ ...questDraft, xp: Number(e.target.value) })} /></Field>
           <Field label="Recurrence"><select value={questDraft.recurrence} onChange={e => updateQuestDraft({ ...questDraft, recurrence: e.target.value as Quest["recurrence"] })}><option value="none">No repeat</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></Field>
           <div className="xp-advisor field wide">
-            <div><span>OPTIONAL AI ADVISOR</span><strong>DeepSeek XP procena</strong><p>Procenjuje nagradu za uspešan završetak. Ne traži dokaz i predlog ne primenjuje automatski.</p></div>
+            <div><span>OPTIONAL AI ADVISOR</span><strong>DeepSeek XP procena</strong><p>Procenjuje stvarni napredak, ne utrošeno vreme. Negativne i besciljne aktivnosti vrede 0 XP.</p></div>
             <button type="button" onClick={() => void estimateQuestXp()} disabled={xpEstimating}>{xpEstimating ? "Procenjujem…" : "Proceni XP"}</button>
             {xpSuggestion && <div className="xp-suggestion"><span><b>{xpSuggestion.xp} XP</b><small>{xpSuggestion.confidence === "high" ? "visoka" : xpSuggestion.confidence === "medium" ? "srednja" : "niska"} pouzdanost procene</small></span><p>{xpSuggestion.rationale}</p><button type="button" onClick={() => { setQuestDraft({ ...questDraft, xp: xpSuggestion.xp }); setXpSuggestion(null); }}>Primeni predlog</button></div>}
           </div>
