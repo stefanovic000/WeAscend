@@ -2,19 +2,19 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ASCEND — Solo Progress System",
-  description: "Local-first sistem za lični napredak, questove, skillove i boss izazove.",
+  title: "WeSolo — Personal Progress System",
+  description: "Quests, skills, XP, ranks, and focused personal progress — synchronized across your devices.",
   manifest: "/manifest.webmanifest",
   icons: { icon: "/favicon.svg", apple: "/favicon.svg" },
   openGraph: {
-    title: "ASCEND — Solo Progress System",
-    description: "Quests · Skills · XP · Ranks. Tvoj local-first sistem napretka.",
+    title: "WeSolo — Personal Progress System",
+    description: "Quests · Skills · XP · Ranks. Your focused personal progress system.",
     type: "website",
-    images: [{ url: "/og.png", width: 1730, height: 908, alt: "ASCEND Solo Progress System" }],
+    images: [{ url: "/og.png", width: 1536, height: 1024, alt: "WeSolo Personal Progress System" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "ASCEND — Solo Progress System",
+    title: "WeSolo — Personal Progress System",
     description: "Quests · Skills · XP · Ranks.",
     images: ["/og.png"],
   },
@@ -28,7 +28,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="sr">
+    <html lang="en">
       <body>{children}</body>
     </html>
   );

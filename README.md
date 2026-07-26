@@ -1,12 +1,13 @@
-# ASCEND — Solo Progress System
+# WeSolo — Personal Progress System
 
-Local-cache, cloud-synced PWA za lični napredak inspirisana „Solo Leveling“ sistemom. Telefon i računar koriste isti MongoDB Atlas zapis, a IndexedDB čuva poslednju potvrđenu verziju za pregled kada cloud nije dostupan.
+Cloud-synced PWA za lični napredak inspirisana „Solo Leveling“ sistemom. Engleski je podrazumevani jezik, a srpski se bira u Settings. Telefon i računar koriste isti MongoDB Atlas zapis, dok IndexedDB čuva poslednju potvrđenu verziju za pregled kada cloud nije dostupan.
 
-Produkcija: [ascend-solo-progress.stefanovic000.chatgpt.site](https://ascend-solo-progress.stefanovic000.chatgpt.site)
+Produkcija: [WeSolo](https://ascend-solo-progress.stefanovic000.chatgpt.site)
 
 ## Trenutno ponašanje
 
 - Novi nalog počinje potpuno prazan: Level 1, 0 XP, bez atributa, skillova i questova.
+- Engleski je glavni i podrazumevani jezik. U **Settings → Language** može se izabrati srpski; izbor se pamti lokalno po uređaju i radi i u read-only režimu.
 - XP se jednom evidentira u transakcionoj istoriji i pripisuje globalnom nivou, atributu i skillu.
 - Telefon i računar koriste MongoDB kao jedini izvor istine.
 - IndexedDB je samo lokalni cache za brz prikaz i offline pregled.

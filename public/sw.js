@@ -1,4 +1,4 @@
-const CACHE = "ascend-shell-v2";
+const CACHE = "wesolo-shell-v3";
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(["/", "/manifest.webmanifest"])));
   self.skipWaiting();

@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { activeXp, canAwardQuest, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type AppState, type Boss, type Quest, type QuestType } from "./domain";
 import { loadState, saveState } from "./db";
+import { translate, type Language, type TranslationKey } from "./i18n";
 import type { XpSuggestion } from "./xpAdvisor";
 
 type View = "dashboard" | "quests" | "growth" | "bosses" | "history" | "settings";
@@ -14,13 +15,13 @@ type CloudStateResponse = {
   user?: { email: string; name: string };
   code?: string;
 };
-const views: { id: View; label: string; icon: string }[] = [
-  { id: "dashboard", label: "Command", icon: "◇" },
-  { id: "quests", label: "Quests", icon: "✦" },
-  { id: "growth", label: "Growth", icon: "⌁" },
-  { id: "bosses", label: "Bosses", icon: "⬡" },
-  { id: "history", label: "History", icon: "◫" },
-  { id: "settings", label: "Settings", icon: "⚙" },
+const views: { id: View; labelKey: TranslationKey; icon: string }[] = [
+  { id: "dashboard", labelKey: "nav.command", icon: "◇" },
+  { id: "quests", labelKey: "nav.quests", icon: "✦" },
+  { id: "growth", labelKey: "nav.growth", icon: "⌁" },
+  { id: "bosses", labelKey: "nav.bosses", icon: "⬡" },
+  { id: "history", labelKey: "nav.history", icon: "◫" },
+  { id: "settings", labelKey: "nav.settings", icon: "⚙" },
 ];
 
 const blankQuest = (state: AppState): Quest => {
@@ -40,8 +41,18 @@ const blankQuest = (state: AppState): Quest => {
 const isoLocal = (value: string) => value ? new Date(value).toISOString().slice(0, 16) : "";
 const fromLocal = (value: string) => value ? new Date(value).toISOString() : "";
 const dayKey = (value: string | Date) => new Date(value).toLocaleDateString("sv-SE");
-const formatDate = (value: string, time = true) => value ? new Intl.DateTimeFormat("sr-Latn", { day: "2-digit", month: "short", ...(time ? { hour: "2-digit", minute: "2-digit" } : {}) }).format(new Date(value)) : "Bez roka";
 const today = dayKey(new Date());
+const LANGUAGE_EVENT = "wesolo-language-change";
+const subscribeLanguage = (onStoreChange: () => void) => {
+  window.addEventListener("storage", onStoreChange);
+  window.addEventListener(LANGUAGE_EVENT, onStoreChange);
+  return () => {
+    window.removeEventListener("storage", onStoreChange);
+    window.removeEventListener(LANGUAGE_EVENT, onStoreChange);
+  };
+};
+const getLanguageSnapshot = (): Language => localStorage.getItem("wesolo-language") === "sr" ? "sr" : "en";
+const getServerLanguageSnapshot = (): Language => "en";
 
 function Field({ label, children, wide = false }: { label: string; children: React.ReactNode; wide?: boolean }) {
   return <label className={`field ${wide ? "wide" : ""}`}><span>{label}</span>{children}</label>;
@@ -67,6 +78,7 @@ async function cloudFetch(input: RequestInfo | URL, init?: RequestInit, timeoutM
 }
 
 export default function SoloApp() {
+  const language = useSyncExternalStore(subscribeLanguage, getLanguageSnapshot, getServerLanguageSnapshot);
   const [state, setState] = useState<AppState | null>(null);
   const [syncMode, setSyncMode] = useState<SyncMode>("starting");
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
@@ -101,6 +113,20 @@ export default function SoloApp() {
   const syncInFlightRef = useRef(false);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncModeRef = useRef<SyncMode>("starting");
+  const t = (key: TranslationKey, variables?: Record<string, string | number>) => translate(language, key, variables);
+  const locale = language === "sr" ? "sr-Latn-RS" : "en-US";
+  const formatDate = (value: string, time = true) => value
+    ? new Intl.DateTimeFormat(locale, { day: "2-digit", month: "short", ...(time ? { hour: "2-digit", minute: "2-digit" } : {}) }).format(new Date(value))
+    : t("common.noDeadline");
+
+  useEffect(() => {
+    document.documentElement.lang = language === "sr" ? "sr-Latn" : "en";
+  }, [language]);
+
+  const chooseLanguage = (nextLanguage: Language) => {
+    localStorage.setItem("wesolo-language", nextLanguage);
+    window.dispatchEvent(new Event(LANGUAGE_EVENT));
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -157,14 +183,14 @@ export default function SoloApp() {
         lastSyncedRef.current = JSON.stringify(selected);
         pendingStateRef.current = selected;
         hydratedRef.current = true;
-        localStorage.setItem("ascend-cloud-enabled", "1");
+        localStorage.setItem("wesolo-cloud-enabled", "1");
         setMode("online");
         setState(selected);
         void saveState(selected);
       } catch {
         if (cancelled) return;
         hydratedRef.current = true;
-        const wasCloudEnabled = localStorage.getItem("ascend-cloud-enabled") === "1";
+        const wasCloudEnabled = localStorage.getItem("wesolo-cloud-enabled") === "1" || localStorage.getItem("ascend-cloud-enabled") === "1";
         setMode(wasCloudEnabled ? "offline" : "local");
         setState(local);
       }
@@ -227,12 +253,12 @@ export default function SoloApp() {
         lastSyncedRef.current = JSON.stringify(result.state);
         pendingStateRef.current = result.state;
         setState(result.state);
-        setToast("Drugi uređaj je imao noviju verziju. Učitani su najnoviji podaci.");
+        setToast(t("sync.conflict"));
       } else if (response.ok && result.state && isValidCloudState(result.state)) {
         revisionRef.current = result.revision;
         lastSyncedRef.current = JSON.stringify(result.state);
         setCloudUser(result.user ?? cloudUser);
-        localStorage.setItem("ascend-cloud-enabled", "1");
+        localStorage.setItem("wesolo-cloud-enabled", "1");
       } else {
         throw new Error(result.code || "sync_failed");
       }
@@ -254,7 +280,7 @@ export default function SoloApp() {
           // Keep the already loaded read-only snapshot if the confirmed cache is unavailable.
         }
       }
-      setToast("Cloud čuvanje nije uspelo. Vraćena je poslednja potvrđena verzija.");
+      setToast(t("sync.saveFailed"));
     } finally {
       syncInFlightRef.current = false;
       const pending = pendingStateRef.current;
@@ -267,7 +293,7 @@ export default function SoloApp() {
   useEffect(() => {
     if (!state || !hydratedRef.current) return;
     pendingStateRef.current = state;
-    saveState(state).catch(() => setToast("Lokalni cache nije sačuvan. Napravi JSON backup."));
+    saveState(state).catch(() => setToast(translate(language, "sync.cacheFailed")));
     if (syncModeRef.current !== "online" && syncModeRef.current !== "syncing") return;
     if (JSON.stringify(state) === lastSyncedRef.current) return;
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
@@ -275,7 +301,7 @@ export default function SoloApp() {
     return () => {
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     };
-  }, [state]);
+  }, [state, language]);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(""), 2800);
@@ -289,13 +315,13 @@ export default function SoloApp() {
     return { xp, progress, rank: rankForLevel(progress.level, state.settings.ranks) };
   }, [state]);
 
-  if (authRequired) return <main className="auth-gate"><div className="auth-mark">A</div><p>ASCEND CLOUD</p><h1>Prijava je potrebna</h1><span>Prijavi se istim ChatGPT nalogom na telefonu i računaru da bi oba uređaja koristila iste podatke.</span><a href="/signin-with-chatgpt?return_to=%2F">Sign in with ChatGPT</a></main>;
-  if (!state || !metrics) return <main className="loading"><div className="loader-mark">A</div><p>Povezujem sistem…</p></main>;
+  if (authRequired) return <main className="auth-gate"><div className="auth-mark">W</div><p>{t("auth.cloud")}</p><h1>{t("auth.title")}</h1><span>{t("auth.text")}</span><a href="/signin-with-chatgpt?return_to=%2F">{t("auth.action")}</a></main>;
+  if (!state || !metrics) return <main className="loading"><div className="loader-mark">W</div><p>{t("loading")}</p></main>;
 
   const readOnly = syncMode === "offline" || syncMode === "local";
   const ensureWritable = () => {
     if (!readOnly) return true;
-    setToast("READ-ONLY: poveži se sa cloud bazom da bi menjao podatke.");
+    setToast(t("sync.readOnlyToast"));
     return false;
   };
   const updateState = (recipe: (current: AppState) => AppState) => {
@@ -303,8 +329,8 @@ export default function SoloApp() {
     setState(current => current ? recipe(current) : current);
     return true;
   };
-  const attrName = (id: string) => state.attributes.find(a => a.id === id)?.name ?? "Unassigned";
-  const skillName = (id: string) => state.skills.find(s => s.id === id)?.name ?? "General";
+  const attrName = (id: string) => state.attributes.find(a => a.id === id)?.name ?? t("common.unassigned");
+  const skillName = (id: string) => state.skills.find(s => s.id === id)?.name ?? t("common.general");
   const attrColor = (id: string) => state.attributes.find(a => a.id === id)?.color ?? "#866bff";
   const availableSkills = state.skills.filter(skill => !skill.deletedAt);
   const activeQuests = state.quests.filter(q => q.status === "active");
@@ -314,7 +340,7 @@ export default function SoloApp() {
   const completeQuest = (quest: Quest) => {
     if (!ensureWritable()) return;
     if (!canAwardQuest(quest.id, state.transactions)) {
-      setToast("Ovaj quest je već bodovan.");
+      setToast(t("quest.alreadyAwarded"));
       return;
     }
     const before = metrics.progress;
@@ -338,17 +364,17 @@ export default function SoloApp() {
         ...(newRank !== oldRank ? [{ id: crypto.randomUUID(), type: "rank" as const, value: newRank, createdAt: stamp }] : []),
       ],
     }));
-    if (newRank !== oldRank) setCeremony({ eyebrow: "RANK ASCENSION", title: `${newRank}-RANK`, text: "Novi prag je dostignut. Sistem je zabeležio tvoj napredak." });
-    else if (after.level > before.level) setCeremony({ eyebrow: "LEVEL UP", title: `LEVEL ${after.level}`, text: `Novi kapacitet otključan. Sledeći nivo traži ${after.needed} XP.` });
-    else setToast(quest.xp ? `+${quest.xp} XP zabeleženo` : "Quest završen · 0 XP");
+    if (newRank !== oldRank) setCeremony({ eyebrow: t("ceremony.rankAscension"), title: `${newRank}-RANK`, text: t("quest.rankUp") });
+    else if (after.level > before.level) setCeremony({ eyebrow: t("ceremony.levelUp"), title: `LEVEL ${after.level}`, text: t("quest.levelUp", { xp: after.needed }) });
+    else setToast(quest.xp ? t("quest.xpRecorded", { xp: quest.xp }) : t("quest.completedZero"));
   };
 
   const failQuest = (quest: Quest) => {
     if (!ensureWritable()) return;
     updateState(s => ({ ...s, quests: s.quests.map(q => q.id === quest.id ? { ...q, status: "failed", updatedAt: new Date().toISOString() } : q) }));
     if (quest.type === "Mandatory" && quest.failureConsequence) {
-      setCeremony({ eyebrow: "MANDATORY QUEST FAILED", title: "CONSEQUENCE ACTIVE", text: quest.failureConsequence });
-    } else setToast("Quest označen kao neuspešan · 0 XP");
+      setCeremony({ eyebrow: t("ceremony.mandatoryFailed"), title: t("ceremony.consequenceActive"), text: quest.failureConsequence });
+    } else setToast(t("quest.failedZero"));
   };
 
   const undoQuest = (quest: Quest) => {
@@ -359,18 +385,18 @@ export default function SoloApp() {
       quests: s.quests.map(q => q.id === quest.id ? { ...q, status: "active", completedAt: undefined, updatedAt: stamp } : q),
       transactions: s.transactions.map(tx => tx.questId === quest.id && !tx.reversedAt ? { ...tx, reversedAt: stamp } : tx),
     }));
-    setToast("Completion poništen; samo XP ovog questa je vraćen.");
+    setToast(t("quest.undoDone"));
   };
 
   const saveQuest = () => {
     if (!ensureWritable()) return;
-    if (!questDraft?.title.trim()) { setToast("Unesi naziv questa."); return; }
-    if (!questDraft.attributeId || !questDraft.skillId) { setToast("Izaberi attribute i skill."); return; }
+    if (!questDraft?.title.trim()) { setToast(t("quest.enterName")); return; }
+    if (!questDraft.attributeId || !questDraft.skillId) { setToast(t("quest.choosePath")); return; }
     const exists = state.quests.some(q => q.id === questDraft.id);
     const updated = { ...questDraft, updatedAt: new Date().toISOString(), xp: Math.max(0, Number(questDraft.xp) || 0) };
     updateState(s => ({ ...s, quests: exists ? s.quests.map(q => q.id === updated.id ? updated : q) : [updated, ...s.quests] }));
     setQuestDraft(null);
-    setToast(exists ? "Quest izmenjen." : "Novi quest je aktivan.");
+    setToast(exists ? t("quest.updated") : t("quest.created"));
   };
 
   const updateQuestDraft = (next: Quest) => {
@@ -381,7 +407,7 @@ export default function SoloApp() {
   const estimateQuestXp = async () => {
     if (!questDraft || !ensureWritable()) return;
     if (!questDraft.title.trim()) {
-      setToast("Prvo unesi naziv questa.");
+      setToast(t("quest.enterBeforeAi"));
       return;
     }
 
@@ -400,25 +426,26 @@ export default function SoloApp() {
           attribute: attrName(questDraft.attributeId),
           skill: skillName(questDraft.skillId),
           completionConditions: questDraft.completionConditions,
+          language,
         }),
       }, 22_000);
       const result = await response.json() as { suggestion?: XpSuggestion; code?: string };
 
       if (!response.ok || !result.suggestion) {
         const messages: Record<string, string> = {
-          ai_not_configured: "DeepSeek nije konfigurisan na serveru.",
-          ai_auth_failed: "DeepSeek API ključ nije ispravan.",
-          ai_balance_empty: "DeepSeek nalog nema dovoljno kredita.",
-          ai_rate_limited: "DeepSeek je trenutno ograničio zahteve. Pokušaj kasnije.",
-          ai_timeout: "DeepSeek nije odgovorio na vreme.",
+          ai_not_configured: t("ai.notConfigured"),
+          ai_auth_failed: t("ai.authFailed"),
+          ai_balance_empty: t("ai.balanceEmpty"),
+          ai_rate_limited: t("ai.rateLimited"),
+          ai_timeout: t("ai.timeout"),
         };
-        setToast(messages[result.code ?? ""] ?? "AI procena trenutno nije dostupna.");
+        setToast(messages[result.code ?? ""] ?? t("ai.unavailable"));
         return;
       }
 
       setXpSuggestion(result.suggestion);
     } catch {
-      setToast("AI procena trenutno nije dostupna.");
+      setToast(t("ai.unavailable"));
     } finally {
       setXpEstimating(false);
     }
@@ -427,33 +454,33 @@ export default function SoloApp() {
   const deleteQuest = (quest: Quest) => {
     if (!ensureWritable()) return;
     setConfirmAction({
-      title: "Obrisati quest?",
-      text: "Quest će biti trajno uklonjen. Postojeće XP transakcije ostaju u istoriji radi integriteta.",
-      action: () => { updateState(s => ({ ...s, quests: s.quests.filter(q => q.id !== quest.id) })); setConfirmAction(null); setToast("Quest obrisan."); },
+      title: t("quest.deleteTitle"),
+      text: t("quest.deleteText"),
+      action: () => { updateState(s => ({ ...s, quests: s.quests.filter(q => q.id !== quest.id) })); setConfirmAction(null); setToast(t("quest.deleted")); },
     });
   };
 
   const addAttribute = () => {
     if (!ensureWritable()) return;
     setInputDialog({
-      title: "New Attribute", label: "Naziv atributa", value: "", placeholder: "Npr. Intelligence",
-      submitLabel: "Create Attribute", required: true,
+      title: t("attribute.newTitle"), label: t("attribute.name"), value: "", placeholder: t("attribute.placeholder"),
+      submitLabel: t("attribute.create"), required: true,
       action: name => {
         const stamp = new Date().toISOString();
         updateState(s => ({ ...s, attributes: [...s.attributes, { id: crypto.randomUUID(), name: name.trim(), color: ["#866bff", "#32d6c5", "#4ea5ff", "#ff6da8"][s.attributes.length % 4], createdAt: stamp, updatedAt: stamp }] }));
-        setToast("Attribute je kreiran.");
+        setToast(t("attribute.created"));
       },
     });
   };
   const addSkill = (attributeId: string) => {
     if (!ensureWritable()) return;
     setInputDialog({
-      title: "New Skill", label: "Naziv skilla", value: "", placeholder: "Npr. University",
-      submitLabel: "Create Skill", required: true,
+      title: t("skill.newTitle"), label: t("skill.name"), value: "", placeholder: t("skill.placeholder"),
+      submitLabel: t("skill.create"), required: true,
       action: name => {
         const stamp = new Date().toISOString();
         updateState(s => ({ ...s, skills: [...s.skills, { id: crypto.randomUUID(), attributeId, name: name.trim(), createdAt: stamp, updatedAt: stamp }] }));
-        setToast("Skill je kreiran.");
+        setToast(t("skill.created"));
       },
     });
   };
@@ -463,10 +490,10 @@ export default function SoloApp() {
     if (!skill) return;
     const hasHistory = state.quests.some(quest => quest.skillId === skillId) || state.transactions.some(tx => tx.skillId === skillId);
     setConfirmAction({
-      title: `Obrisati skill “${skill.name}”?`,
+      title: t("skill.deleteTitle", { name: skill.name }),
       text: hasHistory
-        ? "Skill će nestati iz aktivnih izbora, ali će njegov naziv ostati u starim questovima i XP istoriji."
-        : "Skill nema povezane questove ili XP istoriju i biće potpuno uklonjen.",
+        ? t("skill.deleteHistory")
+        : t("skill.deleteClean"),
       action: () => {
         const stamp = new Date().toISOString();
         updateState(s => ({
@@ -476,7 +503,7 @@ export default function SoloApp() {
             : s.skills.filter(item => item.id !== skillId),
         }));
         setConfirmAction(null);
-        setToast("Skill je obrisan.");
+        setToast(t("skill.deleted"));
       },
     });
   };
@@ -484,7 +511,7 @@ export default function SoloApp() {
     if (!ensureWritable()) return;
     if (state.attributes.length === 0 || availableSkills.length === 0) {
       setView("growth");
-      setToast("Prvo dodaj attribute i skill.");
+      setToast(t("attribute.skillFirst"));
       return;
     }
     const draft = blankQuest(state);
@@ -504,10 +531,10 @@ export default function SoloApp() {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `ascend-backup-${today}.json`;
+    link.download = `wesolo-backup-${today}.json`;
     link.click();
     URL.revokeObjectURL(link.href);
-    setToast("Backup je preuzet.");
+    setToast(t("backup.downloaded"));
   };
   const importJson = async (file: File) => {
     if (!ensureWritable()) return;
@@ -515,11 +542,11 @@ export default function SoloApp() {
       const parsed: unknown = JSON.parse(await file.text());
       if (!isValidCloudState(parsed)) throw new Error("invalid");
       setConfirmAction({
-        title: "Zameniti sve podatke?",
-        text: "Validan backup je spreman. Trenutni podaci biće zamenjeni i sinhronizovani.",
-        action: () => { updateState(() => parsed); setConfirmAction(null); setToast("Backup je uspešno vraćen."); },
+        title: t("backup.replaceTitle"),
+        text: t("backup.replaceText"),
+        action: () => { updateState(() => parsed); setConfirmAction(null); setToast(t("backup.restored")); },
       });
-    } catch { setToast("JSON nije validan ASCEND backup."); }
+    } catch { setToast(t("backup.invalid")); }
   };
 
   const filteredQuests = state.quests.filter(q =>
@@ -535,7 +562,7 @@ export default function SoloApp() {
       <div className="quest-accent" style={{ background: attrColor(quest.attributeId) }} />
       <div className="quest-card-main">
         <div className="quest-meta">
-          <span className={`type-badge type-${quest.type.toLowerCase()}`}>{quest.type}</span>
+          <span className={`type-badge type-${quest.type.toLowerCase()}`}>{t(`type.${quest.type}` as TranslationKey)}</span>
           <span>{attrName(quest.attributeId)} / {skillName(quest.skillId)}</span>
         </div>
         <h3>{quest.title}</h3>
@@ -543,19 +570,19 @@ export default function SoloApp() {
         <div className="quest-footer">
           <span>◷ {formatDate(quest.deadline)}</span>
           <span className="xp-reward">+{quest.xp} XP</span>
-          <span className="difficulty">{quest.difficulty}</span>
+          <span className="difficulty">{t(`difficulty.${quest.difficulty}` as TranslationKey)}</span>
         </div>
       </div>
       <div className="quest-actions">
         {quest.status === "active" && <>
-          <button className="complete" onClick={() => completeQuest(quest)} aria-label={`Završi ${quest.title}`}>✓</button>
-          <button onClick={() => failQuest(quest)} aria-label={`Označi ${quest.title} neuspešnim`}>×</button>
+          <button className="complete" onClick={() => completeQuest(quest)} aria-label={t("quest.completeLabel", { name: quest.title })}>✓</button>
+          <button onClick={() => failQuest(quest)} aria-label={t("quest.failLabel", { name: quest.title })}>×</button>
         </>}
-        {quest.status === "completed" && <button onClick={() => undoQuest(quest)}>Undo</button>}
+        {quest.status === "completed" && <button onClick={() => undoQuest(quest)}>{t("common.undo")}</button>}
         {!compact && <>
-          <button onClick={() => { if (ensureWritable()) { setXpSuggestion(null); setQuestDraft({ ...quest }); } }}>Edit</button>
-          <button onClick={() => updateState(s => ({ ...s, quests: s.quests.map(q => q.id === quest.id ? { ...q, status: "archived" } : q) }))}>Archive</button>
-          <button className="danger-link" onClick={() => deleteQuest(quest)}>Delete</button>
+          <button onClick={() => { if (ensureWritable()) { setXpSuggestion(null); setQuestDraft({ ...quest }); } }}>{t("common.edit")}</button>
+          <button onClick={() => updateState(s => ({ ...s, quests: s.quests.map(q => q.id === quest.id ? { ...q, status: "archived" } : q) }))}>{t("common.archive")}</button>
+          <button className="danger-link" onClick={() => deleteQuest(quest)}>{t("common.delete")}</button>
         </>}
       </div>
     </article>
@@ -567,16 +594,16 @@ export default function SoloApp() {
       <section className="hero">
         <div className="hero-copy">
           <p className="system-label"><span /> {syncMode === "online"
-            ? "SYSTEM ONLINE · CLOUD SYNC"
+            ? t("sync.online")
             : syncMode === "syncing"
-              ? "SYSTEM ONLINE · SYNCING"
+              ? t("sync.syncing")
               : syncMode === "offline"
-                ? "SYSTEM OFFLINE · CACHE ONLY"
-                : "SYSTEM ONLINE · LOCAL MODE"}</p>
-          <p className="kicker">CURRENT DIRECTIVE</p>
-          <h1>Koja je moja<br /><em>sledeća misija?</em></h1>
-          <p>Napredak se ne nagađa. Evidentira se.</p>
-          <button className="primary" onClick={beginNewQuest}>＋ Add Quest</button>
+                ? t("sync.offline")
+                : t("sync.local")}</p>
+          <p className="kicker">{t("dashboard.directive")}</p>
+          <h1>{t("dashboard.question1")}<br /><em>{t("dashboard.question2")}</em></h1>
+          <p>{t("dashboard.subtitle")}</p>
+          <button className="primary" onClick={beginNewQuest}>{t("dashboard.addQuest")}</button>
         </div>
         <div className="rank-orbit" aria-label={`${metrics.rank} rank, level ${metrics.progress.level}`}>
           <div className="orbit-ring ring-one" /><div className="orbit-ring ring-two" />
@@ -584,31 +611,31 @@ export default function SoloApp() {
         </div>
       </section>
       <section className="xp-panel">
-        <div><span>GLOBAL EXPERIENCE</span><strong>{metrics.xp.toLocaleString()} XP</strong></div>
+        <div><span>{t("dashboard.globalExperience")}</span><strong>{metrics.xp.toLocaleString(locale)} XP</strong></div>
         <div className="xp-track"><i style={{ width: `${metrics.progress.percent}%` }} /></div>
-        <p>{metrics.progress.current} / {metrics.progress.needed} XP <span>{metrics.progress.needed - metrics.progress.current} XP do Level {metrics.progress.level + 1}</span></p>
+        <p>{metrics.progress.current} / {metrics.progress.needed} XP <span>{t("dashboard.untilLevel", { xp: metrics.progress.needed - metrics.progress.current, level: metrics.progress.level + 1 })}</span></p>
       </section>
       <div className="dashboard-grid">
         <section className="panel main-mission">
-          <div className="section-title"><div><span>01</span><p>PRIORITY OBJECTIVE</p><h2>Main Quest</h2></div><button onClick={() => setView("quests")}>View all →</button></div>
-          {mainQuest ? renderQuestCard(mainQuest, true) : <Empty title="Nema Main Questa" text="Postavi jednu jasnu misiju koja pomera dan napred." />}
+          <div className="section-title"><div><span>01</span><p>{t("dashboard.priority")}</p><h2>{t("dashboard.mainQuest")}</h2></div><button onClick={() => setView("quests")}>{t("dashboard.viewAll")}</button></div>
+          {mainQuest ? renderQuestCard(mainQuest, true) : <Empty title={t("quest.mainEmpty")} text={t("quest.mainEmptyText")} />}
         </section>
         <aside className="panel pulse">
-          <div className="section-title"><div><span>02</span><p>LIVE METRICS</p><h2>Today&apos;s Pulse</h2></div></div>
+          <div className="section-title"><div><span>02</span><p>{t("dashboard.metrics")}</p><h2>{t("dashboard.pulse")}</h2></div></div>
           <div className="pulse-ring" style={{ "--progress": `${todayQuests.length ? Math.round(todayQuests.filter(q => q.status === "completed").length / todayQuests.length * 100) : 0}%` } as React.CSSProperties}>
-            <strong>{todayQuests.filter(q => q.status === "completed").length}<small>/{todayQuests.length}</small></strong><span>QUESTS</span>
+            <strong>{todayQuests.filter(q => q.status === "completed").length}<small>/{todayQuests.length}</small></strong><span>{t("dashboard.quests")}</span>
           </div>
-          <div className="mini-stats"><div><span>Completed</span><strong>{state.quests.filter(q => q.status === "completed").length}</strong></div><div><span>Failed</span><strong>{state.quests.filter(q => q.status === "failed").length}</strong></div></div>
+          <div className="mini-stats"><div><span>{t("dashboard.completed")}</span><strong>{state.quests.filter(q => q.status === "completed").length}</strong></div><div><span>{t("dashboard.failed")}</span><strong>{state.quests.filter(q => q.status === "failed").length}</strong></div></div>
         </aside>
       </div>
       <section className="panel today-list">
-        <div className="section-title"><div><span>03</span><p>ACTIVE LOG</p><h2>Today&apos;s Quests</h2></div><button onClick={beginNewQuest}>＋ New</button></div>
-        <div className="quest-list">{todayQuests.length ? todayQuests.map(q => renderQuestCard(q, true)) : <Empty title="Dnevni log je čist" text="Dodaj sledeću konkretnu akciju." />}</div>
+        <div className="section-title"><div><span>03</span><p>{t("dashboard.activeLog")}</p><h2>{t("dashboard.todayQuests")}</h2></div><button onClick={beginNewQuest}>{t("dashboard.new")}</button></div>
+        <div className="quest-list">{todayQuests.length ? todayQuests.map(q => renderQuestCard(q, true)) : <Empty title={t("quest.dayEmpty")} text={t("quest.dayEmptyText")} />}</div>
       </section>
       <section className="achievements">
-        <div className="section-title"><div><span>04</span><p>SYSTEM FEED</p><h2>Recent Achievements</h2></div></div>
+        <div className="section-title"><div><span>04</span><p>{t("dashboard.feed")}</p><h2>{t("dashboard.achievements")}</h2></div></div>
         <div className="achievement-grid">
-          {recent.length ? recent.map(tx => <div className="achievement" key={tx.id}><i>✦</i><div><strong>Quest cleared</strong><span>{state.quests.find(q => q.id === tx.questId)?.title ?? "Boss encounter"}</span></div><b>+{tx.amount}</b></div>) : <Empty title="Istorija čeka prvi clear" text="Završi quest da pokreneš svoj feed." />}
+          {recent.length ? recent.map(tx => <div className="achievement" key={tx.id}><i>✦</i><div><strong>{t("dashboard.questCleared")}</strong><span>{state.quests.find(q => q.id === tx.questId)?.title ?? t("dashboard.bossEncounter")}</span></div><b>+{tx.amount}</b></div>) : <Empty title={t("dashboard.historyEmpty")} text={t("dashboard.historyEmptyText")} />}
         </div>
       </section>
     </div>;
@@ -624,16 +651,16 @@ export default function SoloApp() {
       date.setDate(gridStart.getDate() + index);
       return date;
     });
-    const selectedLabel = new Intl.DateTimeFormat("sr-Latn", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date(`${selectedDate}T12:00:00`));
-    const monthLabel = new Intl.DateTimeFormat("sr-Latn", { month: "long", year: "numeric" }).format(monthDate);
+    const selectedLabel = new Intl.DateTimeFormat(locale, { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date(`${selectedDate}T12:00:00`));
+    const monthLabel = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(monthDate);
     return <div className="screen">
-    <header className="screen-header"><div><p>MISSION CONTROL</p><h1>Quest Planner</h1><span>{activeQuests.length} active · {state.quests.filter(q => q.status === "completed").length} cleared</span></div><button className="primary" onClick={() => beginQuestOnDate(selectedDate)}>＋ Plan Quest</button></header>
+    <header className="screen-header"><div><p>{t("planner.control")}</p><h1>{t("planner.title")}</h1><span>{t("planner.summary", { active: activeQuests.length, cleared: state.quests.filter(q => q.status === "completed").length })}</span></div><button className="primary" onClick={() => beginQuestOnDate(selectedDate)}>{t("planner.planQuest")}</button></header>
     <section className="planner">
       <header className="planner-header">
-        <div><p>MISSION CALENDAR</p><h2>{monthLabel}</h2></div>
-        <div className="calendar-controls"><button onClick={() => shiftCalendarMonth(-1)} aria-label="Prethodni mesec">←</button><button onClick={() => { setSelectedDate(today); setCalendarMonth(`${today.slice(0, 7)}-01`); setShowAllDates(false); }}>Today</button><button onClick={() => shiftCalendarMonth(1)} aria-label="Sledeći mesec">→</button></div>
+        <div><p>{t("planner.calendar")}</p><h2>{monthLabel}</h2></div>
+        <div className="calendar-controls"><button onClick={() => shiftCalendarMonth(-1)} aria-label={t("planner.previousMonth")}>←</button><button onClick={() => { setSelectedDate(today); setCalendarMonth(`${today.slice(0, 7)}-01`); setShowAllDates(false); }}>{t("planner.today")}</button><button onClick={() => shiftCalendarMonth(1)} aria-label={t("planner.nextMonth")}>→</button></div>
       </header>
-      <div className="calendar-weekdays">{["Pon", "Uto", "Sre", "Čet", "Pet", "Sub", "Ned"].map(day => <span key={day}>{day}</span>)}</div>
+      <div className="calendar-weekdays">{t("planner.weekdays").split(",").map(day => <span key={day}>{day}</span>)}</div>
       <div className="calendar-grid">{calendarDays.map(date => {
         const key = dayKey(date);
         const quests = state.quests.filter(q => dayKey(q.date) === key && q.status !== "archived");
@@ -644,34 +671,34 @@ export default function SoloApp() {
           <i>{quests.slice(0, 3).map((quest, index) => <em key={quest.id} style={{ background: quest.status === "completed" ? "var(--cyan)" : attrColor(quest.attributeId), opacity: index < completed ? 1 : .75 }} />)}</i>
         </button>;
       })}</div>
-      <footer><div><span>SELECTED DAY</span><strong>{selectedLabel}</strong></div><button onClick={() => beginQuestOnDate(selectedDate)}>＋ Add to this day</button></footer>
+      <footer><div><span>{t("planner.selectedDay")}</span><strong>{selectedLabel}</strong></div><button onClick={() => beginQuestOnDate(selectedDate)}>{t("planner.addDay")}</button></footer>
     </section>
     <section className="filters">
-      <input aria-label="Pretraži questove" placeholder="Pretraži misije…" value={filters.search} onChange={e => setFilters({ ...filters, search: e.target.value })} />
-      <select value={filters.type} onChange={e => setFilters({ ...filters, type: e.target.value })}><option value="all">All types</option>{state.settings.questTypes.map(t => <option key={t}>{t}</option>)}</select>
-      <select value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })}><option value="all">All statuses</option>{["active", "completed", "failed", "skipped", "archived"].map(s => <option key={s}>{s}</option>)}</select>
-      <select value={filters.attribute} onChange={e => setFilters({ ...filters, attribute: e.target.value })}><option value="all">All attributes</option>{state.attributes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
+      <input aria-label={t("planner.searchLabel")} placeholder={t("planner.search")} value={filters.search} onChange={e => setFilters({ ...filters, search: e.target.value })} />
+      <select value={filters.type} onChange={e => setFilters({ ...filters, type: e.target.value })}><option value="all">{t("planner.allTypes")}</option>{state.settings.questTypes.map(type => <option key={type} value={type}>{t(`type.${type}` as TranslationKey)}</option>)}</select>
+      <select value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })}><option value="all">{t("planner.allStatuses")}</option>{(["active", "completed", "failed", "skipped", "archived"] as const).map(status => <option key={status} value={status}>{t(`status.${status}` as TranslationKey)}</option>)}</select>
+      <select value={filters.attribute} onChange={e => setFilters({ ...filters, attribute: e.target.value })}><option value="all">{t("planner.allAttributes")}</option>{state.attributes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
     </section>
-    <div className="day-agenda-title"><div><p>{showAllDates ? "ALL MISSIONS" : "DAY AGENDA"}</p><h2>{showAllDates ? "Svi planirani questovi" : selectedLabel}</h2></div><button onClick={() => setShowAllDates(!showAllDates)}>{showAllDates ? "Show selected day" : "Show all dates"}</button></div>
-    <div className="quest-list full">{filteredQuests.length ? filteredQuests.map(q => renderQuestCard(q)) : <Empty title="Nema planiranih misija" text="Dodaj quest za ovaj dan ili izaberi drugi datum." />}</div>
+    <div className="day-agenda-title"><div><p>{showAllDates ? t("planner.allMissions") : t("planner.dayAgenda")}</p><h2>{showAllDates ? t("planner.allPlanned") : selectedLabel}</h2></div><button onClick={() => setShowAllDates(!showAllDates)}>{showAllDates ? t("planner.showDay") : t("planner.showAll")}</button></div>
+    <div className="quest-list full">{filteredQuests.length ? filteredQuests.map(q => renderQuestCard(q)) : <Empty title={t("quest.planEmpty")} text={t("quest.planEmptyText")} />}</div>
   </div>;
   };
 
   const Growth = () => <div className="screen">
-    <header className="screen-header"><div><p>CHARACTER MATRIX</p><h1>Attributes & Skills</h1><span>XP se računa iz jedinstvene globalne transakcije — bez dupliranja.</span></div><button className="primary" onClick={addAttribute}>＋ Attribute</button></header>
-    <div className="attribute-grid">{state.attributes.length === 0 && <Empty title="Nema atributa" text="Dodaj prvi attribute, zatim skill, pa tek onda svoje questove." />}{state.attributes.map(attr => {
+    <header className="screen-header"><div><p>{t("growth.matrix")}</p><h1>{t("growth.title")}</h1><span>{t("growth.subtitle")}</span></div><button className="primary" onClick={addAttribute}>{t("growth.addAttribute")}</button></header>
+    <div className="attribute-grid">{state.attributes.length === 0 && <Empty title={t("growth.empty")} text={t("growth.emptyText")} />}{state.attributes.map(attr => {
       const skills = state.skills.filter(s => s.attributeId === attr.id && !s.deletedAt);
       const txs = state.transactions.filter(tx => tx.attributeId === attr.id && !tx.reversedAt);
       const xp = activeXp(txs);
       const max = Math.max(...state.attributes.map(a => activeXp(state.transactions.filter(tx => tx.attributeId === a.id && !tx.reversedAt))), 1);
       return <section className="attribute-card" key={attr.id} style={{ "--attr": attr.color } as React.CSSProperties}>
-        <header><i>{attr.name.charAt(0)}</i><div><span>ATTRIBUTE</span><h2>{attr.name}</h2></div><strong>{xp}<small> XP</small></strong></header>
+        <header><i>{attr.name.charAt(0)}</i><div><span>{t("growth.attribute")}</span><h2>{attr.name}</h2></div><strong>{xp}<small> XP</small></strong></header>
         <div className="attr-track"><i style={{ width: `${xp / max * 100}%` }} /></div>
         <div className="skill-list">{skills.map(skill => {
           const skillTx = state.transactions.filter(tx => tx.skillId === skill.id && !tx.reversedAt);
-          return <div className="skill-row" key={skill.id}><div><strong>{skill.name}</strong><span>{state.quests.filter(q => q.skillId === skill.id && q.status === "completed").length} quests cleared</span></div><b>{activeXp(skillTx)} XP</b><button className="skill-delete" onClick={() => deleteSkill(skill.id)} aria-label={`Obriši skill ${skill.name}`}>Delete</button></div>;
+          return <div className="skill-row" key={skill.id}><div><strong>{skill.name}</strong><span>{t("growth.cleared", { count: state.quests.filter(q => q.skillId === skill.id && q.status === "completed").length })}</span></div><b>{activeXp(skillTx)} XP</b><button className="skill-delete" onClick={() => deleteSkill(skill.id)} aria-label={t("skill.deleteLabel", { name: skill.name })}>{t("common.delete")}</button></div>;
         })}</div>
-        <button className="ghost" onClick={() => addSkill(attr.id)}>＋ Add skill</button>
+        <button className="ghost" onClick={() => addSkill(attr.id)}>{t("growth.addSkill")}</button>
       </section>;
     })}</div>
   </div>;
@@ -687,17 +714,17 @@ export default function SoloApp() {
         ? [...s.transactions, { id: crypto.randomUUID(), questId: `boss:${boss.id}`, amount: award, kind: cleared ? "quest" : "boss_attempt", attributeId: "", skillId: "", createdAt: stamp }]
         : s.transactions,
     }));
-    if (cleared) setCeremony({ eyebrow: "DUNGEON CONQUERED", title: "BOSS CLEAR", text: `${boss.title} · +${boss.xp} XP` });
-    else setCeremony({ eyebrow: "ENCOUNTER FAILED", title: "ANALYZE. ADAPT.", text: award ? `Attempt XP: +${award}. Zapiši correction quest.` : "0 XP. Pretvori analizu u sledeći Correction Quest." });
+    if (cleared) setCeremony({ eyebrow: t("ceremony.dungeonConquered"), title: t("ceremony.bossClear"), text: `${boss.title} · +${boss.xp} XP` });
+    else setCeremony({ eyebrow: t("ceremony.encounterFailed"), title: t("ceremony.analyzeAdapt"), text: award ? t("boss.failureAttempt", { xp: award }) : t("boss.failureZero") });
   };
   const resolveBoss = (boss: Boss, cleared: boolean) => {
     if (!ensureWritable()) return;
     setInputDialog({
-      title: cleared ? "Boss Clear Result" : "Encounter Analysis",
-      label: cleared ? `Rezultat za “${boss.title}”` : "Kratka analiza neuspeha",
+      title: cleared ? t("boss.clearResult") : t("boss.analysis"),
+      label: cleared ? t("boss.resultFor", { name: boss.title }) : t("boss.failureAnalysis"),
       value: "",
-      placeholder: cleared ? "Unesi ostvareni merljivi rezultat…" : "Šta je pošlo loše i šta menjaš sledeći put?",
-      submitLabel: cleared ? "Confirm Boss Clear" : "Record Failure",
+      placeholder: cleared ? t("boss.resultPlaceholder") : t("boss.failurePlaceholder"),
+      submitLabel: cleared ? t("boss.confirmClear") : t("boss.recordFailure"),
       multiline: true,
       action: result => applyBossResult(boss, cleared, result.trim()),
     });
@@ -705,24 +732,24 @@ export default function SoloApp() {
   const addBoss = () => {
     if (!ensureWritable()) return;
     setInputDialog({
-      title: "New Boss", label: "Naziv Bossa", value: "", placeholder: "Npr. Završni ispit",
-      submitLabel: "Create Boss", required: true,
+      title: t("boss.new"), label: t("boss.name"), value: "", placeholder: t("boss.placeholder"),
+      submitLabel: t("boss.create"), required: true,
       action: title => {
         const stamp = new Date().toISOString();
-        updateState(s => ({ ...s, bosses: [...s.bosses, { id: crypto.randomUUID(), title: title.trim(), dungeon: "New Dungeon", stage: "Final Stage", entryConditions: "", preparationQuestIds: [], date: new Date(Date.now() + 7 * 86400000).toISOString(), clearCondition: "Definiši merljiv rezultat", xp: 100, attemptXp: 0, status: "active", result: "", createdAt: stamp, updatedAt: stamp }] }));
-        setToast("Boss je kreiran.");
+        updateState(s => ({ ...s, bosses: [...s.bosses, { id: crypto.randomUUID(), title: title.trim(), dungeon: "New Dungeon", stage: "Final Stage", entryConditions: "", preparationQuestIds: [], date: new Date(Date.now() + 7 * 86400000).toISOString(), clearCondition: t("boss.defaultClear"), xp: 100, attemptXp: 0, status: "active", result: "", createdAt: stamp, updatedAt: stamp }] }));
+        setToast(t("boss.created"));
       },
     });
   };
   const Bosses = () => <div className="screen">
-    <header className="screen-header"><div><p>DUNGEON GATE</p><h1>Bosses & Dungeons</h1><span>Stvarna provera sposobnosti. Nagrada samo za definisan rezultat.</span></div><button className="primary" onClick={addBoss}>＋ New Boss</button></header>
-    <div className="boss-grid">{state.bosses.length === 0 && <Empty title="Nema Boss izazova" text="Kreiraj Boss kada želiš stvarnu proveru sposobnosti." />}{state.bosses.map(boss => {
+    <header className="screen-header"><div><p>{t("boss.gate")}</p><h1>{t("boss.title")}</h1><span>{t("boss.subtitle")}</span></div><button className="primary" onClick={addBoss}>{t("boss.add")}</button></header>
+    <div className="boss-grid">{state.bosses.length === 0 && <Empty title={t("boss.empty")} text={t("boss.emptyText")} />}{state.bosses.map(boss => {
       const prepared = boss.preparationQuestIds.filter(id => state.quests.find(q => q.id === id)?.status === "completed").length;
       return <article className={`boss-card ${boss.status}`} key={boss.id}>
-        <div className="boss-visual"><span>{boss.status === "cleared" ? "CLEARED" : boss.status === "failed" ? "FAILED" : "GATE OPEN"}</span><strong>⬡</strong><p>{formatDate(boss.date, false)}</p></div>
+        <div className="boss-visual"><span>{boss.status === "cleared" ? t("boss.cleared") : boss.status === "failed" ? t("common.failed") : t("boss.gateOpen")}</span><strong>⬡</strong><p>{formatDate(boss.date, false)}</p></div>
         <div className="boss-content"><div className="quest-meta"><span className="type-badge type-boss">BOSS</span><span>{boss.dungeon} / {boss.stage}</span></div><h2>{boss.title}</h2>
-          <dl><div><dt>ENTRY</dt><dd>{boss.entryConditions || "No gate condition"}</dd></div><div><dt>CLEAR CONDITION</dt><dd>{boss.clearCondition}</dd></div><div><dt>PREPARATION</dt><dd>{prepared}/{boss.preparationQuestIds.length} questova</dd></div></dl>
-          <footer><strong>+{boss.xp} XP</strong>{boss.status === "active" && <div><button className="complete-text" onClick={() => resolveBoss(boss, true)}>Boss Clear</button><button onClick={() => resolveBoss(boss, false)}>Failed</button></div>}{boss.status !== "active" && <p>{boss.result || "Rezultat evidentiran."}</p>}</footer>
+          <dl><div><dt>{t("boss.entry")}</dt><dd>{boss.entryConditions || t("boss.noGate")}</dd></div><div><dt>{t("boss.clearCondition")}</dt><dd>{boss.clearCondition}</dd></div><div><dt>{t("boss.preparation")}</dt><dd>{t("boss.questCount", { count: `${prepared}/${boss.preparationQuestIds.length}` })}</dd></div></dl>
+          <footer><strong>+{boss.xp} XP</strong>{boss.status === "active" && <div><button className="complete-text" onClick={() => resolveBoss(boss, true)}>Boss Clear</button><button onClick={() => resolveBoss(boss, false)}>{t("common.failed")}</button></div>}{boss.status !== "active" && <p>{boss.result || t("boss.resultRecorded")}</p>}</footer>
         </div>
       </article>;
     })}</div>
@@ -734,41 +761,42 @@ export default function SoloApp() {
     const maxDay = Math.max(...dayValues, 1);
     const byAttribute = state.attributes.map(attr => ({ ...attr, xp: activeXp(state.transactions.filter(tx => tx.attributeId === attr.id)) }));
     return <div className="screen">
-      <header className="screen-header"><div><p>CHRONICLE</p><h1>History & Statistics</h1><span>Svaki XP ima izvor, vreme i stanje transakcije.</span></div></header>
-      <div className="stats-top"><div><span>Total XP</span><strong>{metrics.xp}</strong></div><div><span>This week</span><strong>{activeXp(state.transactions.filter(tx => Date.now() - new Date(tx.createdAt).getTime() < 7 * 86400000))}</strong></div><div><span>Clear rate</span><strong>{state.quests.length ? Math.round(state.quests.filter(q => q.status === "completed").length / state.quests.length * 100) : 0}%</strong></div><div><span>Current rank</span><strong>{metrics.rank}</strong></div></div>
+      <header className="screen-header"><div><p>{t("history.chronicle")}</p><h1>{t("history.title")}</h1><span>{t("history.subtitle")}</span></div></header>
+      <div className="stats-top"><div><span>{t("history.totalXp")}</span><strong>{metrics.xp}</strong></div><div><span>{t("history.thisWeek")}</span><strong>{activeXp(state.transactions.filter(tx => Date.now() - new Date(tx.createdAt).getTime() < 7 * 86400000))}</strong></div><div><span>{t("history.clearRate")}</span><strong>{state.quests.length ? Math.round(state.quests.filter(q => q.status === "completed").length / state.quests.length * 100) : 0}%</strong></div><div><span>{t("history.currentRank")}</span><strong>{metrics.rank}</strong></div></div>
       <div className="history-grid">
-        <section className="panel chart-panel"><div className="section-title"><div><p>LAST 14 DAYS</p><h2>XP Activity</h2></div></div><div className="bar-chart">{dayValues.map((value, i) => <div key={dayKey(days[i])}><i style={{ height: `${Math.max(4, value / maxDay * 100)}%` }} title={`${value} XP`} /><span>{i % 2 ? "" : days[i].getDate()}</span></div>)}</div></section>
-        <section className="panel distribution"><div className="section-title"><div><p>ALLOCATION</p><h2>By Attribute</h2></div></div>{byAttribute.map(attr => <div className="dist-row" key={attr.id}><div><span><i style={{ background: attr.color }} />{attr.name}</span><strong>{attr.xp} XP</strong></div><div><i style={{ width: `${metrics.xp ? attr.xp / metrics.xp * 100 : 0}%`, background: attr.color }} /></div></div>)}</section>
+        <section className="panel chart-panel"><div className="section-title"><div><p>{t("history.last14")}</p><h2>{t("history.activity")}</h2></div></div><div className="bar-chart">{dayValues.map((value, i) => <div key={dayKey(days[i])}><i style={{ height: `${Math.max(4, value / maxDay * 100)}%` }} title={`${value} XP`} /><span>{i % 2 ? "" : days[i].getDate()}</span></div>)}</div></section>
+        <section className="panel distribution"><div className="section-title"><div><p>{t("history.allocation")}</p><h2>{t("history.byAttribute")}</h2></div></div>{byAttribute.map(attr => <div className="dist-row" key={attr.id}><div><span><i style={{ background: attr.color }} />{attr.name}</span><strong>{attr.xp} XP</strong></div><div><i style={{ width: `${metrics.xp ? attr.xp / metrics.xp * 100 : 0}%`, background: attr.color }} /></div></div>)}</section>
       </div>
-      <section className="panel ledger"><div className="section-title"><div><p>AUDIT TRAIL</p><h2>XP Transaction History</h2></div></div>
-        <div className="ledger-list">{[...state.transactions].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(tx => <div className={tx.reversedAt ? "reversed" : ""} key={tx.id}><span>{formatDate(tx.createdAt)}</span><strong>{state.quests.find(q => q.id === tx.questId)?.title ?? state.bosses.find(b => `boss:${b.id}` === tx.questId)?.title ?? "System event"}</strong><em>{attrName(tx.attributeId)} / {skillName(tx.skillId)}</em><b>{tx.reversedAt ? "REVERSED" : `+${tx.amount} XP`}</b></div>)}</div>
+      <section className="panel ledger"><div className="section-title"><div><p>{t("history.audit")}</p><h2>{t("history.transactions")}</h2></div></div>
+        <div className="ledger-list">{[...state.transactions].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(tx => <div className={tx.reversedAt ? "reversed" : ""} key={tx.id}><span>{formatDate(tx.createdAt)}</span><strong>{state.quests.find(q => q.id === tx.questId)?.title ?? state.bosses.find(b => `boss:${b.id}` === tx.questId)?.title ?? t("history.systemEvent")}</strong><em>{attrName(tx.attributeId)} / {skillName(tx.skillId)}</em><b>{tx.reversedAt ? t("history.reversed") : `+${tx.amount} XP`}</b></div>)}</div>
       </section>
     </div>;
   };
 
   const SettingsView = () => <div className="screen settings-screen">
-    <header className="screen-header"><div><p>SYSTEM CONFIGURATION</p><h1>Settings</h1><span>Ti definišeš pravila. Sistem ih samo dosledno primenjuje.</span></div></header>
+    <header className="screen-header"><div><p>{t("settings.configuration")}</p><h1>{t("settings.title")}</h1><span>{t("settings.subtitle")}</span></div></header>
     <div className="settings-grid">
-      <section className="settings-card cloud-card"><header><i>↻</i><div><h2>Cloud Sync</h2><p>Jedna MongoDB baza za telefon i računar.</p></div></header><div className="cloud-status-row"><span className={`sync-dot ${syncMode}`} /><div><strong>{syncMode === "online" ? "Sinhronizovano" : syncMode === "syncing" ? "Čuvam izmene…" : syncMode === "offline" ? "Veza je prekinuta" : "MongoDB nije povezan"}</strong><small>{cloudUser?.email ?? (syncMode === "local" ? "Lokalni razvojni režim" : "ASCEND Cloud")}</small></div>{cloudUser && <a href="/signout-with-chatgpt?return_to=%2F">Sign out</a>}</div></section>
-      <section className="settings-card"><header><i>ƒ</i><div><h2>XP Formula</h2><p>XP za sledeći level = base + growth × (level − 1)</p></div></header><div className="settings-row"><Field label="Base XP"><input type="number" min="1" value={state.settings.baseXp} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, baseXp: Math.max(1, Number(e.target.value)) } }))} /></Field><Field label="Growth / level"><input type="number" min="0" value={state.settings.levelGrowth} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, levelGrowth: Math.max(0, Number(e.target.value)) } }))} /></Field></div></section>
-      <section className="settings-card"><header><i>R</i><div><h2>Rank Thresholds</h2><p>Podesi minimalni level za svaki rank.</p></div></header><div className="rank-settings">{state.settings.ranks.map((rank, index) => <Field label={`${rank.name}-Rank`} key={rank.name}><input type="number" min="1" value={rank.minLevel} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, ranks: s.settings.ranks.map((r, i) => i === index ? { ...r, minLevel: Math.max(1, Number(e.target.value)) } : r) } }))} /></Field>)}</div></section>
-      <section className="settings-card"><header><i>◈</i><div><h2>Experience Rules</h2><p>Kontrole ponašanja i prikaza.</p></div></header><label className="toggle-row"><div><strong>Limit daily repeat</strong><span>Spreči više bodovanja iste dnevne instance.</span></div><input type="checkbox" checked={state.settings.dailyRepeatLimit} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, dailyRepeatLimit: e.target.checked } }))} /></label><label className="toggle-row"><div><strong>Animations</strong><span>Level-up i progress animacije.</span></div><input type="checkbox" checked={state.settings.animations} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, animations: e.target.checked } }))} /></label></section>
-      <section className="settings-card"><header><i>⇅</i><div><h2>Backup & Restore</h2><p>Portable JSON kopija svih lokalnih podataka.</p></div></header><div className="button-row"><button className="primary" onClick={exportJson}>Export JSON</button><button onClick={() => importRef.current?.click()}>Import JSON</button><input ref={importRef} hidden type="file" accept="application/json" onChange={e => e.target.files?.[0] && importJson(e.target.files[0])} /></div></section>
-      <section className="settings-card danger-zone"><header><i>!</i><div><h2>Reset System</h2><p>Trajno briše sve podatke i vraća prazno početno stanje.</p></div></header><button onClick={() => ensureWritable() && setConfirmAction({ title: "Potpuni reset?", text: "Svi questovi, XP transakcije, bossovi i podešavanja biće obrisani na svim uređajima. Pre toga preporučujemo export.", action: () => { updateState(() => makeInitialState()); setConfirmAction(null); setToast("Sistem je resetovan."); } })}>Reset all data</button></section>
+      <section className="settings-card language-card"><header><i>文</i><div><h2>{t("settings.language")}</h2><p>{t("settings.languageText")}</p></div></header><div className="language-switch" role="group" aria-label={t("settings.language")}><button className={language === "en" ? "active" : ""} onClick={() => chooseLanguage("en")}>{t("settings.english")}</button><button className={language === "sr" ? "active" : ""} onClick={() => chooseLanguage("sr")}>{t("settings.serbian")}</button></div></section>
+      <section className="settings-card cloud-card"><header><i>↻</i><div><h2>{t("settings.cloud")}</h2><p>{t("settings.cloudText")}</p></div></header><div className="cloud-status-row"><span className={`sync-dot ${syncMode}`} /><div><strong>{syncMode === "online" ? t("settings.synced") : syncMode === "syncing" ? t("settings.saving") : syncMode === "offline" ? t("settings.disconnected") : t("settings.notConnected")}</strong><small>{cloudUser?.email ?? (syncMode === "local" ? t("settings.localMode") : "WeSolo Cloud")}</small></div>{cloudUser && <a href="/signout-with-chatgpt?return_to=%2F">{t("settings.signOut")}</a>}</div></section>
+      <section className="settings-card"><header><i>ƒ</i><div><h2>{t("settings.formula")}</h2><p>{t("settings.formulaText")}</p></div></header><div className="settings-row"><Field label={t("settings.baseXp")}><input type="number" min="1" value={state.settings.baseXp} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, baseXp: Math.max(1, Number(e.target.value)) } }))} /></Field><Field label={t("settings.growth")}><input type="number" min="0" value={state.settings.levelGrowth} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, levelGrowth: Math.max(0, Number(e.target.value)) } }))} /></Field></div></section>
+      <section className="settings-card"><header><i>R</i><div><h2>{t("settings.ranks")}</h2><p>{t("settings.ranksText")}</p></div></header><div className="rank-settings">{state.settings.ranks.map((rank, index) => <Field label={`${rank.name}-Rank`} key={rank.name}><input type="number" min="1" value={rank.minLevel} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, ranks: s.settings.ranks.map((r, i) => i === index ? { ...r, minLevel: Math.max(1, Number(e.target.value)) } : r) } }))} /></Field>)}</div></section>
+      <section className="settings-card"><header><i>◈</i><div><h2>{t("settings.rules")}</h2><p>{t("settings.rulesText")}</p></div></header><label className="toggle-row"><div><strong>{t("settings.dailyRepeat")}</strong><span>{t("settings.dailyRepeatText")}</span></div><input type="checkbox" checked={state.settings.dailyRepeatLimit} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, dailyRepeatLimit: e.target.checked } }))} /></label><label className="toggle-row"><div><strong>{t("settings.animations")}</strong><span>{t("settings.animationsText")}</span></div><input type="checkbox" checked={state.settings.animations} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, animations: e.target.checked } }))} /></label></section>
+      <section className="settings-card"><header><i>⇅</i><div><h2>{t("settings.backup")}</h2><p>{t("settings.backupText")}</p></div></header><div className="button-row"><button className="primary" onClick={exportJson}>{t("settings.export")}</button><button onClick={() => importRef.current?.click()}>{t("settings.import")}</button><input ref={importRef} hidden type="file" accept="application/json" onChange={e => e.target.files?.[0] && importJson(e.target.files[0])} /></div></section>
+      <section className="settings-card danger-zone"><header><i>!</i><div><h2>{t("settings.reset")}</h2><p>{t("settings.resetText")}</p></div></header><button onClick={() => ensureWritable() && setConfirmAction({ title: t("settings.resetTitle"), text: t("settings.resetConfirm"), action: () => { updateState(() => makeInitialState()); setConfirmAction(null); setToast(t("settings.resetDone")); } })}>{t("settings.resetAction")}</button></section>
     </div>
   </div>;
 
   return <div className={`app-shell ${state.settings.animations ? "" : "reduce-motion"} ${readOnly ? "read-only" : ""}`}>
-    {readOnly && <div className={`sync-banner ${syncMode}`}><span>Cloud nije dostupan · <strong>READ-ONLY</strong></span><button onClick={() => setBootstrapAttempt(attempt => attempt + 1)}>Pokušaj sada</button></div>}
-    {syncMode === "syncing" && <div className="sync-banner syncing">Sinhronizujem izmene…</div>}
+    {readOnly && <div className={`sync-banner ${syncMode}`}><span>{t("sync.banner")} <strong>READ-ONLY</strong></span><button onClick={() => setBootstrapAttempt(attempt => attempt + 1)}>{t("sync.retry")}</button></div>}
+    {syncMode === "syncing" && <div className="sync-banner syncing">{t("sync.saving")}</div>}
     <aside className="sidebar">
-      <button className="brand" onClick={() => setView("dashboard")}><span>A</span><div><strong>ASCEND</strong><small>SOLO PROGRESS SYSTEM</small></div></button>
-      <nav>{views.map(item => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><i>{item.icon}</i><span>{item.label}</span>{item.id === "quests" && activeQuests.length > 0 && <b>{activeQuests.length}</b>}</button>)}</nav>
-      <div className="sidebar-profile"><div>{metrics.rank}</div><span><strong>Hunter</strong><small>Level {metrics.progress.level} · {metrics.xp} XP</small></span></div>
-      <p className={`local-status ${syncMode}`}><i /> {syncMode === "online" ? "CLOUD · SYNCED" : syncMode === "syncing" ? "CLOUD · SYNCING" : "CLOUD · READ-ONLY"}</p>
+      <button className="brand" onClick={() => setView("dashboard")}><span>W</span><div><strong>WeSolo</strong><small>PERSONAL PROGRESS SYSTEM</small></div></button>
+      <nav>{views.map(item => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><i>{item.icon}</i><span>{t(item.labelKey)}</span>{item.id === "quests" && activeQuests.length > 0 && <b>{activeQuests.length}</b>}</button>)}</nav>
+      <div className="sidebar-profile"><div>{metrics.rank}</div><span><strong>{t("profile.hunter")}</strong><small>{t("profile.level")} {metrics.progress.level} · {metrics.xp} XP</small></span></div>
+      <p className={`local-status ${syncMode}`}><i /> {syncMode === "online" ? t("sync.cloudSynced") : syncMode === "syncing" ? t("sync.cloudSyncing") : t("sync.cloudReadOnly")}</p>
     </aside>
     <main className="content">
-      <div className="mobile-top"><button className="brand" onClick={() => setView("dashboard")}><span>A</span><strong>ASCEND</strong></button><button onClick={beginNewQuest}>＋</button></div>
+      <div className="mobile-top"><button className="brand" onClick={() => setView("dashboard")}><span>W</span><strong>WeSolo</strong></button><button onClick={beginNewQuest}>＋</button></div>
       {view === "dashboard" && Dashboard()}
       {view === "quests" && Quests()}
       {view === "growth" && Growth()}
@@ -776,37 +804,37 @@ export default function SoloApp() {
       {view === "history" && History()}
       {view === "settings" && SettingsView()}
     </main>
-    <nav className="bottom-nav">{views.slice(0, 5).map(item => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><i>{item.icon}</i><span>{item.label}</span></button>)}</nav>
+    <nav className="bottom-nav">{views.slice(0, 5).map(item => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><i>{item.icon}</i><span>{t(item.labelKey)}</span></button>)}</nav>
     {questDraft && <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && setQuestDraft(null)}>
-      <section className="modal quest-modal" role="dialog" aria-modal="true" aria-label="Quest editor">
-        <header><div><p>MISSION EDITOR</p><h2>{state.quests.some(q => q.id === questDraft.id) ? "Edit Quest" : "Create New Quest"}</h2></div><button onClick={() => setQuestDraft(null)}>×</button></header>
+      <section className="modal quest-modal" role="dialog" aria-modal="true" aria-label={t("editor.label")}>
+        <header><div><p>{t("editor.mission")}</p><h2>{state.quests.some(q => q.id === questDraft.id) ? t("editor.edit") : t("editor.create")}</h2></div><button onClick={() => setQuestDraft(null)} aria-label={t("common.close")}>×</button></header>
         <div className="form-grid">
-          <Field label="Quest name" wide><input autoFocus value={questDraft.title} onChange={e => updateQuestDraft({ ...questDraft, title: e.target.value })} placeholder="Npr. 50 min dubokog rada" /></Field>
-          <Field label="Description" wide><textarea value={questDraft.description} onChange={e => updateQuestDraft({ ...questDraft, description: e.target.value })} placeholder="Kratak kontekst misije…" /></Field>
-          <Field label="Type"><select value={questDraft.type} onChange={e => updateQuestDraft({ ...questDraft, type: e.target.value as QuestType })}>{state.settings.questTypes.map(t => <option key={t}>{t}</option>)}</select></Field>
-          <Field label="Difficulty"><select value={questDraft.difficulty} onChange={e => updateQuestDraft({ ...questDraft, difficulty: e.target.value as Quest["difficulty"] })}>{["Easy", "Normal", "Hard", "Extreme"].map(x => <option key={x}>{x}</option>)}</select></Field>
-          <Field label="Attribute"><select value={questDraft.attributeId} onChange={e => { const id = e.target.value; updateQuestDraft({ ...questDraft, attributeId: id, skillId: state.skills.find(s => s.attributeId === id && !s.deletedAt)?.id ?? "" }); }}>{state.attributes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>
-          <Field label="Skill"><select value={questDraft.skillId} onChange={e => updateQuestDraft({ ...questDraft, skillId: e.target.value })}>{state.skills.filter(s => s.attributeId === questDraft.attributeId && (!s.deletedAt || s.id === questDraft.skillId)).map(s => <option key={s.id} value={s.id}>{s.name}{s.deletedAt ? " (deleted)" : ""}</option>)}</select></Field>
-          <Field label="XP reward"><input type="number" min="0" value={questDraft.xp} onChange={e => updateQuestDraft({ ...questDraft, xp: Number(e.target.value) })} /></Field>
-          <Field label="Recurrence"><select value={questDraft.recurrence} onChange={e => updateQuestDraft({ ...questDraft, recurrence: e.target.value as Quest["recurrence"] })}><option value="none">No repeat</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></Field>
+          <Field label={t("editor.name")} wide><input autoFocus value={questDraft.title} onChange={e => updateQuestDraft({ ...questDraft, title: e.target.value })} placeholder={t("editor.namePlaceholder")} /></Field>
+          <Field label={t("editor.description")} wide><textarea value={questDraft.description} onChange={e => updateQuestDraft({ ...questDraft, description: e.target.value })} placeholder={t("editor.descriptionPlaceholder")} /></Field>
+          <Field label={t("editor.type")}><select value={questDraft.type} onChange={e => updateQuestDraft({ ...questDraft, type: e.target.value as QuestType })}>{state.settings.questTypes.map(type => <option key={type} value={type}>{t(`type.${type}` as TranslationKey)}</option>)}</select></Field>
+          <Field label={t("editor.difficulty")}><select value={questDraft.difficulty} onChange={e => updateQuestDraft({ ...questDraft, difficulty: e.target.value as Quest["difficulty"] })}>{(["Easy", "Normal", "Hard", "Extreme"] as const).map(difficulty => <option key={difficulty} value={difficulty}>{t(`difficulty.${difficulty}` as TranslationKey)}</option>)}</select></Field>
+          <Field label={t("editor.attribute")}><select value={questDraft.attributeId} onChange={e => { const id = e.target.value; updateQuestDraft({ ...questDraft, attributeId: id, skillId: state.skills.find(s => s.attributeId === id && !s.deletedAt)?.id ?? "" }); }}>{state.attributes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>
+          <Field label={t("editor.skill")}><select value={questDraft.skillId} onChange={e => updateQuestDraft({ ...questDraft, skillId: e.target.value })}>{state.skills.filter(s => s.attributeId === questDraft.attributeId && (!s.deletedAt || s.id === questDraft.skillId)).map(s => <option key={s.id} value={s.id}>{s.name}{s.deletedAt ? ` (${t("quest.deletedSkill")})` : ""}</option>)}</select></Field>
+          <Field label={t("editor.reward")}><input type="number" min="0" value={questDraft.xp} onChange={e => updateQuestDraft({ ...questDraft, xp: Number(e.target.value) })} /></Field>
+          <Field label={t("editor.recurrence")}><select value={questDraft.recurrence} onChange={e => updateQuestDraft({ ...questDraft, recurrence: e.target.value as Quest["recurrence"] })}><option value="none">{t("editor.none")}</option><option value="daily">{t("editor.daily")}</option><option value="weekly">{t("editor.weekly")}</option></select></Field>
           <div className="xp-advisor field wide">
-            <div><span>OPTIONAL AI ADVISOR</span><strong>DeepSeek XP procena</strong><p>Procenjuje stvarni napredak, ne utrošeno vreme. Negativne i besciljne aktivnosti vrede 0 XP.</p></div>
-            <button type="button" onClick={() => void estimateQuestXp()} disabled={xpEstimating}>{xpEstimating ? "Procenjujem…" : "Proceni XP"}</button>
-            {xpSuggestion && <div className="xp-suggestion"><span><b>{xpSuggestion.xp} XP</b><small>{xpSuggestion.confidence === "high" ? "visoka" : xpSuggestion.confidence === "medium" ? "srednja" : "niska"} pouzdanost procene</small></span><p>{xpSuggestion.rationale}</p><button type="button" onClick={() => { setQuestDraft({ ...questDraft, xp: xpSuggestion.xp }); setXpSuggestion(null); }}>Primeni predlog</button></div>}
+            <div><span>{t("ai.optional")}</span><strong>{t("ai.title")}</strong><p>{t("ai.text")}</p></div>
+            <button type="button" onClick={() => void estimateQuestXp()} disabled={xpEstimating}>{xpEstimating ? t("ai.estimating") : t("ai.estimate")}</button>
+            {xpSuggestion && <div className="xp-suggestion"><span><b>{xpSuggestion.xp} XP</b><small>{t(`ai.confidence.${xpSuggestion.confidence}` as TranslationKey)}</small></span><p>{xpSuggestion.rationale}</p><button type="button" onClick={() => { setQuestDraft({ ...questDraft, xp: xpSuggestion.xp }); setXpSuggestion(null); }}>{t("ai.apply")}</button></div>}
           </div>
-          <Field label="Date & time"><input type="datetime-local" value={isoLocal(questDraft.date)} onChange={e => updateQuestDraft({ ...questDraft, date: fromLocal(e.target.value) })} /></Field>
-          <Field label="Deadline"><input type="datetime-local" value={isoLocal(questDraft.deadline)} onChange={e => updateQuestDraft({ ...questDraft, deadline: fromLocal(e.target.value) })} /></Field>
-          <Field label="Completion condition" wide><input value={questDraft.completionConditions} onChange={e => updateQuestDraft({ ...questDraft, completionConditions: e.target.value })} placeholder="Merljiv uslov za clear" /></Field>
-          {(questDraft.type === "Mandatory" || questDraft.type === "Correction") && <Field label="Failure consequence" wide><textarea value={questDraft.failureConsequence} onChange={e => updateQuestDraft({ ...questDraft, failureConsequence: e.target.value })} placeholder="Praktična posledica koju si sam definisao" /></Field>}
+          <Field label={t("editor.date")}><input type="datetime-local" value={isoLocal(questDraft.date)} onChange={e => updateQuestDraft({ ...questDraft, date: fromLocal(e.target.value) })} /></Field>
+          <Field label={t("editor.deadline")}><input type="datetime-local" value={isoLocal(questDraft.deadline)} onChange={e => updateQuestDraft({ ...questDraft, deadline: fromLocal(e.target.value) })} /></Field>
+          <Field label={t("editor.condition")} wide><input value={questDraft.completionConditions} onChange={e => updateQuestDraft({ ...questDraft, completionConditions: e.target.value })} placeholder={t("editor.conditionPlaceholder")} /></Field>
+          {(questDraft.type === "Mandatory" || questDraft.type === "Correction") && <Field label={t("editor.consequence")} wide><textarea value={questDraft.failureConsequence} onChange={e => updateQuestDraft({ ...questDraft, failureConsequence: e.target.value })} placeholder={t("editor.consequencePlaceholder")} /></Field>}
         </div>
-        <footer><button onClick={() => setQuestDraft(null)}>Cancel</button><button className="primary" onClick={saveQuest}>Activate Quest</button></footer>
+        <footer><button onClick={() => setQuestDraft(null)}>{t("common.cancel")}</button><button className="primary" onClick={saveQuest}>{t("editor.activate")}</button></footer>
       </section>
     </div>}
     {inputDialog && <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && setInputDialog(null)}>
       <form className="modal input-modal" role="dialog" aria-modal="true" aria-label={inputDialog.title} onSubmit={e => {
         e.preventDefault();
         if (inputDialog.required && !inputDialog.value.trim()) {
-          setToast("Ovo polje je obavezno.");
+          setToast(t("common.required"));
           return;
         }
         const action = inputDialog.action;
@@ -814,16 +842,16 @@ export default function SoloApp() {
         setInputDialog(null);
         action(value);
       }}>
-        <header><div><p>SYSTEM INPUT</p><h2>{inputDialog.title}</h2></div><button type="button" onClick={() => setInputDialog(null)} aria-label="Zatvori">×</button></header>
+        <header><div><p>{t("editor.systemInput")}</p><h2>{inputDialog.title}</h2></div><button type="button" onClick={() => setInputDialog(null)} aria-label={t("common.close")}>×</button></header>
         <div className="input-modal-body"><Field label={inputDialog.label}>{inputDialog.multiline
           ? <textarea autoFocus rows={5} value={inputDialog.value} onChange={e => setInputDialog({ ...inputDialog, value: e.target.value })} placeholder={inputDialog.placeholder} />
           : <input autoFocus value={inputDialog.value} onChange={e => setInputDialog({ ...inputDialog, value: e.target.value })} placeholder={inputDialog.placeholder} />
         }</Field></div>
-        <footer><button type="button" onClick={() => setInputDialog(null)}>Cancel</button><button className="primary" type="submit">{inputDialog.submitLabel}</button></footer>
+        <footer><button type="button" onClick={() => setInputDialog(null)}>{t("common.cancel")}</button><button className="primary" type="submit">{inputDialog.submitLabel}</button></footer>
       </form>
     </div>}
-    {ceremony && <div className="modal-backdrop ceremony-backdrop"><section className="ceremony modal"><div className="ceremony-glyph">✦</div><p>{ceremony.eyebrow}</p><h2>{ceremony.title}</h2><span>{ceremony.text}</span><button className="primary" onClick={() => setCeremony(null)}>Continue</button></section></div>}
-    {confirmAction && <div className="modal-backdrop"><section className="modal confirm-modal"><div className="warning-mark">!</div><h2>{confirmAction.title}</h2><p>{confirmAction.text}</p><footer><button onClick={() => setConfirmAction(null)}>Odustani</button><button className="danger" onClick={confirmAction.action}>Potvrdi</button></footer></section></div>}
+    {ceremony && <div className="modal-backdrop ceremony-backdrop"><section className="ceremony modal"><div className="ceremony-glyph">✦</div><p>{ceremony.eyebrow}</p><h2>{ceremony.title}</h2><span>{ceremony.text}</span><button className="primary" onClick={() => setCeremony(null)}>{t("common.continue")}</button></section></div>}
+    {confirmAction && <div className="modal-backdrop"><section className="modal confirm-modal"><div className="warning-mark">!</div><h2>{confirmAction.title}</h2><p>{confirmAction.text}</p><footer><button onClick={() => setConfirmAction(null)}>{t("common.cancel")}</button><button className="danger" onClick={confirmAction.action}>{t("common.confirm")}</button></footer></section></div>}
     {toast && <div className="toast"><span>✓</span>{toast}</div>}
   </div>;
 }

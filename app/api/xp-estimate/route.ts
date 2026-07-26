@@ -15,6 +15,7 @@ type EstimateRequest = {
   attribute?: unknown;
   skill?: unknown;
   completionConditions?: unknown;
+  language?: unknown;
 };
 
 function json(body: unknown, status = 200) {
@@ -43,6 +44,7 @@ function normalizeRequest(payload: EstimateRequest) {
     attribute: cleanText(payload.attribute, 100),
     skill: cleanText(payload.skill, 100),
     completionConditions: cleanText(payload.completionConditions, 500),
+    language: payload.language === "sr" ? "sr" : "en",
   };
 }
 
@@ -120,9 +122,10 @@ Nikada ne izmišljaj trajanje. Koristi trajanje samo ako je korisnik izričito n
 Ako opis i uslov završetka nedostaju, proceni samo ono što zaista piše u nazivu i u obrazloženju jasno reci da nedostaje merljiv rezultat.
 Confidence označava samo koliko je procena XP-a precizna na osnovu opisa. Ne označava da li veruješ korisniku, da li će uspeti ili da li poseduje dokaz. Jasno naveden ishod poput "položiti ispit" dovoljan je za procenu nagrade.
 Rationale objašnjava zašto uspešan završetak zaslužuje predloženi XP. Nikada ne pominji nedostatak dokaza, potvrde o izvršenju ili nemogućnost da proveriš korisnika.
+Rationale napiši isključivo na ${quest.language === "sr" ? "srpskom (latinica)" : "engleskom"} jeziku.
 
 Vrati isključivo JSON oblika:
-{"xp":20,"confidence":"medium","rationale":"Jedna kratka rečenica na srpskom."}
+{"xp":20,"confidence":"medium","rationale":"One short sentence in the requested language."}
 
 xp mora biti jedna od vrednosti: ${FAIR_XP_VALUES.join(", ")}.`,
           },

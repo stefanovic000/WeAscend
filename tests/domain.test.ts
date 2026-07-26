@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { activeXp, canAwardQuest, defaultSettings, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type Quest, type XpTransaction } from "../app/domain.ts";
+import { translate } from "../app/i18n.ts";
 import { parseXpSuggestion } from "../app/xpAdvisor.ts";
 
 test("initial state is completely empty at level 1 with zero XP", () => {
@@ -71,4 +72,10 @@ test("AI XP suggestions accept only the fair scale and bounded rationale", () =>
   assert.equal(parseXpSuggestion({ xp: 999, confidence: "high", rationale: "Previše." }), null);
   assert.equal(parseXpSuggestion({ xp: 20, confidence: "certain", rationale: "Nevažeće." }), null);
   assert.equal(parseXpSuggestion({ xp: 20, confidence: "low", rationale: "" }), null);
+});
+
+test("English is the primary UI language and Serbian translations interpolate values", () => {
+  assert.equal(translate("en", "dashboard.question2"), "next mission?");
+  assert.equal(translate("sr", "dashboard.question2"), "sledeća misija?");
+  assert.equal(translate("sr", "dashboard.untilLevel", { xp: 80, level: 2 }), "80 XP do Levela 2");
 });
