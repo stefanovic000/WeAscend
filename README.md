@@ -172,6 +172,7 @@ Quest editor ima dugme **Proceni XP**. DeepSeek dobija podatke samo kada korisni
 
 - AI procena nije obavezna i nikada se ne primenjuje automatski.
 - Korisnik bira **Primeni predlog** ili zadržava ručno uneti XP.
+- AI procenjuje nagradu pod pretpostavkom da će quest biti uspešno završen; ne traži dokaz niti proverava korisnika. Confidence opisuje samo preciznost procene iz unetih detalja.
 - Dozvoljene AI vrednosti su ograničene na fer skalu: `0, 5, 10, 20, 30, 40, 50, 75, 100, 150, 200, 300, 400`.
 - Naziv, opis, tip, težina, attribute, skill i uslov završetka šalju se DeepSeek API-ju. Datum i rok se ne tumače kao trajanje; vreme se koristi samo kada ga korisnik izričito napiše.
 - API ključ nikada ne dolazi u browser i nije deo backupa.
