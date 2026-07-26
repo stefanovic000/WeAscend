@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { activeXp, canAwardQuest, deleteAttributeFromState, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type AppState, type Quest, type QuestType, type XpTransaction } from "./domain";
+import { activeXp, canAwardQuest, deleteAttributeFromState, deleteQuestFromState, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type AppState, type Quest, type QuestType, type XpTransaction } from "./domain";
 import { loadState, saveState } from "./db";
 import { translate, type Language, type TranslationKey } from "./i18n";
 import type { XpSuggestion } from "./xpAdvisor";
@@ -100,6 +100,10 @@ export default function SoloApp() {
     submitLabel: string;
     multiline?: boolean;
     required?: boolean;
+    maxLength?: number;
+    compact?: boolean;
+    clearLabel?: string;
+    clearAction?: () => void;
     action: (value: string) => void;
   } | null>(null);
   const [filters, setFilters] = useState({ search: "", type: "all", status: "all", attribute: "all" });
@@ -415,7 +419,12 @@ export default function SoloApp() {
     if (!questDraft?.title.trim()) { setToast(t("quest.enterName")); return; }
     if (!questDraft.attributeId || !questDraft.skillId) { setToast(t("quest.choosePath")); return; }
     const exists = state.quests.some(q => q.id === questDraft.id);
-    const updated = { ...questDraft, updatedAt: new Date().toISOString(), xp: Math.max(0, Number(questDraft.xp) || 0) };
+    const updated = {
+      ...questDraft,
+      note: questDraft.note?.trim().slice(0, 500) || undefined,
+      updatedAt: new Date().toISOString(),
+      xp: Math.max(0, Number(questDraft.xp) || 0),
+    };
     updateState(s => ({ ...s, quests: exists ? s.quests.map(q => q.id === updated.id ? updated : q) : [updated, ...s.quests] }));
     setQuestDraft(null);
     setToast(exists ? t("quest.updated") : t("quest.created"));
@@ -478,7 +487,36 @@ export default function SoloApp() {
     setConfirmAction({
       title: t("quest.deleteTitle"),
       text: t("quest.deleteText"),
-      action: () => { updateState(s => ({ ...s, quests: s.quests.filter(q => q.id !== quest.id) })); setConfirmAction(null); setToast(t("quest.deleted")); },
+      action: () => { updateState(s => deleteQuestFromState(s, quest.id)); setConfirmAction(null); setToast(t("quest.deleted")); },
+    });
+  };
+
+  const saveQuestNote = (questId: string, value: string) => {
+    const note = value.trim().slice(0, 500);
+    const stamp = new Date().toISOString();
+    updateState(s => ({
+      ...s,
+      quests: s.quests.map(quest => quest.id === questId
+        ? { ...quest, note: note || undefined, updatedAt: stamp }
+        : quest),
+    }));
+    setToast(note ? t("quest.noteSaved") : t("quest.noteRemoved"));
+  };
+
+  const openQuestNote = (quest: Quest) => {
+    if (!ensureWritable()) return;
+    setInputDialog({
+      title: t("quest.noteTitle"),
+      label: t("quest.noteLabel"),
+      value: quest.note ?? "",
+      placeholder: t("quest.notePlaceholder"),
+      submitLabel: t("quest.noteSave"),
+      multiline: true,
+      maxLength: 500,
+      compact: true,
+      clearLabel: quest.note ? t("quest.noteClear") : undefined,
+      clearAction: quest.note ? () => saveQuestNote(quest.id, "") : undefined,
+      action: value => saveQuestNote(quest.id, value),
     });
   };
 
@@ -607,7 +645,7 @@ export default function SoloApp() {
     (filters.type === "all" || q.type === filters.type) &&
     (filters.status === "all" || q.status === filters.status) &&
     (filters.attribute === "all" || q.attributeId === filters.attribute) &&
-    (!filters.search || `${q.title} ${q.description}`.toLowerCase().includes(filters.search.toLowerCase()))
+    (!filters.search || `${q.title} ${q.description} ${q.note ?? ""}`.toLowerCase().includes(filters.search.toLowerCase()))
   ).sort((a, b) => a.date.localeCompare(b.date));
 
   const renderQuestCard = (quest: Quest, compact = false) => (
@@ -620,6 +658,7 @@ export default function SoloApp() {
         </div>
         <h3>{quest.title}</h3>
         {!compact && quest.description && <p>{quest.description}</p>}
+        {quest.note && <button className="quest-note-preview" onClick={() => openQuestNote(quest)} aria-label={t("quest.noteEditLabel", { name: quest.title })}><span>✎</span><em>{quest.note}</em></button>}
         <div className="quest-footer">
           <span>◷ {formatDate(quest.deadline)}</span>
           <span className="xp-reward">+{quest.xp} XP</span>
@@ -632,6 +671,7 @@ export default function SoloApp() {
           <button onClick={() => failQuest(quest)} aria-label={t("quest.failLabel", { name: quest.title })}>×</button>
         </>}
         {quest.status === "completed" && <button onClick={() => undoQuest(quest)}>{t("common.undo")}</button>}
+        <button className={quest.note ? "has-note" : ""} onClick={() => openQuestNote(quest)} aria-label={t("quest.noteEditLabel", { name: quest.title })} title={t("quest.note")}>{compact ? "✎" : t("quest.note")}</button>
         {!compact && <>
           <button onClick={() => { if (ensureWritable()) { setXpSuggestion(null); setQuestDraft({ ...quest }); } }}>{t("common.edit")}</button>
           <button onClick={() => updateState(s => ({ ...s, quests: s.quests.map(q => q.id === quest.id ? { ...q, status: "archived" } : q) }))}>{t("common.archive")}</button>
@@ -869,7 +909,7 @@ export default function SoloApp() {
       </section>
     </div>}
     {inputDialog && <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && setInputDialog(null)}>
-      <form className="modal input-modal" role="dialog" aria-modal="true" aria-label={inputDialog.title} onSubmit={e => {
+      <form className={`modal input-modal ${inputDialog.compact ? "note-modal" : ""}`} role="dialog" aria-modal="true" aria-label={inputDialog.title} onSubmit={e => {
         e.preventDefault();
         if (inputDialog.required && !inputDialog.value.trim()) {
           setToast(t("common.required"));
@@ -882,10 +922,10 @@ export default function SoloApp() {
       }}>
         <header><div><p>{t("editor.systemInput")}</p><h2>{inputDialog.title}</h2></div><button type="button" onClick={() => setInputDialog(null)} aria-label={t("common.close")}>×</button></header>
         <div className="input-modal-body"><Field label={inputDialog.label}>{inputDialog.multiline
-          ? <textarea autoFocus rows={5} value={inputDialog.value} onChange={e => setInputDialog({ ...inputDialog, value: e.target.value })} placeholder={inputDialog.placeholder} />
-          : <input autoFocus value={inputDialog.value} onChange={e => setInputDialog({ ...inputDialog, value: e.target.value })} placeholder={inputDialog.placeholder} />
+          ? <textarea autoFocus rows={5} maxLength={inputDialog.maxLength} value={inputDialog.value} onChange={e => setInputDialog({ ...inputDialog, value: e.target.value })} placeholder={inputDialog.placeholder} />
+          : <input autoFocus maxLength={inputDialog.maxLength} value={inputDialog.value} onChange={e => setInputDialog({ ...inputDialog, value: e.target.value })} placeholder={inputDialog.placeholder} />
         }</Field></div>
-        <footer><button type="button" onClick={() => setInputDialog(null)}>{t("common.cancel")}</button><button className="primary" type="submit">{inputDialog.submitLabel}</button></footer>
+        <footer>{inputDialog.clearAction && <button className="note-clear" type="button" onClick={() => { const clear = inputDialog.clearAction; setInputDialog(null); clear?.(); }}>{inputDialog.clearLabel}</button>}<button type="button" onClick={() => setInputDialog(null)}>{t("common.cancel")}</button><button className="primary" type="submit">{inputDialog.submitLabel}</button></footer>
       </form>
     </div>}
     {ceremony && <div className="modal-backdrop ceremony-backdrop"><section className="ceremony modal"><div className="ceremony-glyph">✦</div><p>{ceremony.eyebrow}</p><h2>{ceremony.title}</h2><span>{ceremony.text}</span><button className="primary" onClick={() => setCeremony(null)}>{t("common.continue")}</button></section></div>}

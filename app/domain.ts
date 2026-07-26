@@ -18,6 +18,7 @@ export interface Quest {
   id: string;
   title: string;
   description: string;
+  note?: string;
   type: QuestType;
   attributeId: string;
   skillId: string;
@@ -139,6 +140,13 @@ export function deleteAttributeFromState(state: AppState, attributeId: string, s
   };
 }
 
+export function deleteQuestFromState(state: AppState, questId: string): AppState {
+  return {
+    ...state,
+    quests: state.quests.filter(quest => quest.id !== questId),
+  };
+}
+
 export function canAwardQuest(questId: string, transactions: XpTransaction[]) {
   return !transactions.some(tx => tx.questId === questId && !tx.reversedAt);
 }
@@ -157,6 +165,7 @@ export function nextRecurringInstance(quest: Quest, now = new Date()): Quest | n
     seriesId: quest.seriesId ?? quest.id,
     date: next.toISOString(),
     deadline,
+    note: undefined,
     status: "active",
     completedAt: undefined,
     createdAt: stamp,
@@ -182,7 +191,11 @@ export function isValidCloudState(value: unknown): value is AppState {
       activeAwards.add(transaction.questId);
     }
   }
-  return value.quests.every(quest => Number.isFinite(quest.xp) && quest.xp >= 0);
+  return value.quests.every(quest =>
+    Number.isFinite(quest.xp) &&
+    quest.xp >= 0 &&
+    (quest.note === undefined || (typeof quest.note === "string" && quest.note.length <= 500))
+  );
 }
 
 export function makeInitialState(): AppState {

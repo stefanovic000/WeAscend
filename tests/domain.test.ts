@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activeXp, canAwardQuest, defaultSettings, deleteAttributeFromState, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type Quest, type XpTransaction } from "../app/domain.ts";
+import { activeXp, canAwardQuest, defaultSettings, deleteAttributeFromState, deleteQuestFromState, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type Quest, type XpTransaction } from "../app/domain.ts";
 import { translate } from "../app/i18n.ts";
 import { parseXpSuggestion } from "../app/xpAdvisor.ts";
 import { authenticateRequest } from "../server/auth.ts";
@@ -68,14 +68,27 @@ test("deleting an unused attribute removes it and its unused skills completely",
   assert.deepEqual(next.skills, []);
 });
 
-test("recurring quest creates a separate dated instance", () => {
-  const quest: Quest = { id: "q1", title: "Daily", description: "", type: "Daily", attributeId: "a", skillId: "s", xp: 10, date: "2026-07-23T10:00:00.000Z", deadline: "2026-07-23T12:00:00.000Z", recurrence: "daily", difficulty: "Normal", completionConditions: "", failureConsequence: "", status: "completed", createdAt: "2026-07-23", updatedAt: "2026-07-23" };
+test("recurring quest creates a separate dated instance without copying its note", () => {
+  const quest: Quest = { id: "q1", title: "Daily", description: "", note: "Review chapter 3", type: "Daily", attributeId: "a", skillId: "s", xp: 10, date: "2026-07-23T10:00:00.000Z", deadline: "2026-07-23T12:00:00.000Z", recurrence: "daily", difficulty: "Normal", completionConditions: "", failureConsequence: "", status: "completed", createdAt: "2026-07-23", updatedAt: "2026-07-23" };
   const next = nextRecurringInstance(quest, new Date("2026-07-23T13:00:00.000Z"));
   assert.ok(next);
   assert.notEqual(next.id, quest.id);
   assert.equal(next.seriesId, quest.id);
   assert.equal(next.date, "2026-07-24T10:00:00.000Z");
   assert.equal(next.status, "active");
+  assert.equal(next.note, undefined);
+});
+
+test("deleting a quest removes its note and content while preserving XP history", () => {
+  const state = makeInitialState();
+  state.quests = [{ id: "q1", title: "Private task", description: "Private details", note: "Private note", type: "Side", attributeId: "a", skillId: "s", xp: 20, date: "2026-07-23T10:00:00.000Z", deadline: "", recurrence: "none", difficulty: "Normal", completionConditions: "", failureConsequence: "", status: "completed", createdAt: "2026-07-23", updatedAt: "2026-07-23" }];
+  state.transactions = [{ id: "tx", questId: "q1", amount: 20, kind: "quest", attributeId: "a", skillId: "s", createdAt: "2026-07-23" }];
+
+  const next = deleteQuestFromState(state, "q1");
+
+  assert.deepEqual(next.quests, []);
+  assert.equal(next.transactions.length, 1);
+  assert.equal(activeXp(next.transactions), 20);
 });
 
 test("cloud validation rejects duplicate active XP awards and negative XP", () => {
@@ -89,6 +102,9 @@ test("cloud validation rejects duplicate active XP awards and negative XP", () =
 
   state.transactions = [transaction, { ...transaction, id: "tx-2", reversedAt: "2026-01-02" }];
   assert.equal(isValidCloudState(state), true);
+
+  state.quests = [{ id: "q1", title: "Quest", description: "", note: "x".repeat(501), type: "Side", attributeId: "a", skillId: "s", xp: 20, date: "2026-01-01", deadline: "", recurrence: "none", difficulty: "Normal", completionConditions: "", failureConsequence: "", status: "active", createdAt: "2026-01-01", updatedAt: "2026-01-01" }];
+  assert.equal(isValidCloudState(state), false);
 });
 
 test("AI XP suggestions accept only the fair scale and bounded rationale", () => {
