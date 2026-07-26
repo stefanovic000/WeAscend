@@ -385,11 +385,6 @@ export default function SoloApp() {
       return;
     }
 
-    const scheduledWindow = (new Date(questDraft.deadline).getTime() - new Date(questDraft.date).getTime()) / 60_000;
-    const plannedMinutes = Number.isFinite(scheduledWindow) && scheduledWindow > 0 && scheduledWindow <= 720
-      ? Math.round(scheduledWindow)
-      : undefined;
-
     setXpEstimating(true);
     setXpSuggestion(null);
     try {
@@ -405,7 +400,6 @@ export default function SoloApp() {
           attribute: attrName(questDraft.attributeId),
           skill: skillName(questDraft.skillId),
           completionConditions: questDraft.completionConditions,
-          plannedMinutes,
         }),
       }, 22_000);
       const result = await response.json() as { suggestion?: XpSuggestion; code?: string };

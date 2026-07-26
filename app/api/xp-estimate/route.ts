@@ -15,7 +15,6 @@ type EstimateRequest = {
   attribute?: unknown;
   skill?: unknown;
   completionConditions?: unknown;
-  plannedMinutes?: unknown;
 };
 
 function json(body: unknown, status = 200) {
@@ -36,7 +35,6 @@ function normalizeRequest(payload: EstimateRequest) {
   const title = cleanText(payload.title, 180);
   if (!title) return null;
 
-  const plannedMinutes = Number(payload.plannedMinutes);
   return {
     title,
     description: cleanText(payload.description),
@@ -45,9 +43,6 @@ function normalizeRequest(payload: EstimateRequest) {
     attribute: cleanText(payload.attribute, 100),
     skill: cleanText(payload.skill, 100),
     completionConditions: cleanText(payload.completionConditions, 500),
-    plannedMinutes: Number.isFinite(plannedMinutes) && plannedMinutes > 0 && plannedMinutes <= 720
-      ? Math.round(plannedMinutes)
-      : null,
   };
 }
 
@@ -115,6 +110,9 @@ Fer skala:
 - 200–400 XP: ispit, završen projekat ili pravi Boss rezultat
 
 Main Quest ne dobija automatski bonus. Difficulty je kontekst, ne slobodan množilac. Ako nema dovoljno podataka, budi konzervativan i koristi low confidence.
+Quest zakazan za budućnost predstavlja nameravanu aktivnost; nemoj ga nazivati pukim planiranjem. Planiranje je 0 XP samo kada je ono samo po sebi sadržaj zadatka.
+Nikada ne izmišljaj trajanje. Koristi trajanje samo ako je korisnik izričito napisao u nazivu, opisu ili uslovu završetka.
+Ako opis i uslov završetka nedostaju, proceni samo ono što zaista piše u nazivu i u obrazloženju jasno reci da nedostaje merljiv rezultat.
 
 Vrati isključivo JSON oblika:
 {"xp":20,"confidence":"medium","rationale":"Jedna kratka rečenica na srpskom."}
