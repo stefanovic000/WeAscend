@@ -9,8 +9,7 @@ export interface StateDocument {
   updatedAt: Date;
 }
 
-let clientPromise: Promise<MongoClient> | null = null;
-let indexesPromise: Promise<string> | null = null;
+let indexEnsured = false;
 
 function connectionUri() {
   const uri = process.env.MONGODB_URI?.trim();
@@ -18,32 +17,33 @@ function connectionUri() {
   return uri;
 }
 
-async function getClient() {
-  if (!clientPromise) {
-    const uri = connectionUri();
-    clientPromise = import("mongodb").then(({ MongoClient: RuntimeMongoClient, ServerApiVersion }) => {
-      const client = new RuntimeMongoClient(uri, {
-        appName: "ascend-solo-progress",
-        maxPoolSize: 4,
-        minPoolSize: 0,
-        serverSelectionTimeoutMS: 6000,
-        socketTimeoutMS: 12000,
-        serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
-      });
-      return client.connect();
-    }).catch(error => {
-      clientPromise = null;
-      throw error;
-    });
-  }
-  return clientPromise;
+async function createClient() {
+  const uri = connectionUri();
+  const { MongoClient: RuntimeMongoClient, ServerApiVersion } = await import("mongodb");
+  const client = new RuntimeMongoClient(uri, {
+    appName: "ascend-solo-progress",
+    maxPoolSize: 1,
+    minPoolSize: 0,
+    serverSelectionTimeoutMS: 5_000,
+    socketTimeoutMS: 8_000,
+    serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
+  });
+  return client.connect();
 }
 
-export async function getStateCollection(): Promise<Collection<StateDocument>> {
-  const client = await getClient();
-  const database = client.db(process.env.MONGODB_DB?.trim() || "ascend");
-  const collection = database.collection<StateDocument>("user_states");
-  indexesPromise ??= collection.createIndex({ userId: 1 }, { unique: true, name: "unique_user_state" });
-  await indexesPromise;
-  return collection;
+export async function withStateCollection<T>(
+  action: (collection: Collection<StateDocument>) => Promise<T>,
+): Promise<T> {
+  const client: MongoClient = await createClient();
+  try {
+    const database = client.db(process.env.MONGODB_DB?.trim() || "ascend");
+    const collection = database.collection<StateDocument>("user_states");
+    if (!indexEnsured) {
+      await collection.createIndex({ userId: 1 }, { unique: true, name: "unique_user_state" });
+      indexEnsured = true;
+    }
+    return await action(collection);
+  } finally {
+    await client.close();
+  }
 }

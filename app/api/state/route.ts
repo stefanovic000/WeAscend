@@ -1,6 +1,6 @@
 import { isValidCloudState } from "../../domain";
 import { getAuthenticatedUser } from "../../../server/auth";
-import { getStateCollection } from "../../../server/mongo";
+import { withStateCollection } from "../../../server/mongo";
 
 export const dynamic = "force-dynamic";
 
@@ -25,19 +25,20 @@ export async function GET(request: Request) {
   if (!user) return json({ code: "authentication_required" }, 401);
 
   try {
-    const collection = await getStateCollection();
-    const document = await collection.findOne({ userId: user.id });
-    return json({
-      state: document?.state ?? null,
-      revision: document?.revision ?? 0,
-      updatedAt: document?.updatedAt?.toISOString() ?? null,
-      user: publicUser(user),
+    return await withStateCollection(async collection => {
+      const document = await collection.findOne({ userId: user.id });
+      return json({
+        state: document?.state ?? null,
+        revision: document?.revision ?? 0,
+        updatedAt: document?.updatedAt?.toISOString() ?? null,
+        user: publicUser(user),
+      });
     });
   } catch (error) {
     if (error instanceof Error && error.message === "MONGODB_URI_NOT_CONFIGURED") {
       return json({ code: "cloud_not_configured", user: publicUser(user) }, 503);
     }
-    console.error("State read failed", error);
+    console.error("State read failed", error instanceof Error ? `${error.name}: ${error.message}` : error);
     return json({ code: "database_unavailable" }, 503);
   }
 }
@@ -66,33 +67,35 @@ export async function PUT(request: Request) {
   const now = new Date();
 
   try {
-    const collection = await getStateCollection();
-    const updated = await collection.findOneAndUpdate(
-      { userId: user.id, revision },
-      {
-        $set: { state: payload.state, updatedAt: now },
-        $setOnInsert: { userId: user.id, createdAt: now },
-        $inc: { revision: 1 },
-      },
-      { upsert: revision === 0, returnDocument: "after" },
-    );
+    return await withStateCollection(async collection => {
+      const updated = await collection.findOneAndUpdate(
+        { userId: user.id, revision },
+        {
+          $set: { state: payload.state, updatedAt: now },
+          $setOnInsert: { userId: user.id, createdAt: now },
+          $inc: { revision: 1 },
+        },
+        { upsert: revision === 0, returnDocument: "after" },
+      );
 
-    if (!updated) {
-      const current = await collection.findOne({ userId: user.id });
-      return json({ code: "revision_conflict", state: current?.state ?? null, revision: current?.revision ?? 0 }, 409);
-    }
+      if (!updated) {
+        const current = await collection.findOne({ userId: user.id });
+        return json({ code: "revision_conflict", state: current?.state ?? null, revision: current?.revision ?? 0 }, 409);
+      }
 
-    return json({ state: updated.state, revision: updated.revision, updatedAt: updated.updatedAt.toISOString(), user: publicUser(user) });
+      return json({ state: updated.state, revision: updated.revision, updatedAt: updated.updatedAt.toISOString(), user: publicUser(user) });
+    });
   } catch (error) {
     if (error instanceof Error && error.message === "MONGODB_URI_NOT_CONFIGURED") {
       return json({ code: "cloud_not_configured" }, 503);
     }
     if (typeof error === "object" && error && "code" in error && error.code === 11000) {
-      const collection = await getStateCollection();
-      const current = await collection.findOne({ userId: user.id });
-      return json({ code: "revision_conflict", state: current?.state ?? null, revision: current?.revision ?? 0 }, 409);
+      return await withStateCollection(async collection => {
+        const current = await collection.findOne({ userId: user.id });
+        return json({ code: "revision_conflict", state: current?.state ?? null, revision: current?.revision ?? 0 }, 409);
+      });
     }
-    console.error("State write failed", error);
+    console.error("State write failed", error instanceof Error ? `${error.name}: ${error.message}` : error);
     return json({ code: "database_unavailable" }, 503);
   }
 }

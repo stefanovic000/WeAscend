@@ -55,6 +55,16 @@ function hasUserData(state: AppState) {
     state.transactions.length > 0 || state.bosses.length > 0 || state.levelEvents.length > 0;
 }
 
+async function cloudFetch(input: RequestInfo | URL, init?: RequestInit) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 8_000);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 export default function SoloApp() {
   const [state, setState] = useState<AppState | null>(null);
   const [syncMode, setSyncMode] = useState<SyncMode>("starting");
@@ -101,7 +111,7 @@ export default function SoloApp() {
       const local = saved && isValidBackup(saved) && !isUntouchedDemoState(saved) ? saved : makeInitialState();
 
       try {
-        const response = await fetch("/api/state", { cache: "no-store", credentials: "same-origin" });
+        const response = await cloudFetch("/api/state", { cache: "no-store", credentials: "same-origin" });
         const cloud = await response.json() as CloudStateResponse;
         if (cancelled) return;
 
@@ -124,7 +134,7 @@ export default function SoloApp() {
         let selected = cloud.state && isValidCloudState(cloud.state) ? cloud.state : null;
 
         if (!selected && hasUserData(local)) {
-          const migration = await fetch("/api/state", {
+          const migration = await cloudFetch("/api/state", {
             method: "PUT",
             credentials: "same-origin",
             headers: { "Content-Type": "application/json" },
@@ -186,7 +196,7 @@ export default function SoloApp() {
     syncModeRef.current = "syncing";
     setSyncMode("syncing");
     try {
-      const response = await fetch("/api/state", {
+      const response = await cloudFetch("/api/state", {
         method: "PUT",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
