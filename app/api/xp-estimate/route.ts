@@ -1,4 +1,4 @@
-import { getAuthenticatedUser } from "../../../server/auth";
+import { authenticateRequest } from "../../../server/auth";
 import { FAIR_XP_VALUES, parseXpSuggestion } from "../../xpAdvisor";
 
 export const dynamic = "force-dynamic";
@@ -56,8 +56,9 @@ function deepSeekErrorCode(status: number) {
 }
 
 export async function POST(request: Request) {
-  const user = getAuthenticatedUser(request);
-  if (!user) return json({ code: "authentication_required" }, 401);
+  const auth = authenticateRequest(request);
+  if (auth.status === "unauthenticated") return json({ code: "authentication_required" }, 401);
+  if (auth.status === "forbidden") return json({ code: "owner_access_denied" }, 403);
 
   const apiKey = process.env.DEEPSEEK_API_KEY?.trim();
   if (!apiKey) return json({ code: "ai_not_configured" }, 503);

@@ -84,6 +84,7 @@ export default function SoloApp() {
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
   const [cloudUser, setCloudUser] = useState<{ email: string; name: string } | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [view, setView] = useState<View>("dashboard");
   const [questDraft, setQuestDraft] = useState<Quest | null>(null);
   const [xpSuggestion, setXpSuggestion] = useState<XpSuggestion | null>(null);
@@ -146,6 +147,13 @@ export default function SoloApp() {
 
         if (response.status === 401) {
           setAuthRequired(true);
+          setAccessDenied(false);
+          setMode("offline");
+          return;
+        }
+        if (response.status === 403 && cloud.code === "owner_access_denied") {
+          setAuthRequired(false);
+          setAccessDenied(true);
           setMode("offline");
           return;
         }
@@ -158,6 +166,8 @@ export default function SoloApp() {
         }
         if (!response.ok) throw new Error(cloud.code || "cloud_unavailable");
 
+        setAuthRequired(false);
+        setAccessDenied(false);
         setCloudUser(cloud.user ?? null);
         revisionRef.current = cloud.revision;
         let selected = cloud.state && isValidCloudState(cloud.state) ? cloud.state : null;
@@ -233,7 +243,7 @@ export default function SoloApp() {
       });
       const result = await response.json() as CloudStateResponse;
 
-      if (response.status === 401) {
+      if (response.status === 401 || (response.status === 403 && result.code === "owner_access_denied")) {
         const confirmed = lastSyncedRef.current;
         if (confirmed) {
           const restored: unknown = JSON.parse(confirmed);
@@ -243,7 +253,8 @@ export default function SoloApp() {
             void saveState(restored);
           }
         }
-        setAuthRequired(true);
+        setAuthRequired(response.status === 401);
+        setAccessDenied(response.status === 403);
         syncModeRef.current = "offline";
         setSyncMode("offline");
         return;
@@ -315,6 +326,7 @@ export default function SoloApp() {
     return { xp, progress, rank: rankForLevel(progress.level, state.settings.ranks) };
   }, [state]);
 
+  if (accessDenied) return <main className="auth-gate auth-denied"><div className="auth-mark">W</div><p>{t("auth.deniedCloud")}</p><h1>{t("auth.deniedTitle")}</h1><span>{t("auth.deniedText")}</span><a href="/signout-with-chatgpt?return_to=%2F">{t("auth.deniedAction")}</a></main>;
   if (authRequired) return <main className="auth-gate"><div className="auth-mark">W</div><p>{t("auth.cloud")}</p><h1>{t("auth.title")}</h1><span>{t("auth.text")}</span><a href="/signin-with-chatgpt?return_to=%2F">{t("auth.action")}</a></main>;
   if (!state || !metrics) return <main className="loading"><div className="loader-mark">W</div><p>{t("loading")}</p></main>;
 

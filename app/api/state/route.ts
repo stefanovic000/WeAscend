@@ -1,5 +1,5 @@
 import { isValidCloudState } from "../../domain";
-import { getAuthenticatedUser } from "../../../server/auth";
+import { authenticateRequest, type AuthenticatedUser } from "../../../server/auth";
 import { withStateCollection } from "../../../server/mongo";
 
 export const dynamic = "force-dynamic";
@@ -16,13 +16,24 @@ function json(body: unknown, status = 200) {
   });
 }
 
-function publicUser(user: NonNullable<ReturnType<typeof getAuthenticatedUser>>) {
+function publicUser(user: AuthenticatedUser) {
   return { email: user.email, name: user.name };
 }
 
+function requireOwner(request: Request) {
+  const auth = authenticateRequest(request);
+  if (auth.status === "unauthenticated") {
+    return { user: null, response: json({ code: "authentication_required" }, 401) };
+  }
+  if (auth.status === "forbidden") {
+    return { user: null, response: json({ code: "owner_access_denied" }, 403) };
+  }
+  return { user: auth.user, response: null };
+}
+
 export async function GET(request: Request) {
-  const user = getAuthenticatedUser(request);
-  if (!user) return json({ code: "authentication_required" }, 401);
+  const { user, response } = requireOwner(request);
+  if (response) return response;
 
   try {
     return await withStateCollection(async collection => {
@@ -44,8 +55,8 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  const user = getAuthenticatedUser(request);
-  if (!user) return json({ code: "authentication_required" }, 401);
+  const { user, response } = requireOwner(request);
+  if (response) return response;
 
   const declaredLength = Number(request.headers.get("content-length") || 0);
   if (declaredLength > MAX_STATE_BYTES) return json({ code: "state_too_large" }, 413);

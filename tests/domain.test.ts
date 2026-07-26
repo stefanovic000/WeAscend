@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { activeXp, canAwardQuest, defaultSettings, deleteAttributeFromState, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type Quest, type XpTransaction } from "../app/domain.ts";
 import { translate } from "../app/i18n.ts";
 import { parseXpSuggestion } from "../app/xpAdvisor.ts";
+import { authenticateRequest } from "../server/auth.ts";
 
 test("initial state is completely empty at level 1 with zero XP", () => {
   const state = makeInitialState();
@@ -104,4 +105,34 @@ test("English is the primary UI language and Serbian translations interpolate va
   assert.equal(translate("en", "dashboard.question2"), "next mission?");
   assert.equal(translate("sr", "dashboard.question2"), "sledeća misija?");
   assert.equal(translate("sr", "dashboard.untilLevel", { xp: 80, level: 2 }), "80 XP do Levela 2");
+  assert.equal(translate("en", "auth.deniedTitle"), "This system serves its owner");
+  assert.equal(translate("sr", "auth.deniedText"), "Nemaš pristup ovom WeSolo sistemu.");
+});
+
+test("owner allowlist distinguishes missing, wrong and authorized accounts", () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOwnerEmail = process.env.OWNER_EMAIL;
+  process.env.NODE_ENV = "production";
+  process.env.OWNER_EMAIL = "owner@example.com";
+
+  try {
+    assert.equal(authenticateRequest(new Request("https://wesolo.example/api/state")).status, "unauthenticated");
+    assert.equal(
+      authenticateRequest(new Request("https://wesolo.example/api/state", {
+        headers: { "oai-authenticated-user-email": "other@example.com" },
+      })).status,
+      "forbidden",
+    );
+
+    const owner = authenticateRequest(new Request("https://wesolo.example/api/state", {
+      headers: { "oai-authenticated-user-email": " OWNER@example.com " },
+    }));
+    assert.equal(owner.status, "authenticated");
+    if (owner.status === "authenticated") assert.equal(owner.user.email, "owner@example.com");
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+    if (previousOwnerEmail === undefined) delete process.env.OWNER_EMAIL;
+    else process.env.OWNER_EMAIL = previousOwnerEmail;
+  }
 });

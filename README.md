@@ -89,7 +89,7 @@ Cloudflare Worker nema jednu stabilnu izlaznu IP adresu koju možeš jednostavno
 0.0.0.0/0
 ```
 
-To je široko mrežno pravilo. Rizik se ograničava jakom nasumičnom lozinkom, posebnim database korisnikom sa minimalnim pravima, server-only URI tajnom i privatnim pristupom aplikaciji.
+To je široko mrežno pravilo. Rizik se ograničava jakom nasumičnom lozinkom, posebnim database korisnikom sa minimalnim pravima, server-only URI tajnom i owner-only API autorizacijom.
 
 Naziv Atlas clustera nije naziv baze. Aplikacija koristi:
 
@@ -103,12 +103,14 @@ Baza i kolekcija se automatski kreiraju pri prvom uspešnom upisu. Svaki dokumen
 
 ## Produkcija i autentifikacija
 
-Produkcija je hostovana preko Sites/Cloudflare Worker okruženja i trenutno je owner-only.
+Produkcija je hostovana preko Sites/Cloudflare Worker okruženja. Statični PWA omotač je javno dostupan kako bi Android mogao da preuzme manifest i instalira punu PWA aplikaciju, ali podaci i sve funkcije aplikacije ostaju owner-only.
 
 - Sites prijava koristi **Continue with ChatGPT**.
 - `OWNER_EMAIL` dodatno ograničava aplikacioni API na očekivani email.
 - Identitet dolazi iz verifikovanih hosting headera; browser ne može sam da bira `userId`.
-- Trenutno postoji jedan korisnik, ali model podataka već razdvaja dokumente po `userId`, pa se kasnije mogu dodati drugi korisnici.
+- Neprijavljen posetilac dobija login ekran i API odgovor `401 authentication_required`.
+- Prijavljen nalog koji nije `OWNER_EMAIL` dobija owner-lock ekran i API odgovor `403 owner_access_denied`; ne može da vidi niti menja podatke.
+- Trenutno je dozvoljen samo jedan korisnik. Dodavanje drugih korisnika zahtevalo bi izričitu promenu server-side autorizacije.
 - Posle promene produkcionih environment varijabli potrebno je napraviti novi deployment.
 
 Produkcione vrednosti:
@@ -188,6 +190,8 @@ Za produkciju dodaj `DEEPSEEK_API_KEY` kao Sites secret i napravi novi deploymen
 Na telefonu otvori produkcioni URL u browseru, prijavi se istim ChatGPT nalogom i izaberi **Add to Home Screen** ili **Install app**.
 
 - Telefon i računar tada koriste isti MongoDB dokument.
+- Javni pristup manifestu je nameran i potreban Android instalaciji; javnost frontenda ne daje pristup API-ju ili ličnim podacima.
+- Samo nalog čiji email odgovara `OWNER_EMAIL` može da otvori aplikaciju posle prijave.
 - Nemoj koristiti lokalni `localhost` URL sa računara kao mobilnu verziju.
 - Offline možeš pregledati poslednju potvrđenu kopiju, ali izmene čekaju povratak cloud veze.
 - Ako PWA posle deploymenta prikazuje staru verziju, potpuno je zatvori i ponovo pokreni.
