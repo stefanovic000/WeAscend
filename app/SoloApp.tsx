@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { activeXp, canAwardQuest, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type AppState, type Boss, type Quest, type QuestType, type XpTransaction } from "./domain";
+import { activeXp, canAwardQuest, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type AppState, type Quest, type QuestType, type XpTransaction } from "./domain";
 import { loadState, saveState } from "./db";
 import { translate, type Language, type TranslationKey } from "./i18n";
 import type { XpSuggestion } from "./xpAdvisor";
@@ -374,6 +374,7 @@ export default function SoloApp() {
     }));
     if (newRank !== oldRank) setCeremony({ eyebrow: t("ceremony.rankAscension"), title: `${newRank}-RANK`, text: t("quest.rankUp") });
     else if (after.level > before.level) setCeremony({ eyebrow: t("ceremony.levelUp"), title: `LEVEL ${after.level}`, text: t("quest.levelUp", { xp: after.needed }) });
+    else if (quest.type === "Boss") setCeremony({ eyebrow: t("ceremony.dungeonConquered"), title: t("ceremony.bossClear"), text: `${quest.title} · +${quest.xp} XP` });
     else setToast(quest.xp ? t("quest.xpRecorded", { xp: quest.xp }) : t("quest.completedZero"));
   };
 
@@ -515,7 +516,7 @@ export default function SoloApp() {
       },
     });
   };
-  const beginQuestOnDate = (dateKey: string) => {
+  const beginQuestOnDate = (dateKey: string, type: QuestType = "Side") => {
     if (!ensureWritable()) return;
     if (state.attributes.length === 0 || availableSkills.length === 0) {
       setView("growth");
@@ -526,9 +527,21 @@ export default function SoloApp() {
     const date = new Date(`${dateKey}T09:00:00`);
     const deadline = new Date(date.getTime() + 3600000);
     setXpSuggestion(null);
-    setQuestDraft({ ...draft, date: date.toISOString(), deadline: deadline.toISOString() });
+    setQuestDraft({
+      ...draft,
+      type,
+      xp: type === "Boss" ? 100 : draft.xp,
+      difficulty: type === "Boss" ? "Hard" : draft.difficulty,
+      date: date.toISOString(),
+      deadline: deadline.toISOString(),
+    });
   };
   const beginNewQuest = () => beginQuestOnDate(today);
+  const beginBossQuest = () => {
+    const date = new Date();
+    date.setDate(date.getDate() + 7);
+    beginQuestOnDate(dayKey(date), "Boss");
+  };
   const shiftCalendarMonth = (amount: number) => {
     const date = new Date(`${calendarMonth}T12:00:00`);
     date.setMonth(date.getMonth() + amount);
@@ -673,10 +686,11 @@ export default function SoloApp() {
         const key = dayKey(date);
         const quests = state.quests.filter(q => dayKey(q.date) === key && q.status !== "archived");
         const completed = quests.filter(q => q.status === "completed").length;
+        const hasBoss = quests.some(q => q.type === "Boss");
         const outside = date.getMonth() !== monthDate.getMonth();
-        return <button key={key} className={`${key === selectedDate ? "selected" : ""} ${key === today ? "today" : ""} ${outside ? "outside" : ""}`} onClick={() => { setSelectedDate(key); setShowAllDates(false); }}>
+        return <button key={key} className={`${key === selectedDate ? "selected" : ""} ${key === today ? "today" : ""} ${outside ? "outside" : ""} ${hasBoss ? "boss-day" : ""}`} onClick={() => { setSelectedDate(key); setShowAllDates(false); }}>
           <span>{date.getDate()}</span>{quests.length > 0 && <b>{quests.length}</b>}
-          <i>{quests.slice(0, 3).map((quest, index) => <em key={quest.id} style={{ background: quest.status === "completed" ? "var(--cyan)" : attrColor(quest.attributeId), opacity: index < completed ? 1 : .75 }} />)}</i>
+          <i>{quests.slice(0, 3).map((quest, index) => <em key={quest.id} style={{ background: quest.type === "Boss" ? "#ff5277" : quest.status === "completed" ? "var(--cyan)" : attrColor(quest.attributeId), opacity: index < completed ? 1 : .75 }} />)}</i>
         </button>;
       })}</div>
       <footer><div><span>{t("planner.selectedDay")}</span><strong>{selectedLabel}</strong></div><button onClick={() => beginQuestOnDate(selectedDate)}>{t("planner.addDay")}</button></footer>
@@ -711,57 +725,41 @@ export default function SoloApp() {
     })}</div>
   </div>;
 
-  const applyBossResult = (boss: Boss, cleared: boolean, result: string) => {
-    if (!ensureWritable()) return;
-    const stamp = new Date().toISOString();
-    const award = cleared ? boss.xp : boss.attemptXp;
-    updateState(s => ({
-      ...s,
-      bosses: s.bosses.map(b => b.id === boss.id ? { ...b, status: cleared ? "cleared" : "failed", result, updatedAt: stamp } : b),
-      transactions: award > 0 && !s.transactions.some(tx => tx.questId === `boss:${boss.id}` && !tx.reversedAt)
-        ? [...s.transactions, { id: crypto.randomUUID(), questId: `boss:${boss.id}`, amount: award, kind: cleared ? "quest" : "boss_attempt", attributeId: "", skillId: "", createdAt: stamp }]
-        : s.transactions,
-    }));
-    if (cleared) setCeremony({ eyebrow: t("ceremony.dungeonConquered"), title: t("ceremony.bossClear"), text: `${boss.title} · +${boss.xp} XP` });
-    else setCeremony({ eyebrow: t("ceremony.encounterFailed"), title: t("ceremony.analyzeAdapt"), text: award ? t("boss.failureAttempt", { xp: award }) : t("boss.failureZero") });
+  const Bosses = () => {
+    const bossQuests = state.quests
+      .filter(quest => quest.type === "Boss" && quest.status !== "archived")
+      .sort((a, b) => (a.status === "active" ? 0 : 1) - (b.status === "active" ? 0 : 1) || a.date.localeCompare(b.date));
+    const editBoss = (quest: Quest) => {
+      if (!ensureWritable()) return;
+      setXpSuggestion(null);
+      setQuestDraft({ ...quest });
+    };
+    return <div className="screen">
+      <header className="screen-header"><div><p>{t("boss.gate")}</p><h1>{t("boss.title")}</h1><span>{t("boss.subtitle")}</span></div><button className="primary" onClick={beginBossQuest}>{t("boss.add")}</button></header>
+      <div className="boss-grid">{bossQuests.length === 0 && <Empty title={t("boss.empty")} text={t("boss.emptyText")} />}{bossQuests.map(boss => (
+        <article className={`boss-card ${boss.status}`} key={boss.id}>
+          <div className="boss-visual"><span>{boss.status === "completed" ? t("boss.cleared") : boss.status === "failed" ? t("common.failed") : t("boss.gateOpen")}</span><strong>⬡</strong><p>{formatDate(boss.date, false)}</p></div>
+          <div className="boss-content">
+            <div className="quest-meta"><span className="type-badge type-boss">BOSS</span><span>{attrName(boss.attributeId)} / {skillName(boss.skillId)}</span></div>
+            <h2>{boss.title}</h2>
+            <dl>
+              <div><dt>{t("boss.entry")}</dt><dd>{boss.description || t("boss.noGate")}</dd></div>
+              <div><dt>{t("boss.clearCondition")}</dt><dd>{boss.completionConditions || t("boss.defaultClear")}</dd></div>
+              <div><dt>{t("boss.preparation")}</dt><dd>{formatDate(boss.deadline)}</dd></div>
+            </dl>
+            <footer>
+              <strong>+{boss.xp} XP</strong>
+              <div>
+                {boss.status === "active" && <><button className="complete-text" onClick={() => completeQuest(boss)}>Boss Clear</button><button onClick={() => failQuest(boss)}>{t("common.failed")}</button></>}
+                {boss.status === "completed" && <button onClick={() => undoQuest(boss)}>{t("common.undo")}</button>}
+                <button onClick={() => editBoss(boss)}>{t("common.edit")}</button>
+              </div>
+            </footer>
+          </div>
+        </article>
+      ))}</div>
+    </div>;
   };
-  const resolveBoss = (boss: Boss, cleared: boolean) => {
-    if (!ensureWritable()) return;
-    setInputDialog({
-      title: cleared ? t("boss.clearResult") : t("boss.analysis"),
-      label: cleared ? t("boss.resultFor", { name: boss.title }) : t("boss.failureAnalysis"),
-      value: "",
-      placeholder: cleared ? t("boss.resultPlaceholder") : t("boss.failurePlaceholder"),
-      submitLabel: cleared ? t("boss.confirmClear") : t("boss.recordFailure"),
-      multiline: true,
-      action: result => applyBossResult(boss, cleared, result.trim()),
-    });
-  };
-  const addBoss = () => {
-    if (!ensureWritable()) return;
-    setInputDialog({
-      title: t("boss.new"), label: t("boss.name"), value: "", placeholder: t("boss.placeholder"),
-      submitLabel: t("boss.create"), required: true,
-      action: title => {
-        const stamp = new Date().toISOString();
-        updateState(s => ({ ...s, bosses: [...s.bosses, { id: crypto.randomUUID(), title: title.trim(), dungeon: "New Dungeon", stage: "Final Stage", entryConditions: "", preparationQuestIds: [], date: new Date(Date.now() + 7 * 86400000).toISOString(), clearCondition: t("boss.defaultClear"), xp: 100, attemptXp: 0, status: "active", result: "", createdAt: stamp, updatedAt: stamp }] }));
-        setToast(t("boss.created"));
-      },
-    });
-  };
-  const Bosses = () => <div className="screen">
-    <header className="screen-header"><div><p>{t("boss.gate")}</p><h1>{t("boss.title")}</h1><span>{t("boss.subtitle")}</span></div><button className="primary" onClick={addBoss}>{t("boss.add")}</button></header>
-    <div className="boss-grid">{state.bosses.length === 0 && <Empty title={t("boss.empty")} text={t("boss.emptyText")} />}{state.bosses.map(boss => {
-      const prepared = boss.preparationQuestIds.filter(id => state.quests.find(q => q.id === id)?.status === "completed").length;
-      return <article className={`boss-card ${boss.status}`} key={boss.id}>
-        <div className="boss-visual"><span>{boss.status === "cleared" ? t("boss.cleared") : boss.status === "failed" ? t("common.failed") : t("boss.gateOpen")}</span><strong>⬡</strong><p>{formatDate(boss.date, false)}</p></div>
-        <div className="boss-content"><div className="quest-meta"><span className="type-badge type-boss">BOSS</span><span>{boss.dungeon} / {boss.stage}</span></div><h2>{boss.title}</h2>
-          <dl><div><dt>{t("boss.entry")}</dt><dd>{boss.entryConditions || t("boss.noGate")}</dd></div><div><dt>{t("boss.clearCondition")}</dt><dd>{boss.clearCondition}</dd></div><div><dt>{t("boss.preparation")}</dt><dd>{t("boss.questCount", { count: `${prepared}/${boss.preparationQuestIds.length}` })}</dd></div></dl>
-          <footer><strong>+{boss.xp} XP</strong>{boss.status === "active" && <div><button className="complete-text" onClick={() => resolveBoss(boss, true)}>Boss Clear</button><button onClick={() => resolveBoss(boss, false)}>{t("common.failed")}</button></div>}{boss.status !== "active" && <p>{boss.result || t("boss.resultRecorded")}</p>}</footer>
-        </div>
-      </article>;
-    })}</div>
-  </div>;
 
   const History = () => {
     const days = Array.from({ length: 14 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (13 - i)); return d; });
