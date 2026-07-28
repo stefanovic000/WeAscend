@@ -122,7 +122,7 @@ test("English is the primary UI language and Serbian translations interpolate va
   assert.equal(translate("sr", "dashboard.question2"), "sledeća misija?");
   assert.equal(translate("sr", "dashboard.untilLevel", { xp: 80, level: 2 }), "80 XP do Levela 2");
   assert.equal(translate("en", "auth.deniedTitle"), "This system serves its owner");
-  assert.equal(translate("sr", "auth.deniedText"), "Nemaš pristup ovom WeSolo sistemu.");
+  assert.equal(translate("sr", "auth.deniedText"), "Nemaš pristup ovom WeAscend sistemu.");
 });
 
 test("owner allowlist distinguishes missing, wrong and authorized accounts", () => {

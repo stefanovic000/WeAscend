@@ -1,8 +1,8 @@
-# WeSolo — Personal Progress System
+# WeAscend — Personal Progress System
 
 Cloud-synced PWA za lični napredak inspirisana „Solo Leveling“ sistemom. Engleski je podrazumevani jezik, a srpski se bira u Settings. Telefon i računar koriste isti MongoDB Atlas zapis, dok IndexedDB čuva poslednju potvrđenu verziju za pregled kada cloud nije dostupan.
 
-Produkcija: [WeSolo](https://ascend-solo-progress.stefanovic000.chatgpt.site)
+Produkcija: [WeAscend](https://ascend-solo-progress.stefanovic000.chatgpt.site)
 
 ## Trenutno ponašanje
 

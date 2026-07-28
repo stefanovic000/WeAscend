@@ -21,7 +21,7 @@ async function createClient() {
   const uri = connectionUri();
   const { MongoClient: RuntimeMongoClient, ServerApiVersion } = await import("mongodb");
   const client = new RuntimeMongoClient(uri, {
-    appName: "wesolo",
+    appName: "weascend",
     maxPoolSize: 1,
     minPoolSize: 0,
     serverSelectionTimeoutMS: 5_000,

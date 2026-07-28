@@ -1,4 +1,4 @@
-const CACHE = "wesolo-shell-v4";
+const CACHE = "weascend-shell-v5";
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll([
     "/",

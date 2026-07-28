@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "WeSolo — Personal Progress System",
+  title: "WeAscend — Personal Progress System",
   description: "Quests, skills, XP, ranks, and focused personal progress — synchronized across your devices.",
   manifest: "/manifest.webmanifest",
   icons: {
@@ -13,14 +13,14 @@ export const metadata: Metadata = {
     apple: [{ url: "/icons/wesolo-192.png", sizes: "192x192", type: "image/png" }],
   },
   openGraph: {
-    title: "WeSolo — Personal Progress System",
+    title: "WeAscend — Personal Progress System",
     description: "Quests · Skills · XP · Ranks. Your focused personal progress system.",
     type: "website",
-    images: [{ url: "/og.png", width: 1536, height: 1024, alt: "WeSolo Personal Progress System" }],
+    images: [{ url: "/og.png", width: 1536, height: 1024, alt: "WeAscend Personal Progress System" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "WeSolo — Personal Progress System",
+    title: "WeAscend — Personal Progress System",
     description: "Quests · Skills · XP · Ranks.",
     images: ["/og.png"],
   },
