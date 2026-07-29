@@ -1,4 +1,4 @@
-export const FAIR_XP_VALUES = [0, 5, 10, 20, 30, 40, 50, 75, 100, 150, 200, 300, 400] as const;
+export const FAIR_XP_VALUES = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 75, 100, 150, 200, 300, 400] as const;
 
 export type XpConfidence = "low" | "medium" | "high";
 
@@ -6,18 +6,22 @@ export type XpSuggestion = {
   xp: number;
   confidence: XpConfidence;
   rationale: string;
+  decision?: "estimate" | "accepted" | "adjusted" | "rejected";
 };
 
-export function parseXpSuggestion(value: unknown): XpSuggestion | null {
+export function parseXpSuggestion(value: unknown, allowedXp: readonly number[] = FAIR_XP_VALUES): XpSuggestion | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Record<string, unknown>;
   const xp = Number(candidate.xp);
   const confidence = candidate.confidence;
   const rationale = typeof candidate.rationale === "string" ? candidate.rationale.trim() : "";
+  const decision = candidate.decision;
 
-  if (!FAIR_XP_VALUES.includes(xp as (typeof FAIR_XP_VALUES)[number])) return null;
+  if (!allowedXp.includes(xp)) return null;
   if (confidence !== "low" && confidence !== "medium" && confidence !== "high") return null;
   if (!rationale || rationale.length > 320) return null;
 
-  return { xp, confidence, rationale };
+  if (decision !== undefined && decision !== "estimate" && decision !== "accepted" && decision !== "adjusted" && decision !== "rejected") return null;
+
+  return { xp, confidence, rationale, ...(decision ? { decision } : {}) };
 }

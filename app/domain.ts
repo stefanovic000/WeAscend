@@ -1,5 +1,14 @@
 export type QuestType = "Main" | "Daily" | "Side" | "Mandatory" | "Correction" | "Boss";
 export type QuestStatus = "active" | "completed" | "failed" | "skipped" | "archived";
+export type XpCategory = "growth" | "maintenance" | "result" | "boss";
+export type XpSource = "rules" | "ai" | "argument" | "manual" | "legacy";
+
+export const XP_BY_CATEGORY = {
+  growth: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50],
+  maintenance: [0, 5, 10],
+  result: [0, 10, 20, 30],
+  boss: [0, 75, 100, 150, 200, 300, 400],
+} as const;
 
 export interface RankRule { name: string; minLevel: number }
 export interface Settings {
@@ -11,6 +20,7 @@ export interface Settings {
   theme: "void" | "abyss";
   animations: boolean;
   notifications: boolean;
+  manualXpOverride?: boolean;
 }
 export interface Attribute { id: string; name: string; color: string; createdAt: string; updatedAt: string; deletedAt?: string }
 export interface Skill { id: string; attributeId: string; name: string; createdAt: string; updatedAt: string; deletedAt?: string }
@@ -23,6 +33,12 @@ export interface Quest {
   attributeId: string;
   skillId: string;
   xp: number;
+  xpCategory?: XpCategory;
+  focusMinutes?: number;
+  outputBonus?: 0 | 5 | 10;
+  xpRuleValue?: number;
+  xpSource?: XpSource;
+  xpArgumentReason?: string;
   date: string;
   deadline: string;
   recurrence: "none" | "daily" | "weekly";
@@ -84,7 +100,42 @@ export const defaultSettings: Settings = {
   theme: "void",
   animations: true,
   notifications: false,
+  manualXpOverride: false,
 };
+
+export type QuestScoringInput = Pick<Quest, "type" | "xpCategory" | "focusMinutes" | "outputBonus" | "xpRuleValue">;
+
+export function questXpCategory(quest: Pick<Quest, "type" | "xpCategory">): XpCategory {
+  return quest.xpCategory ?? (quest.type === "Boss" ? "boss" : "growth");
+}
+
+export function allowedXpForCategory(category: XpCategory): readonly number[] {
+  return XP_BY_CATEGORY[category];
+}
+
+export function focusedWorkXp(minutes: number) {
+  if (minutes < 15) return 0;
+  if (minutes < 30) return 5;
+  if (minutes < 45) return 10;
+  if (minutes < 75) return 20;
+  if (minutes < 120) return 30;
+  return 40;
+}
+
+export function calculateQuestXp(quest: QuestScoringInput) {
+  const category = questXpCategory(quest);
+  if (category === "growth") {
+    const base = focusedWorkXp(Math.max(0, Number(quest.focusMinutes) || 0));
+    const bonus = quest.outputBonus === 5 || quest.outputBonus === 10 ? quest.outputBonus : 0;
+    return { category, base, bonus, xp: Math.min(50, base + bonus) };
+  }
+
+  const allowed = allowedXpForCategory(category);
+  const fallback = category === "maintenance" ? 0 : category === "result" ? 20 : 100;
+  const selected = Number(quest.xpRuleValue);
+  const xp = (allowed as readonly number[]).includes(selected) ? selected : fallback;
+  return { category, base: xp, bonus: 0, xp };
+}
 
 export function xpForNextLevel(level: number, settings: Pick<Settings, "baseXp" | "levelGrowth">) {
   return settings.baseXp + settings.levelGrowth * Math.max(0, level - 1);
@@ -159,6 +210,7 @@ export function nextRecurringInstance(quest: Quest, now = new Date()): Quest | n
   const delta = next.getTime() - previous.getTime();
   const deadline = quest.deadline ? new Date(new Date(quest.deadline).getTime() + delta).toISOString() : "";
   const stamp = now.toISOString();
+  const nextXp = calculateQuestXp(quest).xp;
   return {
     ...quest,
     id: crypto.randomUUID(),
@@ -166,6 +218,9 @@ export function nextRecurringInstance(quest: Quest, now = new Date()): Quest | n
     date: next.toISOString(),
     deadline,
     note: undefined,
+    xp: nextXp,
+    xpSource: "rules",
+    xpArgumentReason: undefined,
     status: "active",
     completedAt: undefined,
     createdAt: stamp,
@@ -194,6 +249,10 @@ export function isValidCloudState(value: unknown): value is AppState {
   return value.quests.every(quest =>
     Number.isFinite(quest.xp) &&
     quest.xp >= 0 &&
+    (quest.xpCategory === undefined || Object.hasOwn(XP_BY_CATEGORY, quest.xpCategory)) &&
+    (quest.focusMinutes === undefined || (Number.isFinite(quest.focusMinutes) && quest.focusMinutes >= 0 && quest.focusMinutes <= 1440)) &&
+    (quest.outputBonus === undefined || quest.outputBonus === 0 || quest.outputBonus === 5 || quest.outputBonus === 10) &&
+    (quest.xpArgumentReason === undefined || (typeof quest.xpArgumentReason === "string" && quest.xpArgumentReason.length <= 800)) &&
     (quest.note === undefined || (typeof quest.note === "string" && quest.note.length <= 500))
   );
 }

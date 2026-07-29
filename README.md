@@ -171,19 +171,29 @@ Quest Manager podržava izbor budućeg datuma i mesečni kalendar. Ponavljajući
 
 ## Opcioni DeepSeek XP advisor
 
-Quest editor ima dugme **Proceni XP**. DeepSeek dobija podatke samo kada korisnik klikne dugme i vraća predlog sa kratkim obrazloženjem.
+Quest editor prvo računa XP bez AI-ja, po jednoj od četiri konkretne kategorije:
 
-- AI procena nije obavezna i nikada se ne primenjuje automatski.
-- Korisnik bira **Primeni predlog** ili zadržava ručno uneti XP.
-- AI procenjuje nagradu pod pretpostavkom da će quest biti uspešno završen; ne traži dokaz niti proverava korisnika. Confidence opisuje samo preciznost procene iz unetih detalja.
-- Vreme samo po sebi ne donosi XP. Negativne, pasivne i besciljne aktivnosti dobijaju `0 XP`; neuspešan pokušaj dobija mali XP samo kada unapred zahteva konkretno učenje, analizu greške ili correction rezultat.
-- Dozvoljene AI vrednosti su ograničene na fer skalu: `0, 5, 10, 20, 30, 40, 50, 75, 100, 150, 200, 300, 400`.
-- Naziv, opis, tip, težina, attribute, skill i uslov završetka šalju se DeepSeek API-ju. Datum i rok se ne tumače kao trajanje; vreme se koristi samo kada ga korisnik izričito napiše.
+| Kategorija | Pravilo |
+| --- | --- |
+| Focused growth | Fokus: `0 / 5 / 10 / 20 / 30 / 40 XP` po vremenskom rasponu; merljiv output dodaje `5` ili `10`, uz maksimum `50 XP` |
+| Maintenance | Rutina `0`, korisno zaostalo održavanje `5`, ozbiljan reset `10 XP` |
+| Concrete result | Bez validnog rezultata `0`, mali `10`, značajan `20`, veliki uobičajeni rezultat `30 XP` |
+| Boss milestone | Bez clear-a `0`; stvarna provera ili prekretnica `75 / 100 / 150 / 200 / 300 / 400 XP` |
+
+DeepSeek je opciona kontrola tih pravila:
+
+- **Estimate XP** proverava izabranu kategoriju i nivo, ali ne određuje proizvoljnu vrednost van dozvoljene skale.
+- Ista neizmenjena verzija questa može se proceniti samo jednom. Nova procena se otključava tek kada se promeni neko polje u editoru.
+- Posle procene postoji jedan **Argue** prigovor za tu verziju. Korisnik bira drugu dozvoljenu vrednost i objašnjava zašto; DeepSeek je prihvata, prilagođava ili odbija.
+- AI procena i prigovor se nikada ne primenjuju automatski.
+- DeepSeek ne traži dokaz i ne procenjuje iskrenost. Negativne, pasivne, besciljne i kružne aktivnosti dobijaju `0 XP`.
+- Direktan ručni XP unos je podrazumevano skriven. Može se svesno uključiti u **Settings → Experience Rules → Allow manual XP override**.
+- Naziv, opis, tip, težina, attribute, skill, uslov završetka i strukturirani XP podaci šalju se DeepSeek API-ju samo kada korisnik zatraži procenu ili prigovor.
 - API ključ nikada ne dolazi u browser i nije deo backupa.
 - Server prekida DeepSeek zahtev nakon 20 sekundi.
 - Podrazumevani model je `deepseek-v4-flash` u non-thinking režimu radi manje potrošnje i bržeg odgovora; model se može promeniti preko `DEEPSEEK_MODEL`.
 
-Za produkciju dodaj `DEEPSEEK_API_KEY` kao Sites secret i napravi novi deployment. Ako ključ nije podešen, aplikacija prikazuje jasnu poruku, a ručno XP bodovanje ostaje dostupno.
+Za produkciju dodaj `DEEPSEEK_API_KEY` kao Sites secret i napravi novi deployment. Ako ključ nije podešen, četiri lokalna pravila i dalje rade; samo AI provera i prigovor nisu dostupni.
 
 ## Telefon i PWA instalacija
 
