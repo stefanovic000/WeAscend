@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activeXp, calculateQuestXp, canAwardQuest, defaultSettings, deleteAttributeFromState, deleteQuestFromState, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type Quest, type XpTransaction } from "../app/domain.ts";
+import { activeXp, applyQuestMutation, calculateQuestXp, canAwardQuest, defaultSettings, deleteAttributeFromState, deleteQuestFromState, isValidCloudState, isValidQuest, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type Quest, type XpTransaction } from "../app/domain.ts";
 import { translate } from "../app/i18n.ts";
 import { parseXpSuggestion } from "../app/xpAdvisor.ts";
 import { authenticateRequest } from "../server/auth.ts";
@@ -106,6 +106,46 @@ test("deleting a quest removes its note and content while preserving XP history"
   assert.deepEqual(next.quests, []);
   assert.equal(next.transactions.length, 1);
   assert.equal(activeXp(next.transactions), 20);
+});
+
+test("server quest mutations change only the targeted quest and preserve XP history", () => {
+  const state = makeInitialState();
+  state.attributes = [{ id: "a", name: "Intelligence", color: "#866bff", createdAt: "2026-01-01", updatedAt: "2026-01-01" }];
+  state.skills = [{ id: "s", attributeId: "a", name: "University", createdAt: "2026-01-01", updatedAt: "2026-01-01" }];
+  const first: Quest = { id: "q1", title: "First", description: "", type: "Side", attributeId: "a", skillId: "s", xp: 20, date: "2026-07-23", deadline: "", recurrence: "none", difficulty: "Normal", completionConditions: "", failureConsequence: "", status: "active", createdAt: "client-time", updatedAt: "client-time" };
+  const second: Quest = { ...first, id: "q2", title: "Second" };
+
+  const createdFirst = applyQuestMutation(state, { action: "create", quest: first }, "server-1");
+  assert.equal(createdFirst.ok, true);
+  if (!createdFirst.ok) return;
+  const createdSecond = applyQuestMutation(createdFirst.state, { action: "create", quest: second }, "server-2");
+  assert.equal(createdSecond.ok, true);
+  if (!createdSecond.ok) return;
+  createdSecond.state.transactions = [{ id: "tx", questId: "q1", amount: 20, kind: "quest", attributeId: "a", skillId: "s", createdAt: "server-2" }];
+
+  const updated = applyQuestMutation(createdSecond.state, { action: "update", quest: { ...first, title: "Updated" } }, "server-3");
+  assert.equal(updated.ok, true);
+  if (!updated.ok) return;
+  assert.equal(updated.state.quests.find(quest => quest.id === "q1")?.title, "Updated");
+  assert.equal(updated.state.quests.find(quest => quest.id === "q1")?.createdAt, "server-1");
+  assert.equal(updated.state.quests.find(quest => quest.id === "q2")?.title, "Second");
+
+  const deleted = applyQuestMutation(updated.state, { action: "delete", questId: "q1" }, "server-4");
+  assert.equal(deleted.ok, true);
+  if (!deleted.ok) return;
+  assert.equal(deleted.state.quests.some(quest => quest.id === "q1"), false);
+  assert.equal(deleted.state.quests.find(quest => quest.id === "q2")?.title, "Second");
+  assert.equal(deleted.state.transactions.length, 1);
+});
+
+test("server quest validation rejects malformed content and missing relationships", () => {
+  const state = makeInitialState();
+  const quest = { id: "q", title: "", description: "", type: "Side", attributeId: "a", skillId: "s", xp: 0, date: "2026-07-23", deadline: "", recurrence: "none", difficulty: "Normal", completionConditions: "", failureConsequence: "", status: "active", createdAt: "now", updatedAt: "now" };
+  assert.equal(isValidQuest(quest), false);
+
+  const validShape = { ...quest, title: "Valid" } as Quest;
+  assert.equal(isValidQuest(validShape), true);
+  assert.deepEqual(applyQuestMutation(state, { action: "create", quest: validShape }), { ok: false, code: "invalid_quest" });
 });
 
 test("cloud validation rejects duplicate active XP awards and negative XP", () => {

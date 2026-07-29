@@ -88,6 +88,15 @@ export interface AppState {
   levelEvents: { id: string; type: "level" | "rank"; value: string; createdAt: string }[];
 }
 
+export type QuestMutation =
+  | { action: "create"; quest: Quest }
+  | { action: "update"; quest: Quest }
+  | { action: "delete"; questId: string };
+
+export type QuestMutationResult =
+  | { ok: true; state: AppState }
+  | { ok: false; code: "invalid_quest" | "quest_not_found" };
+
 export const defaultSettings: Settings = {
   baseXp: 100,
   levelGrowth: 25,
@@ -198,6 +207,74 @@ export function deleteQuestFromState(state: AppState, questId: string): AppState
   };
 }
 
+const QUEST_TYPES: QuestType[] = ["Main", "Daily", "Side", "Mandatory", "Correction", "Boss"];
+const QUEST_STATUSES: QuestStatus[] = ["active", "completed", "failed", "skipped", "archived"];
+const QUEST_RECURRENCES: Quest["recurrence"][] = ["none", "daily", "weekly"];
+const QUEST_DIFFICULTIES: Quest["difficulty"][] = ["Easy", "Normal", "Hard", "Extreme"];
+const XP_SOURCES: XpSource[] = ["rules", "ai", "argument", "manual", "legacy"];
+
+function boundedString(value: unknown, maxLength: number, required = false) {
+  return typeof value === "string" && value.length <= maxLength && (!required || value.trim().length > 0);
+}
+
+export function isValidQuest(value: unknown): value is Quest {
+  if (!value || typeof value !== "object") return false;
+  const quest = value as Partial<Quest>;
+  return boundedString(quest.id, 120, true) &&
+    boundedString(quest.title, 500, true) &&
+    boundedString(quest.description, 10_000) &&
+    (quest.note === undefined || boundedString(quest.note, 500)) &&
+    QUEST_TYPES.includes(quest.type as QuestType) &&
+    boundedString(quest.attributeId, 120, true) &&
+    boundedString(quest.skillId, 120, true) &&
+    Number.isFinite(quest.xp) &&
+    Number(quest.xp) >= 0 &&
+    (quest.xpCategory === undefined || Object.hasOwn(XP_BY_CATEGORY, quest.xpCategory)) &&
+    (quest.focusMinutes === undefined || (Number.isFinite(quest.focusMinutes) && Number(quest.focusMinutes) >= 0 && Number(quest.focusMinutes) <= 1440)) &&
+    (quest.outputBonus === undefined || quest.outputBonus === 0 || quest.outputBonus === 5 || quest.outputBonus === 10) &&
+    (quest.xpRuleValue === undefined || Number.isFinite(quest.xpRuleValue)) &&
+    (quest.xpSource === undefined || XP_SOURCES.includes(quest.xpSource)) &&
+    (quest.xpArgumentReason === undefined || boundedString(quest.xpArgumentReason, 800)) &&
+    boundedString(quest.date, 100, true) &&
+    boundedString(quest.deadline, 100) &&
+    QUEST_RECURRENCES.includes(quest.recurrence as Quest["recurrence"]) &&
+    QUEST_DIFFICULTIES.includes(quest.difficulty as Quest["difficulty"]) &&
+    boundedString(quest.completionConditions, 10_000) &&
+    boundedString(quest.failureConsequence, 10_000) &&
+    QUEST_STATUSES.includes(quest.status as QuestStatus) &&
+    (quest.seriesId === undefined || boundedString(quest.seriesId, 120, true)) &&
+    boundedString(quest.createdAt, 100, true) &&
+    boundedString(quest.updatedAt, 100, true) &&
+    (quest.completedAt === undefined || boundedString(quest.completedAt, 100, true));
+}
+
+export function applyQuestMutation(state: AppState, mutation: QuestMutation, stamp = new Date().toISOString()): QuestMutationResult {
+  if (mutation.action === "delete") {
+    if (!boundedString(mutation.questId, 120, true)) return { ok: false, code: "invalid_quest" };
+    return { ok: true, state: deleteQuestFromState(state, mutation.questId) };
+  }
+
+  if (!isValidQuest(mutation.quest)) return { ok: false, code: "invalid_quest" };
+  const skill = state.skills.find(item => item.id === mutation.quest.skillId);
+  if (!state.attributes.some(item => item.id === mutation.quest.attributeId) || skill?.attributeId !== mutation.quest.attributeId) {
+    return { ok: false, code: "invalid_quest" };
+  }
+
+  const existing = state.quests.find(item => item.id === mutation.quest.id);
+  if (mutation.action === "create") {
+    if (existing) return { ok: true, state };
+    const quest = { ...mutation.quest, status: "active" as const, completedAt: undefined, createdAt: stamp, updatedAt: stamp };
+    return { ok: true, state: { ...state, quests: [quest, ...state.quests] } };
+  }
+
+  if (!existing) return { ok: false, code: "quest_not_found" };
+  const quest = { ...mutation.quest, id: existing.id, createdAt: existing.createdAt, updatedAt: stamp };
+  return {
+    ok: true,
+    state: { ...state, quests: state.quests.map(item => item.id === existing.id ? quest : item) },
+  };
+}
+
 export function canAwardQuest(questId: string, transactions: XpTransaction[]) {
   return !transactions.some(tx => tx.questId === questId && !tx.reversedAt);
 }
@@ -243,15 +320,7 @@ export function isValidCloudState(value: unknown): value is AppState {
       activeAwards.add(transaction.questId);
     }
   }
-  return value.quests.every(quest =>
-    Number.isFinite(quest.xp) &&
-    quest.xp >= 0 &&
-    (quest.xpCategory === undefined || Object.hasOwn(XP_BY_CATEGORY, quest.xpCategory)) &&
-    (quest.focusMinutes === undefined || (Number.isFinite(quest.focusMinutes) && quest.focusMinutes >= 0 && quest.focusMinutes <= 1440)) &&
-    (quest.outputBonus === undefined || quest.outputBonus === 0 || quest.outputBonus === 5 || quest.outputBonus === 10) &&
-    (quest.xpArgumentReason === undefined || (typeof quest.xpArgumentReason === "string" && quest.xpArgumentReason.length <= 800)) &&
-    (quest.note === undefined || (typeof quest.note === "string" && quest.note.length <= 500))
-  );
+  return value.quests.every(isValidQuest);
 }
 
 export function makeInitialState(): AppState {

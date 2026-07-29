@@ -132,6 +132,8 @@ Svako cloud stanje ima broj `revision`.
 
 Ovim se sprečava tiho prepisivanje podataka sa telefona ili računara. MongoDB konekcija se otvara i zatvara unutar jednog Worker zahteva; TCP konekcije se ne dele između različitih Cloudflare zahteva.
 
+Kreiranje, uređivanje, beleške, arhiviranje i brisanje questova koriste posebne server-side komande preko `/api/quests`. Server menja samo ciljani quest, postavlja vreme izmene i vraća potvrđeno stanje. Ako je drugi uređaj u međuvremenu napravio izmenu, klijent učita novu reviziju i jednom bezbedno ponovi istu komandu, pa promena jednog questa ne pregazi drugi quest.
+
 ## Offline i read-only pravila
 
 Kada internet ili MongoDB nisu dostupni:
@@ -174,8 +176,8 @@ Quest Manager podržava izbor budućeg datuma i mesečni kalendar. Ponavljajući
 Quest editor je AI-first: korisnik opisuje quest, a DeepSeek interno bira jednu od četiri skrivene kategorije i primenjuje njihovu ograničenu XP skalu. Kategorije, vreme, output bonus i rule tier nisu deo korisničkog interfejsa.
 
 - **Estimate XP** klasifikuje quest i predlaže samo vrednost dozvoljenu internim pravilima.
-- Ista neizmenjena verzija questa može se proceniti samo jednom. Nova procena se otključava tek kada se promeni neko polje u editoru.
-- Posle procene postoji jedan **Argue** prigovor za tu verziju. Korisnik bira drugu dozvoljenu vrednost i objašnjava zašto; DeepSeek je prihvata, prilagođava ili odbija.
+- Samo uzastopna identična procena bez izmene je zaključana. Promena bilo kog polja otključava novu procenu, čak i kada se kasnije vrati prethodna vrednost.
+- Posle svake procene postoji jedan **Argue** prigovor. Korisnik bira drugu dozvoljenu vrednost i objašnjava zašto; DeepSeek razumno uzima u obzir lični trud, stres i složenost, pa zahtev prihvata, prilagođava ili odbija.
 - AI procena i prigovor se nikada ne primenjuju automatski.
 - DeepSeek ne traži dokaz i ne procenjuje iskrenost. Negativne, pasivne, besciljne i kružne aktivnosti dobijaju `0 XP`.
 - Direktan ručni XP unos je podrazumevano skriven. Može se svesno uključiti u **Settings → Experience Rules → Allow manual XP override**.

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { activeXp, allowedXpForCategory, canAwardQuest, deleteAttributeFromState, deleteQuestFromState, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type AppState, type Quest, type QuestType, type XpTransaction } from "./domain";
+import { activeXp, allowedXpForCategory, canAwardQuest, deleteAttributeFromState, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type AppState, type Quest, type QuestMutation, type QuestType, type XpTransaction } from "./domain";
 import { loadState, saveState } from "./db";
 import { translate, type Language, type TranslationKey } from "./i18n";
 import type { XpSuggestion } from "./xpAdvisor";
@@ -115,6 +115,7 @@ export default function SoloApp() {
   const [lastEstimatedRevision, setLastEstimatedRevision] = useState(-1);
   const [xpArgument, setXpArgument] = useState<{ requestedXp: number; reason: string } | null>(null);
   const [argumentUsed, setArgumentUsed] = useState(false);
+  const [commandBusy, setCommandBusy] = useState(false);
   const [toast, setToast] = useState("");
   const [ceremony, setCeremony] = useState<{ eyebrow: string; title: string; text: string } | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ title: string; text: string; action: () => void } | null>(null);
@@ -142,6 +143,7 @@ export default function SoloApp() {
   const lastSyncedRef = useRef("");
   const pendingStateRef = useRef<AppState | null>(null);
   const syncInFlightRef = useRef(false);
+  const commandInFlightRef = useRef(false);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncModeRef = useRef<SyncMode>("starting");
   const t = (key: TranslationKey, variables?: Record<string, string | number>) => translate(language, key, variables);
@@ -362,14 +364,100 @@ export default function SoloApp() {
 
   const readOnly = syncMode === "offline" || syncMode === "local";
   const ensureWritable = () => {
-    if (!readOnly) return true;
-    setToast(t("sync.readOnlyToast"));
-    return false;
+    if (readOnly) {
+      setToast(t("sync.readOnlyToast"));
+      return false;
+    }
+    if (commandBusy) {
+      setToast(t("sync.saving"));
+      return false;
+    }
+    return true;
   };
   const updateState = (recipe: (current: AppState) => AppState) => {
     if (!ensureWritable()) return false;
     setState(current => current ? recipe(current) : current);
     return true;
+  };
+
+  const runQuestMutation = async (mutation: QuestMutation) => {
+    if (!ensureWritable() || commandInFlightRef.current) return null;
+    commandInFlightRef.current = true;
+    setCommandBusy(true);
+
+    try {
+      for (let attempt = 0; attempt < 200; attempt++) {
+        const pending = pendingStateRef.current;
+        if (!syncInFlightRef.current && pending && JSON.stringify(pending) === lastSyncedRef.current) break;
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      const pending = pendingStateRef.current;
+      if (syncModeRef.current !== "online" || syncInFlightRef.current || !pending || JSON.stringify(pending) !== lastSyncedRef.current) {
+        setToast(t("sync.saveFailed"));
+        return null;
+      }
+
+      for (let attempt = 0; attempt < 2; attempt++) {
+        syncInFlightRef.current = true;
+        syncModeRef.current = "syncing";
+        setSyncMode("syncing");
+        const response = await cloudFetch("/api/quests", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...mutation, revision: revisionRef.current }),
+        });
+        const result = await response.json() as CloudStateResponse;
+        syncInFlightRef.current = false;
+
+        if (response.status === 401 || (response.status === 403 && result.code === "owner_access_denied")) {
+          setAuthRequired(response.status === 401);
+          setAccessDenied(response.status === 403);
+          syncModeRef.current = "offline";
+          setSyncMode("offline");
+          return null;
+        }
+
+        if (response.status === 409 && result.state && isValidCloudState(result.state)) {
+          revisionRef.current = result.revision;
+          lastSyncedRef.current = JSON.stringify(result.state);
+          pendingStateRef.current = result.state;
+          if (attempt === 0) continue;
+          setState(result.state);
+          void saveState(result.state);
+          setToast(t("sync.conflict"));
+          syncModeRef.current = "online";
+          setSyncMode("online");
+          return null;
+        }
+
+        if (!response.ok || !result.state || !isValidCloudState(result.state)) {
+          setToast(t("sync.saveFailed"));
+          syncModeRef.current = "online";
+          setSyncMode("online");
+          return null;
+        }
+
+        revisionRef.current = result.revision;
+        lastSyncedRef.current = JSON.stringify(result.state);
+        pendingStateRef.current = result.state;
+        setCloudUser(result.user ?? cloudUser);
+        setState(result.state);
+        void saveState(result.state);
+        syncModeRef.current = "online";
+        setSyncMode("online");
+        return result.state;
+      }
+    } catch {
+      syncInFlightRef.current = false;
+      syncModeRef.current = "offline";
+      setSyncMode("offline");
+      setToast(t("sync.saveFailed"));
+    } finally {
+      commandInFlightRef.current = false;
+      setCommandBusy(false);
+    }
+    return null;
   };
   const attrName = (id: string) => state.attributes.find(a => a.id === id)?.name ?? t("common.unassigned");
   const skillName = (id: string) => state.skills.find(s => s.id === id)?.name ?? t("common.general");
@@ -440,7 +528,7 @@ export default function SoloApp() {
     setToast(t("quest.undoDone"));
   };
 
-  const saveQuest = () => {
+  const saveQuest = async () => {
     if (!ensureWritable()) return;
     if (!questDraft?.title.trim()) { setToast(t("quest.enterName")); return; }
     if (!questDraft.attributeId || !questDraft.skillId) { setToast(t("quest.choosePath")); return; }
@@ -454,7 +542,8 @@ export default function SoloApp() {
       xp: keepChosenXp ? Math.max(0, Number(questDraft.xp) || 0) : 0,
       xpSource: keepChosenXp ? questDraft.xpSource : undefined,
     };
-    updateState(s => ({ ...s, quests: exists ? s.quests.map(q => q.id === updated.id ? updated : q) : [updated, ...s.quests] }));
+    const saved = await runQuestMutation({ action: exists ? "update" : "create", quest: updated });
+    if (!saved) return;
     setQuestDraft(null);
     setToast(exists ? t("quest.updated") : t("quest.created"));
   };
@@ -613,20 +702,33 @@ export default function SoloApp() {
     setConfirmAction({
       title: t("quest.deleteTitle"),
       text: t("quest.deleteText"),
-      action: () => { updateState(s => deleteQuestFromState(s, quest.id)); setConfirmAction(null); setToast(t("quest.deleted")); },
+      action: () => {
+        setConfirmAction(null);
+        void runQuestMutation({ action: "delete", questId: quest.id }).then(saved => {
+          if (saved) setToast(t("quest.deleted"));
+        });
+      },
     });
   };
 
   const saveQuestNote = (questId: string, value: string) => {
+    const quest = state.quests.find(item => item.id === questId);
+    if (!quest) return;
     const note = value.trim().slice(0, 500);
     const stamp = new Date().toISOString();
-    updateState(s => ({
-      ...s,
-      quests: s.quests.map(quest => quest.id === questId
-        ? { ...quest, note: note || undefined, updatedAt: stamp }
-        : quest),
-    }));
-    setToast(note ? t("quest.noteSaved") : t("quest.noteRemoved"));
+    void runQuestMutation({
+      action: "update",
+      quest: { ...quest, note: note || undefined, updatedAt: stamp },
+    }).then(saved => {
+      if (saved) setToast(note ? t("quest.noteSaved") : t("quest.noteRemoved"));
+    });
+  };
+
+  const archiveQuest = (quest: Quest) => {
+    void runQuestMutation({
+      action: "update",
+      quest: { ...quest, status: "archived", updatedAt: new Date().toISOString() },
+    });
   };
 
   const openQuestNote = (quest: Quest) => {
@@ -799,7 +901,7 @@ export default function SoloApp() {
         <button className={quest.note ? "has-note" : ""} onClick={() => openQuestNote(quest)} aria-label={t("quest.noteEditLabel", { name: quest.title })} title={t("quest.note")}>{compact ? "✎" : t("quest.note")}</button>
         {!compact && <>
           <button onClick={() => { if (ensureWritable()) openQuestEditor(quest); }}>{t("common.edit")}</button>
-          <button onClick={() => updateState(s => ({ ...s, quests: s.quests.map(q => q.id === quest.id ? { ...q, status: "archived" } : q) }))}>{t("common.archive")}</button>
+          <button onClick={() => archiveQuest(quest)}>{t("common.archive")}</button>
           <button className="danger-link" onClick={() => deleteQuest(quest)}>{t("common.delete")}</button>
         </>}
       </div>
@@ -1039,7 +1141,7 @@ export default function SoloApp() {
           <Field label={t("editor.condition")} wide><input value={questDraft.completionConditions} onChange={e => updateQuestDraft({ ...questDraft, completionConditions: e.target.value })} placeholder={t("editor.conditionPlaceholder")} /></Field>
           {(questDraft.type === "Mandatory" || questDraft.type === "Correction") && <Field label={t("editor.consequence")} wide><textarea value={questDraft.failureConsequence} onChange={e => updateQuestDraft({ ...questDraft, failureConsequence: e.target.value })} placeholder={t("editor.consequencePlaceholder")} /></Field>}
         </div>
-        <footer><button onClick={() => setQuestDraft(null)}>{t("common.cancel")}</button><button className="primary" onClick={saveQuest}>{t("editor.activate")}</button></footer>
+        <footer><button onClick={() => setQuestDraft(null)}>{t("common.cancel")}</button><button className="primary" onClick={() => void saveQuest()}>{t("editor.activate")}</button></footer>
       </section>
     </div>}
     {questDraft && xpSuggestion && xpArgument && <div className="modal-backdrop argument-backdrop" onMouseDown={e => e.target === e.currentTarget && setXpArgument(null)}>
