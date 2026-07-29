@@ -135,7 +135,7 @@ Negative, aimless, passive, distracting, or circular activity is always 0 XP. Di
 
 For estimate mode, infer duration and concrete output only from the quest's title, description, and completion condition. Choose the category yourself and calculate XP using its exact scale. If details are missing, be conservative.
 
-For argue mode, keep the supplied category and assess the user's reason for requestedXp against that category. Use decision "accepted" only when requestedXp is fully justified, "adjusted" when a different allowed value is justified, and "rejected" when previousXp should remain.
+For argue mode, keep the supplied category and assess the user's reason charitably. Personal effort, stress, unusual complexity, overcoming resistance, and importance to the user's life are valid context even when they cannot be independently verified. Accept a modest increase when the explanation is plausible and fits the category scale. When the request is partly justified, prefer "adjusted" to a fair middle value instead of rejecting it outright. Use "rejected" only for an unexplained or clearly disproportionate request, a request outside the category's meaning, or negative/aimless activity. Never ask for evidence.
 
 Write rationale only in ${quest.language === "sr" ? "Serbian (Latin script)" : "English"}, in one short sentence.
 Return only JSON:
