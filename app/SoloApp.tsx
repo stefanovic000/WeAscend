@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { activeXp, allowedXpForCategory, calculateQuestXp, canAwardQuest, deleteAttributeFromState, deleteQuestFromState, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, questXpCategory, rankForLevel, type AppState, type Quest, type QuestType, type XpCategory, type XpTransaction } from "./domain";
+import { activeXp, allowedXpForCategory, canAwardQuest, deleteAttributeFromState, deleteQuestFromState, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type AppState, type Quest, type QuestType, type XpTransaction } from "./domain";
 import { loadState, saveState } from "./db";
 import { translate, type Language, type TranslationKey } from "./i18n";
 import type { XpSuggestion } from "./xpAdvisor";
@@ -31,8 +31,7 @@ const blankQuest = (state: AppState): Quest => {
   const attribute = state.attributes.find(a => a.id === skill?.attributeId && !a.deletedAt);
   return {
     id: crypto.randomUUID(), title: "", description: "", type: "Side",
-    attributeId: attribute?.id ?? "", skillId: skill?.id ?? "", xp: 10,
-    xpCategory: "growth", focusMinutes: 30, outputBonus: 0, xpSource: "rules",
+    attributeId: attribute?.id ?? "", skillId: skill?.id ?? "", xp: 0,
     date: now.toISOString(), deadline: deadline.toISOString(), recurrence: "none",
     difficulty: "Normal", completionConditions: "", failureConsequence: "",
     status: "active", createdAt: now.toISOString(), updatedAt: now.toISOString(),
@@ -40,36 +39,9 @@ const blankQuest = (state: AppState): Quest => {
 };
 
 const prepareQuestDraft = (quest: Quest): Quest => {
-  if (quest.xpCategory) return { ...quest };
-  if (quest.type === "Boss") {
-    const allowed = allowedXpForCategory("boss");
-    const xpRuleValue = (allowed as readonly number[]).includes(quest.xp) ? quest.xp : 100;
-    return { ...quest, xpCategory: "boss", xpRuleValue, xpSource: "legacy" };
-  }
-
-  const growthMap: Record<number, { focusMinutes: number; outputBonus: 0 | 5 | 10 }> = {
-    0: { focusMinutes: 0, outputBonus: 0 },
-    5: { focusMinutes: 15, outputBonus: 0 },
-    10: { focusMinutes: 30, outputBonus: 0 },
-    15: { focusMinutes: 30, outputBonus: 5 },
-    20: { focusMinutes: 45, outputBonus: 0 },
-    25: { focusMinutes: 45, outputBonus: 5 },
-    30: { focusMinutes: 75, outputBonus: 0 },
-    35: { focusMinutes: 75, outputBonus: 5 },
-    40: { focusMinutes: 120, outputBonus: 0 },
-    45: { focusMinutes: 120, outputBonus: 5 },
-    50: { focusMinutes: 120, outputBonus: 10 },
-  };
-  const scoring = growthMap[quest.xp] ?? { focusMinutes: 0, outputBonus: 0 as const };
-  return { ...quest, xpCategory: "growth", ...scoring, xpSource: "legacy" };
+  const xpSource = quest.xpSource === "rules" || !quest.xpSource ? "legacy" : quest.xpSource;
+  return { ...quest, xpSource };
 };
-
-const scoringFingerprint = (quest: Quest) => JSON.stringify({
-  category: questXpCategory(quest),
-  focusMinutes: quest.focusMinutes ?? 0,
-  outputBonus: quest.outputBonus ?? 0,
-  xpRuleValue: quest.xpRuleValue ?? 0,
-});
 
 const estimateFingerprint = (quest: Quest, language: Language) => JSON.stringify({
   title: quest.title.trim(),
@@ -84,7 +56,6 @@ const estimateFingerprint = (quest: Quest, language: Language) => JSON.stringify
   date: quest.date,
   deadline: quest.deadline,
   language,
-  scoring: scoringFingerprint(quest),
 });
 
 const isoLocal = (value: string) => value ? new Date(value).toISOString().slice(0, 16) : "";
@@ -138,6 +109,7 @@ export default function SoloApp() {
   const [questDraft, setQuestDraft] = useState<Quest | null>(null);
   const [xpSuggestion, setXpSuggestion] = useState<XpSuggestion | null>(null);
   const [xpEstimating, setXpEstimating] = useState(false);
+  const [xpAiOffline, setXpAiOffline] = useState(false);
   const [lastEstimatedFingerprint, setLastEstimatedFingerprint] = useState("");
   const [xpArgument, setXpArgument] = useState<{ requestedXp: number; reason: string } | null>(null);
   const [evaluatedFingerprints, setEvaluatedFingerprints] = useState<string[]>([]);
@@ -472,15 +444,14 @@ export default function SoloApp() {
     if (!questDraft?.title.trim()) { setToast(t("quest.enterName")); return; }
     if (!questDraft.attributeId || !questDraft.skillId) { setToast(t("quest.choosePath")); return; }
     const exists = state.quests.some(q => q.id === questDraft.id);
-    const ruleScore = calculateQuestXp(questDraft);
     const manualAllowed = state.settings.manualXpOverride === true;
     const keepChosenXp = questDraft.xpSource === "ai" || questDraft.xpSource === "argument" || (manualAllowed && questDraft.xpSource === "manual") || questDraft.xpSource === "legacy";
     const updated = {
       ...questDraft,
       note: questDraft.note?.trim().slice(0, 500) || undefined,
       updatedAt: new Date().toISOString(),
-      xp: keepChosenXp ? Math.max(0, Number(questDraft.xp) || 0) : ruleScore.xp,
-      xpSource: keepChosenXp ? questDraft.xpSource : "rules" as const,
+      xp: keepChosenXp ? Math.max(0, Number(questDraft.xp) || 0) : 0,
+      xpSource: keepChosenXp ? questDraft.xpSource : undefined,
     };
     updateState(s => ({ ...s, quests: exists ? s.quests.map(q => q.id === updated.id ? updated : q) : [updated, ...s.quests] }));
     setQuestDraft(null);
@@ -488,44 +459,28 @@ export default function SoloApp() {
   };
 
   const updateQuestDraft = (next: Quest) => {
-    const scoringChanged = questDraft ? scoringFingerprint(questDraft) !== scoringFingerprint(next) : true;
     const contentChanged = questDraft ? estimateFingerprint(questDraft, language) !== estimateFingerprint(next, language) : true;
     const aiScoreInvalidated = contentChanged && (questDraft?.xpSource === "ai" || questDraft?.xpSource === "argument");
-    const scored = scoringChanged || aiScoreInvalidated
-      ? { ...next, xp: calculateQuestXp(next).xp, xpSource: "rules" as const, xpArgumentReason: undefined }
+    const scored = aiScoreInvalidated
+      ? { ...next, xp: 0, xpCategory: undefined, xpSource: undefined, xpArgumentReason: undefined }
       : next;
     setQuestDraft(scored);
     setXpSuggestion(null);
     setXpArgument(null);
+    setXpAiOffline(false);
   };
 
   const openQuestEditor = (quest: Quest) => {
     setXpSuggestion(null);
     setXpArgument(null);
     setLastEstimatedFingerprint("");
+    setXpAiOffline(false);
     setQuestDraft(prepareQuestDraft(quest));
   };
 
   const changeQuestType = (type: QuestType) => {
     if (!questDraft) return;
-    if (type === "Boss") {
-      updateQuestDraft({ ...questDraft, type, xpCategory: "boss", xpRuleValue: 100, xp: 100, xpSource: "rules" });
-      return;
-    }
-    if (questXpCategory(questDraft) === "boss") {
-      updateQuestDraft({ ...questDraft, type, xpCategory: "growth", focusMinutes: 30, outputBonus: 0, xpRuleValue: undefined, xp: 10, xpSource: "rules" });
-      return;
-    }
     updateQuestDraft({ ...questDraft, type });
-  };
-
-  const changeXpCategory = (xpCategory: XpCategory) => {
-    if (!questDraft) return;
-    const type = xpCategory === "boss" ? "Boss" : questDraft.type === "Boss" ? "Side" : questDraft.type;
-    const defaults = xpCategory === "growth"
-      ? { focusMinutes: 30, outputBonus: 0 as const, xpRuleValue: undefined }
-      : { focusMinutes: undefined, outputBonus: undefined, xpRuleValue: xpCategory === "maintenance" ? 0 : xpCategory === "result" ? 20 : 100 };
-    updateQuestDraft({ ...questDraft, type, xpCategory, ...defaults, xpSource: "rules" });
   };
 
   const xpRequestBody = (draft: Quest) => ({
@@ -537,10 +492,6 @@ export default function SoloApp() {
     skill: skillName(draft.skillId),
     completionConditions: draft.completionConditions,
     language,
-    xpCategory: questXpCategory(draft),
-    focusMinutes: draft.focusMinutes ?? 0,
-    outputBonus: draft.outputBonus ?? 0,
-    xpRuleValue: draft.xpRuleValue,
   });
 
   const estimateQuestXp = async () => {
@@ -555,7 +506,9 @@ export default function SoloApp() {
       return;
     }
 
+    setEvaluatedFingerprints(current => current.includes(fingerprint) ? current : [...current, fingerprint]);
     setXpEstimating(true);
+    setXpAiOffline(false);
     setXpSuggestion(null);
     try {
       const response = await cloudFetch("/api/xp-estimate", {
@@ -567,22 +520,16 @@ export default function SoloApp() {
       const result = await response.json() as { suggestion?: XpSuggestion; code?: string };
 
       if (!response.ok || !result.suggestion) {
-        const messages: Record<string, string> = {
-          ai_not_configured: t("ai.notConfigured"),
-          ai_auth_failed: t("ai.authFailed"),
-          ai_balance_empty: t("ai.balanceEmpty"),
-          ai_rate_limited: t("ai.rateLimited"),
-          ai_timeout: t("ai.timeout"),
-        };
-        setToast(messages[result.code ?? ""] ?? t("ai.unavailable"));
+        setXpAiOffline(true);
+        setToast(t("ai.offline"));
         return;
       }
 
       setXpSuggestion(result.suggestion);
-      setEvaluatedFingerprints(current => current.includes(fingerprint) ? current : [...current, fingerprint]);
       setLastEstimatedFingerprint(fingerprint);
     } catch {
-      setToast(t("ai.unavailable"));
+      setXpAiOffline(true);
+      setToast(t("ai.offline"));
     } finally {
       setXpEstimating(false);
     }
@@ -606,7 +553,9 @@ export default function SoloApp() {
       return;
     }
 
+    setArguedFingerprints(current => current.includes(fingerprint) ? current : [...current, fingerprint]);
     setXpEstimating(true);
+    setXpAiOffline(false);
     try {
       const response = await cloudFetch("/api/xp-estimate", {
         method: "POST",
@@ -615,6 +564,7 @@ export default function SoloApp() {
         body: JSON.stringify({
           ...xpRequestBody(questDraft),
           mode: "argue",
+          xpCategory: xpSuggestion.category,
           requestedXp: xpArgument.requestedXp,
           argumentReason: xpArgument.reason,
           previousXp: xpSuggestion.xp,
@@ -622,22 +572,16 @@ export default function SoloApp() {
       }, 22_000);
       const result = await response.json() as { suggestion?: XpSuggestion; code?: string };
       if (!response.ok || !result.suggestion) {
-        const messages: Record<string, string> = {
-          ai_not_configured: t("ai.notConfigured"),
-          ai_auth_failed: t("ai.authFailed"),
-          ai_balance_empty: t("ai.balanceEmpty"),
-          ai_rate_limited: t("ai.rateLimited"),
-          ai_timeout: t("ai.timeout"),
-        };
-        setToast(messages[result.code ?? ""] ?? t("ai.unavailable"));
+        setXpAiOffline(true);
+        setToast(t("ai.offline"));
         return;
       }
       setXpSuggestion(result.suggestion);
       setQuestDraft(current => current ? { ...current, xpArgumentReason: xpArgument.reason.trim() } : current);
-      setArguedFingerprints(current => current.includes(fingerprint) ? current : [...current, fingerprint]);
       setXpArgument(null);
     } catch {
-      setToast(t("ai.unavailable"));
+      setXpAiOffline(true);
+      setToast(t("ai.offline"));
     } finally {
       setXpEstimating(false);
     }
@@ -649,6 +593,10 @@ export default function SoloApp() {
     setQuestDraft({
       ...questDraft,
       xp: xpSuggestion.xp,
+      xpCategory: xpSuggestion.category,
+      focusMinutes: undefined,
+      outputBonus: undefined,
+      xpRuleValue: undefined,
       xpSource: fromArgument ? "argument" : "ai",
       xpArgumentReason: fromArgument ? questDraft.xpArgumentReason : undefined,
     });
@@ -772,11 +720,7 @@ export default function SoloApp() {
     openQuestEditor({
       ...draft,
       type,
-      xp: type === "Boss" ? 100 : draft.xp,
-      xpCategory: type === "Boss" ? "boss" : draft.xpCategory,
-      xpRuleValue: type === "Boss" ? 100 : draft.xpRuleValue,
-      focusMinutes: type === "Boss" ? undefined : draft.focusMinutes,
-      outputBonus: type === "Boss" ? undefined : draft.outputBonus,
+      xp: 0,
       difficulty: type === "Boss" ? "Hard" : draft.difficulty,
       date: date.toISOString(),
       deadline: deadline.toISOString(),
@@ -1039,7 +983,6 @@ export default function SoloApp() {
     </div>
   </div>;
 
-  const currentXpCategory = questDraft ? questXpCategory(questDraft) : "growth";
   const currentXpFingerprint = questDraft ? estimateFingerprint(questDraft, language) : "";
   const estimateLocked = !!questDraft && evaluatedFingerprints.includes(currentXpFingerprint);
   const argumentLocked = !!questDraft && arguedFingerprints.includes(currentXpFingerprint);
@@ -1073,25 +1016,18 @@ export default function SoloApp() {
           <Field label={t("editor.difficulty")}><select value={questDraft.difficulty} onChange={e => updateQuestDraft({ ...questDraft, difficulty: e.target.value as Quest["difficulty"] })}>{(["Easy", "Normal", "Hard", "Extreme"] as const).map(difficulty => <option key={difficulty} value={difficulty}>{t(`difficulty.${difficulty}` as TranslationKey)}</option>)}</select></Field>
           <Field label={t("editor.attribute")}><select value={questDraft.attributeId} onChange={e => { const id = e.target.value; updateQuestDraft({ ...questDraft, attributeId: id, skillId: state.skills.find(s => s.attributeId === id && !s.deletedAt)?.id ?? "" }); }}>{availableAttributes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}{questDraft.attributeId && !availableAttributes.some(a => a.id === questDraft.attributeId) && <option value={questDraft.attributeId}>{attrName(questDraft.attributeId)} ({t("status.archived")})</option>}</select></Field>
           <Field label={t("editor.skill")}><select value={questDraft.skillId} onChange={e => updateQuestDraft({ ...questDraft, skillId: e.target.value })}>{state.skills.filter(s => s.attributeId === questDraft.attributeId && (!s.deletedAt || s.id === questDraft.skillId)).map(s => <option key={s.id} value={s.id}>{s.name}{s.deletedAt ? ` (${t("quest.deletedSkill")})` : ""}</option>)}</select></Field>
-          <div className="xp-rule-card field wide">
-            <Field label={t("editor.xpCategory")}><select value={currentXpCategory} onChange={e => changeXpCategory(e.target.value as XpCategory)}>{(["growth", "maintenance", "result", "boss"] as const).map(category => <option key={category} value={category}>{t(`xpCategory.${category}` as TranslationKey)}</option>)}</select></Field>
-            <p>{t(`xpCategory.${currentXpCategory}Text` as TranslationKey)}</p>
-            {currentXpCategory === "growth" && <div className="xp-rule-inputs">
-              <Field label={t("editor.focusMinutes")}><input type="number" min="0" max="1440" step="5" value={questDraft.focusMinutes ?? 0} onChange={e => updateQuestDraft({ ...questDraft, focusMinutes: Math.min(1440, Math.max(0, Number(e.target.value) || 0)) })} /></Field>
-              <Field label={t("editor.output")}><select value={questDraft.outputBonus ?? 0} onChange={e => updateQuestDraft({ ...questDraft, outputBonus: Number(e.target.value) as 0 | 5 | 10 })}><option value="0">{t("xpOutput.none")}</option><option value="5">{t("xpOutput.small")}</option><option value="10">{t("xpOutput.finished")}</option></select></Field>
-            </div>}
-            {currentXpCategory !== "growth" && <Field label={t("editor.ruleTier")}><select value={questDraft.xpRuleValue ?? calculateQuestXp(questDraft).xp} onChange={e => updateQuestDraft({ ...questDraft, xpRuleValue: Number(e.target.value) })}>{allowedXpForCategory(currentXpCategory).map(value => <option key={value} value={value}>{t(`${currentXpCategory === "maintenance" ? "xpMaintenance" : currentXpCategory === "result" ? "xpResult" : "xpBoss"}.${value}` as TranslationKey)}</option>)}</select></Field>}
-          </div>
           <Field label={state.settings.manualXpOverride ? t("editor.manualReward") : t("editor.calculatedReward")}>
             {state.settings.manualXpOverride
-              ? <input type="number" min="0" value={questDraft.xp} onChange={e => { setQuestDraft({ ...questDraft, xp: Math.max(0, Number(e.target.value) || 0), xpSource: "manual", xpArgumentReason: undefined }); setXpSuggestion(null); setXpArgument(null); }} />
-              : <div className="xp-score-display"><strong>{questDraft.xp} XP</strong><span>{(questDraft.xpSource ?? "rules").toUpperCase()}</span></div>}
+              ? <input type="number" min="0" value={questDraft.xp} onChange={e => { setQuestDraft({ ...questDraft, xp: Math.max(0, Number(e.target.value) || 0), xpSource: "manual", xpArgumentReason: undefined }); setXpSuggestion(null); setXpArgument(null); setXpAiOffline(false); }} />
+              : <div className="xp-score-display"><strong>{questDraft.xp} XP</strong><span>{questDraft.xpSource === "ai" ? "AI" : questDraft.xpSource === "argument" ? "AI APPEAL" : questDraft.xpSource === "legacy" ? "EXISTING" : "AI PENDING"}</span></div>}
           </Field>
           <Field label={t("editor.recurrence")}><select value={questDraft.recurrence} onChange={e => updateQuestDraft({ ...questDraft, recurrence: e.target.value as Quest["recurrence"] })}><option value="none">{t("editor.none")}</option><option value="daily">{t("editor.daily")}</option><option value="weekly">{t("editor.weekly")}</option></select></Field>
           <div className="xp-advisor field wide">
             <div><span>{t("ai.optional")}</span><strong>{t("ai.title")}</strong><p>{t("ai.text")}</p></div>
-            <button type="button" onClick={() => void estimateQuestXp()} disabled={xpEstimating || estimateLocked}>{xpEstimating ? t("ai.estimating") : estimateLocked ? t("ai.reestimate") : t("ai.estimate")}</button>
-            {xpSuggestion && <div className="xp-suggestion"><span><b>{xpSuggestion.xp} XP</b><small>{t(`ai.confidence.${xpSuggestion.confidence}` as TranslationKey)} · {t(`ai.decision.${xpSuggestion.decision ?? "estimate"}` as TranslationKey)}</small></span><p>{xpSuggestion.rationale}</p><div className="xp-suggestion-actions"><button type="button" onClick={applyXpSuggestion}>{t("ai.apply")}</button>{lastEstimatedFingerprint === currentXpFingerprint && !argumentLocked && <button type="button" className="argue-button" onClick={() => { const allowed = allowedXpForCategory(currentXpCategory); const requestedXp = allowed.find(value => value > xpSuggestion.xp) ?? [...allowed].reverse().find(value => value < xpSuggestion.xp) ?? xpSuggestion.xp; setXpArgument({ requestedXp, reason: "" }); }}>{t("ai.argue")}</button>}</div></div>}
+            {xpAiOffline
+              ? <div className="ai-offline"><strong>{t("ai.offline")}</strong><span>{t("ai.offlineText")}</span></div>
+              : <button type="button" onClick={() => void estimateQuestXp()} disabled={xpEstimating || estimateLocked}>{xpEstimating ? t("ai.estimating") : estimateLocked ? t("ai.reestimate") : t("ai.estimate")}</button>}
+            {xpSuggestion && <div className="xp-suggestion"><span><b>{xpSuggestion.xp} XP</b><small>{t(`ai.confidence.${xpSuggestion.confidence}` as TranslationKey)} · {t(`ai.decision.${xpSuggestion.decision ?? "estimate"}` as TranslationKey)}</small></span><p>{xpSuggestion.rationale}</p><div className="xp-suggestion-actions"><button type="button" onClick={applyXpSuggestion}>{t("ai.apply")}</button>{lastEstimatedFingerprint === currentXpFingerprint && !argumentLocked && <button type="button" className="argue-button" onClick={() => { const allowed = allowedXpForCategory(xpSuggestion.category); const requestedXp = allowed.find(value => value > xpSuggestion.xp) ?? [...allowed].reverse().find(value => value < xpSuggestion.xp) ?? xpSuggestion.xp; setXpArgument({ requestedXp, reason: "" }); }}>{t("ai.argue")}</button>}</div></div>}
           </div>
           <Field label={t("editor.date")}><input type="datetime-local" value={isoLocal(questDraft.date)} onChange={e => updateQuestDraft({ ...questDraft, date: fromLocal(e.target.value) })} /></Field>
           <Field label={t("editor.deadline")}><input type="datetime-local" value={isoLocal(questDraft.deadline)} onChange={e => updateQuestDraft({ ...questDraft, deadline: fromLocal(e.target.value) })} /></Field>
@@ -1105,7 +1041,7 @@ export default function SoloApp() {
       <form className="modal input-modal argument-modal" role="dialog" aria-modal="true" aria-label={t("ai.argumentTitle")} onSubmit={e => { e.preventDefault(); void argueQuestXp(); }}>
         <header><div><p>{t("ai.optional")}</p><h2>{t("ai.argumentTitle")}</h2></div><button type="button" onClick={() => setXpArgument(null)} aria-label={t("common.close")}>×</button></header>
         <div className="input-modal-body argument-body">
-          <Field label={t("ai.argumentRequested")}><select value={xpArgument.requestedXp} onChange={e => setXpArgument({ ...xpArgument, requestedXp: Number(e.target.value) })}>{allowedXpForCategory(currentXpCategory).filter(value => value !== xpSuggestion.xp).map(value => <option key={value} value={value}>{value} XP</option>)}</select></Field>
+          <Field label={t("ai.argumentRequested")}><select value={xpArgument.requestedXp} onChange={e => setXpArgument({ ...xpArgument, requestedXp: Number(e.target.value) })}>{allowedXpForCategory(xpSuggestion.category).filter(value => value !== xpSuggestion.xp).map(value => <option key={value} value={value}>{value} XP</option>)}</select></Field>
           <Field label={t("ai.argumentReason")}><textarea autoFocus minLength={10} maxLength={800} value={xpArgument.reason} onChange={e => setXpArgument({ ...xpArgument, reason: e.target.value })} placeholder={t("ai.argumentPlaceholder")} /></Field>
         </div>
         <footer><button type="button" onClick={() => setXpArgument(null)}>{t("common.cancel")}</button><button className="primary" type="submit" disabled={xpEstimating || xpArgument.reason.trim().length < 10}>{xpEstimating ? t("ai.estimating") : t("ai.submitArgument")}</button></footer>

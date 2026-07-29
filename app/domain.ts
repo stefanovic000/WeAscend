@@ -210,7 +210,6 @@ export function nextRecurringInstance(quest: Quest, now = new Date()): Quest | n
   const delta = next.getTime() - previous.getTime();
   const deadline = quest.deadline ? new Date(new Date(quest.deadline).getTime() + delta).toISOString() : "";
   const stamp = now.toISOString();
-  const nextXp = calculateQuestXp(quest).xp;
   return {
     ...quest,
     id: crypto.randomUUID(),
@@ -218,8 +217,6 @@ export function nextRecurringInstance(quest: Quest, now = new Date()): Quest | n
     date: next.toISOString(),
     deadline,
     note: undefined,
-    xp: nextXp,
-    xpSource: "rules",
     xpArgumentReason: undefined,
     status: "active",
     completedAt: undefined,

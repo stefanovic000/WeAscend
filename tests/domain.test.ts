@@ -82,7 +82,7 @@ test("deleting an unused attribute removes it and its unused skills completely",
   assert.deepEqual(next.skills, []);
 });
 
-test("recurring quest creates a separate rule-scored instance without copying its note or appeal", () => {
+test("recurring quest preserves its AI reward without copying its note or appeal reason", () => {
   const quest: Quest = { id: "q1", title: "Daily", description: "", note: "Review chapter 3", type: "Daily", attributeId: "a", skillId: "s", xp: 30, xpCategory: "growth", focusMinutes: 30, outputBonus: 0, xpSource: "argument", xpArgumentReason: "This was unusually demanding.", date: "2026-07-23T10:00:00.000Z", deadline: "2026-07-23T12:00:00.000Z", recurrence: "daily", difficulty: "Normal", completionConditions: "", failureConsequence: "", status: "completed", createdAt: "2026-07-23", updatedAt: "2026-07-23" };
   const next = nextRecurringInstance(quest, new Date("2026-07-23T13:00:00.000Z"));
   assert.ok(next);
@@ -91,8 +91,8 @@ test("recurring quest creates a separate rule-scored instance without copying it
   assert.equal(next.date, "2026-07-24T10:00:00.000Z");
   assert.equal(next.status, "active");
   assert.equal(next.note, undefined);
-  assert.equal(next.xp, 10);
-  assert.equal(next.xpSource, "rules");
+  assert.equal(next.xp, 30);
+  assert.equal(next.xpSource, "argument");
   assert.equal(next.xpArgumentReason, undefined);
 });
 
@@ -126,17 +126,18 @@ test("cloud validation rejects duplicate active XP awards and negative XP", () =
 
 test("AI XP suggestions accept only the fair scale and bounded rationale", () => {
   assert.deepEqual(
-    parseXpSuggestion({ xp: 20, confidence: "medium", rationale: "Jedan sat fokusiranog rada." }),
-    { xp: 20, confidence: "medium", rationale: "Jedan sat fokusiranog rada." },
+    parseXpSuggestion({ xp: 20, category: "growth", confidence: "medium", rationale: "Jedan sat fokusiranog rada." }),
+    { xp: 20, category: "growth", confidence: "medium", rationale: "Jedan sat fokusiranog rada." },
   );
-  assert.equal(parseXpSuggestion({ xp: 999, confidence: "high", rationale: "Previše." }), null);
-  assert.equal(parseXpSuggestion({ xp: 20, confidence: "certain", rationale: "Nevažeće." }), null);
-  assert.equal(parseXpSuggestion({ xp: 20, confidence: "low", rationale: "" }), null);
+  assert.equal(parseXpSuggestion({ xp: 999, category: "boss", confidence: "high", rationale: "Previše." }), null);
+  assert.equal(parseXpSuggestion({ xp: 20, category: "growth", confidence: "certain", rationale: "Nevažeće." }), null);
+  assert.equal(parseXpSuggestion({ xp: 20, category: "growth", confidence: "low", rationale: "" }), null);
+  assert.equal(parseXpSuggestion({ xp: 20, confidence: "high", rationale: "Missing category." }), null);
   assert.deepEqual(
-    parseXpSuggestion({ xp: 10, confidence: "high", decision: "accepted", rationale: "The selected maintenance tier is justified." }, [0, 5, 10]),
-    { xp: 10, confidence: "high", decision: "accepted", rationale: "The selected maintenance tier is justified." },
+    parseXpSuggestion({ xp: 10, category: "maintenance", confidence: "high", decision: "accepted", rationale: "The selected maintenance tier is justified." }, [0, 5, 10]),
+    { xp: 10, category: "maintenance", confidence: "high", decision: "accepted", rationale: "The selected maintenance tier is justified." },
   );
-  assert.equal(parseXpSuggestion({ xp: 30, confidence: "high", rationale: "Too high for maintenance." }, [0, 5, 10]), null);
+  assert.equal(parseXpSuggestion({ xp: 30, category: "maintenance", confidence: "high", rationale: "Too high for maintenance." }, [0, 5, 10]), null);
 });
 
 test("English is the primary UI language and Serbian translations interpolate values", () => {
