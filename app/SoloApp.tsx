@@ -111,9 +111,10 @@ export default function SoloApp() {
   const [xpEstimating, setXpEstimating] = useState(false);
   const [xpAiOffline, setXpAiOffline] = useState(false);
   const [lastEstimatedFingerprint, setLastEstimatedFingerprint] = useState("");
+  const [questDraftRevision, setQuestDraftRevision] = useState(0);
+  const [lastEstimatedRevision, setLastEstimatedRevision] = useState(-1);
   const [xpArgument, setXpArgument] = useState<{ requestedXp: number; reason: string } | null>(null);
-  const [evaluatedFingerprints, setEvaluatedFingerprints] = useState<string[]>([]);
-  const [arguedFingerprints, setArguedFingerprints] = useState<string[]>([]);
+  const [argumentUsed, setArgumentUsed] = useState(false);
   const [toast, setToast] = useState("");
   const [ceremony, setCeremony] = useState<{ eyebrow: string; title: string; text: string } | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ title: string; text: string; action: () => void } | null>(null);
@@ -465,7 +466,7 @@ export default function SoloApp() {
       ? { ...next, xp: 0, xpCategory: undefined, xpSource: undefined, xpArgumentReason: undefined }
       : next;
     setQuestDraft(scored);
-    setXpSuggestion(null);
+    setQuestDraftRevision(current => current + 1);
     setXpArgument(null);
     setXpAiOffline(false);
   };
@@ -474,6 +475,9 @@ export default function SoloApp() {
     setXpSuggestion(null);
     setXpArgument(null);
     setLastEstimatedFingerprint("");
+    setQuestDraftRevision(0);
+    setLastEstimatedRevision(-1);
+    setArgumentUsed(false);
     setXpAiOffline(false);
     setQuestDraft(prepareQuestDraft(quest));
   };
@@ -501,12 +505,11 @@ export default function SoloApp() {
       return;
     }
     const fingerprint = estimateFingerprint(questDraft, language);
-    if (evaluatedFingerprints.includes(fingerprint)) {
+    if (lastEstimatedRevision === questDraftRevision && fingerprint === lastEstimatedFingerprint) {
       setToast(t("ai.changeRequired"));
       return;
     }
 
-    setEvaluatedFingerprints(current => current.includes(fingerprint) ? current : [...current, fingerprint]);
     setXpEstimating(true);
     setXpAiOffline(false);
     setXpSuggestion(null);
@@ -527,6 +530,8 @@ export default function SoloApp() {
 
       setXpSuggestion(result.suggestion);
       setLastEstimatedFingerprint(fingerprint);
+      setLastEstimatedRevision(questDraftRevision);
+      setArgumentUsed(false);
     } catch {
       setXpAiOffline(true);
       setToast(t("ai.offline"));
@@ -543,7 +548,7 @@ export default function SoloApp() {
       setToast(t("ai.estimateFirst"));
       return;
     }
-    if (arguedFingerprints.includes(fingerprint)) {
+    if (argumentUsed) {
       setXpArgument(null);
       setToast(t("ai.argumentUsed"));
       return;
@@ -553,7 +558,6 @@ export default function SoloApp() {
       return;
     }
 
-    setArguedFingerprints(current => current.includes(fingerprint) ? current : [...current, fingerprint]);
     setXpEstimating(true);
     setXpAiOffline(false);
     try {
@@ -577,6 +581,7 @@ export default function SoloApp() {
         return;
       }
       setXpSuggestion(result.suggestion);
+      setArgumentUsed(true);
       setQuestDraft(current => current ? { ...current, xpArgumentReason: xpArgument.reason.trim() } : current);
       setXpArgument(null);
     } catch {
@@ -984,8 +989,8 @@ export default function SoloApp() {
   </div>;
 
   const currentXpFingerprint = questDraft ? estimateFingerprint(questDraft, language) : "";
-  const estimateLocked = !!questDraft && evaluatedFingerprints.includes(currentXpFingerprint);
-  const argumentLocked = !!questDraft && arguedFingerprints.includes(currentXpFingerprint);
+  const estimateLocked = !!questDraft && lastEstimatedRevision === questDraftRevision && lastEstimatedFingerprint === currentXpFingerprint;
+  const currentXpSuggestion = lastEstimatedFingerprint === currentXpFingerprint ? xpSuggestion : null;
 
   return <div className={`app-shell ${state.settings.animations ? "" : "reduce-motion"} ${readOnly ? "read-only" : ""}`}>
     {readOnly && <div className={`sync-banner ${syncMode}`}><span>{t("sync.banner")} <strong>READ-ONLY</strong></span><button onClick={() => setBootstrapAttempt(attempt => attempt + 1)}>{t("sync.retry")}</button></div>}
@@ -1027,7 +1032,7 @@ export default function SoloApp() {
             {xpAiOffline
               ? <div className="ai-offline"><strong>{t("ai.offline")}</strong><span>{t("ai.offlineText")}</span></div>
               : <button type="button" onClick={() => void estimateQuestXp()} disabled={xpEstimating || estimateLocked}>{xpEstimating ? t("ai.estimating") : estimateLocked ? t("ai.reestimate") : t("ai.estimate")}</button>}
-            {xpSuggestion && <div className="xp-suggestion"><span><b>{xpSuggestion.xp} XP</b><small>{t(`ai.confidence.${xpSuggestion.confidence}` as TranslationKey)} · {t(`ai.decision.${xpSuggestion.decision ?? "estimate"}` as TranslationKey)}</small></span><p>{xpSuggestion.rationale}</p><div className="xp-suggestion-actions"><button type="button" onClick={applyXpSuggestion}>{t("ai.apply")}</button>{lastEstimatedFingerprint === currentXpFingerprint && !argumentLocked && <button type="button" className="argue-button" onClick={() => { const allowed = allowedXpForCategory(xpSuggestion.category); const requestedXp = allowed.find(value => value > xpSuggestion.xp) ?? [...allowed].reverse().find(value => value < xpSuggestion.xp) ?? xpSuggestion.xp; setXpArgument({ requestedXp, reason: "" }); }}>{t("ai.argue")}</button>}</div></div>}
+            {currentXpSuggestion && <div className="xp-suggestion"><span><b>{currentXpSuggestion.xp} XP</b><small>{t(`ai.confidence.${currentXpSuggestion.confidence}` as TranslationKey)} · {t(`ai.decision.${currentXpSuggestion.decision ?? "estimate"}` as TranslationKey)}</small></span><p>{currentXpSuggestion.rationale}</p><div className="xp-suggestion-actions"><button type="button" onClick={applyXpSuggestion}>{t("ai.apply")}</button>{!argumentUsed && <button type="button" className="argue-button" onClick={() => { const allowed = allowedXpForCategory(currentXpSuggestion.category); const requestedXp = allowed.find(value => value > currentXpSuggestion.xp) ?? [...allowed].reverse().find(value => value < currentXpSuggestion.xp) ?? currentXpSuggestion.xp; setXpArgument({ requestedXp, reason: "" }); }}>{t("ai.argue")}</button>}</div></div>}
           </div>
           <Field label={t("editor.date")}><input type="datetime-local" value={isoLocal(questDraft.date)} onChange={e => updateQuestDraft({ ...questDraft, date: fromLocal(e.target.value) })} /></Field>
           <Field label={t("editor.deadline")}><input type="datetime-local" value={isoLocal(questDraft.deadline)} onChange={e => updateQuestDraft({ ...questDraft, deadline: fromLocal(e.target.value) })} /></Field>
