@@ -12,6 +12,25 @@ export type XpSuggestion = {
   decision?: "estimate" | "accepted" | "adjusted" | "rejected";
 };
 
+export type XpActivityAssessment = "productive" | "nonproductive" | "unclear";
+
+export function applyBossPreparationFloor(
+  suggestion: XpSuggestion,
+  context: { isBossPreparation: boolean; activity: XpActivityAssessment; language: "en" | "sr" },
+): XpSuggestion {
+  if (!context.isBossPreparation || suggestion.xp !== 0 || context.activity === "nonproductive") return suggestion;
+
+  return {
+    xp: 10,
+    category: "growth",
+    confidence: "low",
+    decision: "estimate",
+    rationale: context.language === "sr"
+      ? "Priprema za Boss je konkretna jedinica učenja; bez navedenog trajanja dobija konzervativnih 10 XP."
+      : "Boss preparation is a concrete study unit; without a stated duration it receives a conservative 10 XP.",
+  };
+}
+
 export function parseXpSuggestion(value: unknown, allowedXp: readonly number[] = FAIR_XP_VALUES): XpSuggestion | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Record<string, unknown>;

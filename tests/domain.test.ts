@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { activeXp, applyQuestMutation, calculateQuestXp, canAwardQuest, defaultSettings, deleteAttributeFromState, deleteQuestFromState, isValidCloudState, isValidQuest, makeInitialState, nextRecurringInstance, normalizeCloudState, progressFromXp, rankForLevel, type Quest, type XpTransaction } from "../app/domain.ts";
 import { translate } from "../app/i18n.ts";
-import { parseXpSuggestion } from "../app/xpAdvisor.ts";
+import { applyBossPreparationFloor, parseXpSuggestion } from "../app/xpAdvisor.ts";
 import { authenticateRequest } from "../server/auth.ts";
 import { toLocalDateTimeValue, toStoredDateTime } from "../app/dateTime.ts";
 
@@ -302,6 +302,37 @@ test("AI XP suggestions accept only the fair scale and bounded rationale", () =>
     { xp: 10, category: "maintenance", confidence: "high", decision: "accepted", rationale: "The selected maintenance tier is justified." },
   );
   assert.equal(parseXpSuggestion({ xp: 30, category: "maintenance", confidence: "high", rationale: "Too high for maintenance." }, [0, 5, 10]), null);
+});
+
+test("bounded Boss preparation cannot receive zero only because details are brief", () => {
+  const zero: ReturnType<typeof parseXpSuggestion> = {
+    xp: 0,
+    category: "growth",
+    confidence: "low",
+    decision: "estimate",
+    rationale: "Duration is not stated.",
+  };
+
+  assert.equal(applyBossPreparationFloor(zero, {
+    isBossPreparation: true,
+    activity: "productive",
+    language: "en",
+  }).xp, 10);
+  assert.equal(applyBossPreparationFloor(zero, {
+    isBossPreparation: true,
+    activity: "unclear",
+    language: "sr",
+  }).xp, 10);
+  assert.equal(applyBossPreparationFloor(zero, {
+    isBossPreparation: true,
+    activity: "nonproductive",
+    language: "en",
+  }).xp, 0);
+  assert.equal(applyBossPreparationFloor(zero, {
+    isBossPreparation: false,
+    activity: "productive",
+    language: "en",
+  }).xp, 0);
 });
 
 test("English is the primary UI language and Serbian translations interpolate values", () => {

@@ -1,6 +1,6 @@
 import { authenticateRequest } from "../../../server/auth";
 import { allowedXpForCategory, type XpCategory } from "../../domain";
-import { parseXpSuggestion } from "../../xpAdvisor";
+import { applyBossPreparationFloor, parseXpSuggestion, type XpActivityAssessment } from "../../xpAdvisor";
 
 export const dynamic = "force-dynamic";
 
@@ -137,14 +137,15 @@ Negative, aimless, passive, distracting, or circular activity is always 0 XP. Di
 
 For estimate mode, infer duration and concrete output only from the quest's title, description, and completion condition. Choose the category yourself and calculate XP using its exact scale. If details are missing, be conservative.
 When parentBoss is present, score only the preparation work described by this child quest. Do not include or anticipate the parent Boss Clear reward, and do not use the boss category unless the child is itself a real test or milestone.
+A child linked to parentBoss that names a bounded exam question, exercise, or topic is a concrete preparation unit—not mere planning. When no duration is stated, give such productive preparation at least 10 growth XP with low confidence. Give 20 or more only when the description or completion condition supports the corresponding focused effort or output. Use 0 for Boss preparation only when the activity is explicitly passive, aimless, circular, distracting, or merely organizational; never use 0 solely because duration is missing.
 
 For argue mode, keep the supplied category and assess the user's reason charitably. Personal effort, stress, unusual complexity, overcoming resistance, and importance to the user's life are valid context even when they cannot be independently verified. Accept a modest increase when the explanation is plausible and fits the category scale. When the request is partly justified, prefer "adjusted" to a fair middle value instead of rejecting it outright. Use "rejected" only for an unexplained or clearly disproportionate request, a request outside the category's meaning, or negative/aimless activity. Never ask for evidence.
 
 Write rationale only in ${quest.language === "sr" ? "Serbian (Latin script)" : "English"}, in one short sentence.
 Return only JSON:
-{"xp":20,"category":"growth","confidence":"high","decision":"estimate","rationale":"Short explanation."}
+{"xp":20,"category":"growth","confidence":"high","decision":"estimate","activity":"productive","rationale":"Short explanation."}
 
-category must be "growth", "maintenance", "result", or "boss". decision must be "estimate" in estimate mode, otherwise "accepted", "adjusted", or "rejected".`,
+category must be "growth", "maintenance", "result", or "boss". decision must be "estimate" in estimate mode, otherwise "accepted", "adjusted", or "rejected". activity must be "productive", "nonproductive", or "unclear".`,
           },
           {
             role: "user",
@@ -167,8 +168,18 @@ category must be "growth", "maintenance", "result", or "boss". decision must be 
       return json({ code: "ai_invalid_response" }, 502);
     }
 
-    const suggestion = parseXpSuggestion(parsed);
+    let suggestion = parseXpSuggestion(parsed);
     if (!suggestion) return json({ code: "ai_invalid_response" }, 502);
+    const rawActivity = typeof parsed === "object" && parsed && "activity" in parsed ? parsed.activity : "unclear";
+    const activity: XpActivityAssessment =
+      rawActivity === "productive" || rawActivity === "nonproductive" ? rawActivity : "unclear";
+    if (quest.mode === "estimate") {
+      suggestion = applyBossPreparationFloor(suggestion, {
+        isBossPreparation: Boolean(quest.parentBoss),
+        activity,
+        language: quest.language,
+      });
+    }
     if (!(allowedXpForCategory(suggestion.category) as readonly number[]).includes(suggestion.xp)) return json({ code: "ai_invalid_response" }, 502);
     if (quest.mode === "estimate" && suggestion.decision !== "estimate") suggestion.decision = "estimate";
     if (quest.mode === "argue") {
