@@ -16,6 +16,7 @@ type EstimateRequest = {
   difficulty?: unknown;
   attribute?: unknown;
   skill?: unknown;
+  parentBoss?: unknown;
   completionConditions?: unknown;
   language?: unknown;
   xpCategory?: unknown;
@@ -60,6 +61,7 @@ function normalizeRequest(payload: EstimateRequest) {
     difficulty: cleanText(payload.difficulty, 40),
     attribute: cleanText(payload.attribute, 100),
     skill: cleanText(payload.skill, 100),
+    parentBoss: cleanText(payload.parentBoss, 180),
     completionConditions: cleanText(payload.completionConditions, 500),
     language: payload.language === "sr" ? "sr" : "en",
     xpCategory,
@@ -134,6 +136,7 @@ Choose and apply exactly one internal category:
 Negative, aimless, passive, distracting, or circular activity is always 0 XP. Difficulty and quest type never multiply XP. Do not request proof and do not judge whether the user is truthful.
 
 For estimate mode, infer duration and concrete output only from the quest's title, description, and completion condition. Choose the category yourself and calculate XP using its exact scale. If details are missing, be conservative.
+When parentBoss is present, score only the preparation work described by this child quest. Do not include or anticipate the parent Boss Clear reward, and do not use the boss category unless the child is itself a real test or milestone.
 
 For argue mode, keep the supplied category and assess the user's reason charitably. Personal effort, stress, unusual complexity, overcoming resistance, and importance to the user's life are valid context even when they cannot be independently verified. Accept a modest increase when the explanation is plausible and fits the category scale. When the request is partly justified, prefer "adjusted" to a fair middle value instead of rejecting it outright. Use "rejected" only for an unexplained or clearly disproportionate request, a request outside the category's meaning, or negative/aimless activity. Never ask for evidence.
 

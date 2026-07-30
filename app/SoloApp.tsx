@@ -55,6 +55,7 @@ const estimateFingerprint = (quest: Quest, language: Language) => JSON.stringify
   recurrence: quest.recurrence,
   date: quest.date,
   deadline: quest.deadline,
+  parentQuestId: quest.parentQuestId ?? "",
   language,
 });
 
@@ -473,10 +474,57 @@ export default function SoloApp() {
   const availableAttributes = state.attributes.filter(attribute => !attribute.deletedAt);
   const availableSkills = state.skills.filter(skill => !skill.deletedAt && availableAttributes.some(attribute => attribute.id === skill.attributeId));
   const activeQuests = state.quests.filter(q => q.status === "active");
+  const openBossQuests = state.quests.filter(q => q.type === "Boss" && q.status !== "completed" && q.status !== "archived");
   const todayQuests = activeQuests.filter(q => dayKey(q.date) === today);
   const mainQuest = todayQuests.find(q => q.type === "Main") ?? activeQuests.find(q => q.type === "Main");
 
+  const recordBossAttempt = async (boss: Quest, outcome: "failed" | "cleared", result: string) => {
+    const before = metrics;
+    const saved = await runQuestMutation({
+      action: "boss_attempt",
+      bossQuestId: boss.id,
+      outcome,
+      result: result.trim(),
+    });
+    if (!saved) return;
+
+    if (outcome === "failed") {
+      setToast(t("boss.attemptRecorded"));
+      return;
+    }
+
+    const afterXp = activeXp(saved.transactions);
+    const afterProgress = progressFromXp(afterXp, saved.settings);
+    const afterRank = rankForLevel(afterProgress.level, saved.settings.ranks);
+    if (afterRank !== before.rank) {
+      setCeremony({ eyebrow: t("ceremony.rankAscension"), title: `${afterRank}-RANK`, text: t("quest.rankUp") });
+    } else if (afterProgress.level > before.progress.level) {
+      setCeremony({ eyebrow: t("ceremony.levelUp"), title: `LEVEL ${afterProgress.level}`, text: t("quest.levelUp", { xp: afterProgress.needed }) });
+    } else {
+      setCeremony({ eyebrow: t("ceremony.dungeonConquered"), title: t("ceremony.bossClear"), text: `${boss.title} · +${boss.xp} XP` });
+    }
+  };
+
+  const openBossAttemptDialog = (boss: Quest, outcome: "failed" | "cleared") => {
+    if (!ensureWritable()) return;
+    setInputDialog({
+      title: outcome === "cleared" ? t("boss.clearResult") : t("boss.analysis"),
+      label: outcome === "cleared" ? t("boss.resultFor", { name: boss.title }) : t("boss.failureAnalysis"),
+      value: "",
+      placeholder: outcome === "cleared" ? t("boss.resultPlaceholder") : t("boss.failurePlaceholder"),
+      submitLabel: outcome === "cleared" ? t("boss.confirmClear") : t("boss.recordFailure"),
+      multiline: true,
+      required: true,
+      maxLength: 1_000,
+      action: value => { void recordBossAttempt(boss, outcome, value); },
+    });
+  };
+
   const completeQuest = (quest: Quest) => {
+    if (quest.type === "Boss") {
+      openBossAttemptDialog(quest, "cleared");
+      return;
+    }
     if (!ensureWritable()) return;
     if (!canAwardQuest(quest.id, state.transactions)) {
       setToast(t("quest.alreadyAwarded"));
@@ -510,6 +558,10 @@ export default function SoloApp() {
   };
 
   const failQuest = (quest: Quest) => {
+    if (quest.type === "Boss") {
+      openBossAttemptDialog(quest, "failed");
+      return;
+    }
     if (!ensureWritable()) return;
     updateState(s => ({ ...s, quests: s.quests.map(q => q.id === quest.id ? { ...q, status: "failed", updatedAt: new Date().toISOString() } : q) }));
     if (quest.type === "Mandatory" && quest.failureConsequence) {
@@ -518,6 +570,12 @@ export default function SoloApp() {
   };
 
   const undoQuest = (quest: Quest) => {
+    if (quest.type === "Boss") {
+      void runQuestMutation({ action: "undo_boss_clear", bossQuestId: quest.id }).then(saved => {
+        if (saved) setToast(t("quest.undoDone"));
+      });
+      return;
+    }
     if (!ensureWritable()) return;
     const stamp = new Date().toISOString();
     updateState(s => ({
@@ -573,7 +631,7 @@ export default function SoloApp() {
 
   const changeQuestType = (type: QuestType) => {
     if (!questDraft) return;
-    updateQuestDraft({ ...questDraft, type });
+    updateQuestDraft({ ...questDraft, type, parentQuestId: type === "Boss" ? undefined : questDraft.parentQuestId });
   };
 
   const xpRequestBody = (draft: Quest) => ({
@@ -583,6 +641,7 @@ export default function SoloApp() {
     difficulty: draft.difficulty,
     attribute: attrName(draft.attributeId),
     skill: skillName(draft.skillId),
+    parentBoss: draft.parentQuestId ? state.quests.find(quest => quest.id === draft.parentQuestId)?.title ?? "" : "",
     completionConditions: draft.completionConditions,
     language,
   });
@@ -699,9 +758,12 @@ export default function SoloApp() {
 
   const deleteQuest = (quest: Quest) => {
     if (!ensureWritable()) return;
+    const linkedSteps = state.quests.filter(item => item.parentQuestId === quest.id);
     setConfirmAction({
       title: t("quest.deleteTitle"),
-      text: t("quest.deleteText"),
+      text: linkedSteps.length
+        ? t("quest.deleteBossText", { count: linkedSteps.length })
+        : t("quest.deleteText"),
       action: () => {
         setConfirmAction(null);
         void runQuestMutation({ action: "delete", questId: quest.id }).then(saved => {
@@ -839,6 +901,26 @@ export default function SoloApp() {
     date.setDate(date.getDate() + 7);
     beginQuestOnDate(dayKey(date), "Boss");
   };
+  const beginPreparationQuest = (boss: Quest) => {
+    if (!ensureWritable()) return;
+    const draft = blankQuest(state);
+    const start = new Date();
+    start.setHours(9, 0, 0, 0);
+    const bossDeadline = boss.deadline ? new Date(boss.deadline).getTime() : Number.NaN;
+    const deadline = new Date(Number.isFinite(bossDeadline) && bossDeadline > start.getTime()
+      ? Math.min(bossDeadline, start.getTime() + 7 * 86400000)
+      : start.getTime() + 3600000);
+    openQuestEditor({
+      ...draft,
+      type: "Side",
+      attributeId: boss.attributeId,
+      skillId: boss.skillId,
+      parentQuestId: boss.id,
+      stepOrder: state.quests.filter(quest => quest.parentQuestId === boss.id).length,
+      date: start.toISOString(),
+      deadline: deadline.toISOString(),
+    });
+  };
   const shiftCalendarMonth = (amount: number) => {
     const date = new Date(`${calendarMonth}T12:00:00`);
     date.setMonth(date.getMonth() + amount);
@@ -881,9 +963,11 @@ export default function SoloApp() {
       <div className="quest-card-main">
         <div className="quest-meta">
           <span className={`type-badge type-${quest.type.toLowerCase()}`}>{t(`type.${quest.type}` as TranslationKey)}</span>
+          {quest.parentQuestId && <span className="prep-badge">{t("boss.preparationStep")}</span>}
           <span>{attrName(quest.attributeId)} / {skillName(quest.skillId)}</span>
         </div>
         <h3>{quest.title}</h3>
+        {quest.parentQuestId && <p className="quest-parent">↳ {state.quests.find(item => item.id === quest.parentQuestId)?.title ?? t("common.deletedQuest")}</p>}
         {!compact && quest.description && <p>{quest.description}</p>}
         {quest.note && <button className="quest-note-preview" onClick={() => openQuestNote(quest)} aria-label={t("quest.noteEditLabel", { name: quest.title })}><span>✎</span><em>{quest.note}</em></button>}
         <div className="quest-footer">
@@ -900,7 +984,7 @@ export default function SoloApp() {
         {quest.status === "completed" && <button onClick={() => undoQuest(quest)}>{t("common.undo")}</button>}
         <button className={quest.note ? "has-note" : ""} onClick={() => openQuestNote(quest)} aria-label={t("quest.noteEditLabel", { name: quest.title })} title={t("quest.note")}>{compact ? "✎" : t("quest.note")}</button>
         {!compact && <>
-          <button onClick={() => { if (ensureWritable()) openQuestEditor(quest); }}>{t("common.edit")}</button>
+          {canAwardQuest(quest.id, state.transactions) && <button onClick={() => { if (ensureWritable()) openQuestEditor(quest); }}>{t("common.edit")}</button>}
           <button onClick={() => archiveQuest(quest)}>{t("common.archive")}</button>
           <button className="danger-link" onClick={() => deleteQuest(quest)}>{t("common.delete")}</button>
         </>}
@@ -1027,35 +1111,54 @@ export default function SoloApp() {
   const Bosses = () => {
     const bossQuests = state.quests
       .filter(quest => quest.type === "Boss" && quest.status !== "archived")
-      .sort((a, b) => (a.status === "active" ? 0 : 1) - (b.status === "active" ? 0 : 1) || a.date.localeCompare(b.date));
+      .sort((a, b) => (a.status !== "completed" ? 0 : 1) - (b.status !== "completed" ? 0 : 1) || a.date.localeCompare(b.date));
     const editBoss = (quest: Quest) => {
       if (!ensureWritable()) return;
       openQuestEditor(quest);
     };
     return <div className="screen">
       <header className="screen-header"><div><p>{t("boss.gate")}</p><h1>{t("boss.title")}</h1><span>{t("boss.subtitle")}</span></div><button className="primary" onClick={beginBossQuest}>{t("boss.add")}</button></header>
-      <div className="boss-grid">{bossQuests.length === 0 && <Empty title={t("boss.empty")} text={t("boss.emptyText")} />}{bossQuests.map(boss => (
-        <article className={`boss-card ${boss.status}`} key={boss.id}>
-          <div className="boss-visual"><span>{boss.status === "completed" ? t("boss.cleared") : boss.status === "failed" ? t("common.failed") : t("boss.gateOpen")}</span><strong>⬡</strong><p>{formatDate(boss.date, false)}</p></div>
+      <div className="boss-grid">{bossQuests.length === 0 && <Empty title={t("boss.empty")} text={t("boss.emptyText")} />}{bossQuests.map(boss => {
+        const steps = state.quests
+          .filter(quest => quest.parentQuestId === boss.id)
+          .sort((a, b) => (a.stepOrder ?? 0) - (b.stepOrder ?? 0) || a.createdAt.localeCompare(b.createdAt));
+        const completedSteps = steps.filter(step => step.status === "completed").length;
+        const attempts = (state.bossAttempts ?? [])
+          .filter(attempt => attempt.bossQuestId === boss.id && !attempt.reversedAt)
+          .sort((a, b) => b.attemptNumber - a.attemptNumber);
+        const open = boss.status !== "completed";
+        return <article className={`boss-card ${boss.status}`} key={boss.id}>
+          <div className="boss-visual"><span>{open ? attempts.length ? t("boss.gateAttempts", { count: attempts.length }) : t("boss.gateOpen") : t("boss.cleared")}</span><strong>⬡</strong><p>{formatDate(boss.date, false)}</p></div>
           <div className="boss-content">
             <div className="quest-meta"><span className="type-badge type-boss">BOSS</span><span>{attrName(boss.attributeId)} / {skillName(boss.skillId)}</span></div>
             <h2>{boss.title}</h2>
             <dl>
               <div><dt>{t("boss.entry")}</dt><dd>{boss.description || t("boss.noGate")}</dd></div>
               <div><dt>{t("boss.clearCondition")}</dt><dd>{boss.completionConditions || t("boss.defaultClear")}</dd></div>
-              <div><dt>{t("boss.preparation")}</dt><dd>{formatDate(boss.deadline)}</dd></div>
+              <div><dt>{t("boss.deadline")}</dt><dd>{formatDate(boss.deadline)}</dd></div>
             </dl>
+            <section className="boss-preparation">
+              <header><div><span>{t("boss.preparation")}</span><strong>{completedSteps}/{steps.length}</strong></div>{open && <button onClick={() => beginPreparationQuest(boss)}>＋ {t("boss.addStep")}</button>}</header>
+              {steps.length
+                ? <div className="boss-step-list">{steps.map(step => <div className={step.status} key={step.id}>
+                  <button className="step-check" onClick={() => step.status === "active" ? completeQuest(step) : undefined} disabled={step.status !== "active"}>{step.status === "completed" ? "✓" : "○"}</button>
+                  <span><strong>{step.title}</strong><small>{step.xp} XP · {t(`status.${step.status}` as TranslationKey)}</small></span>
+                  {canAwardQuest(step.id, state.transactions) && <button onClick={() => openQuestEditor(step)}>{t("common.edit")}</button>}
+                </div>)}</div>
+                : <p className="boss-step-empty">{t("boss.noSteps")}</p>}
+            </section>
+            {attempts.length > 0 && <section className="boss-attempts"><span>{t("boss.attemptHistory")}</span>{attempts.map(attempt => <div key={attempt.id}><b className={attempt.outcome}>{attempt.outcome === "cleared" ? t("boss.cleared") : t("common.failed")}</b><strong>#{attempt.attemptNumber}</strong><p>{attempt.result}</p><time>{formatDate(attempt.createdAt)}</time></div>)}</section>}
             <footer>
               <strong>+{boss.xp} XP</strong>
               <div>
-                {boss.status === "active" && <><button className="complete-text" onClick={() => completeQuest(boss)}>Boss Clear</button><button onClick={() => failQuest(boss)}>{t("common.failed")}</button></>}
-                {boss.status === "completed" && <button onClick={() => undoQuest(boss)}>{t("common.undo")}</button>}
-                <button onClick={() => editBoss(boss)}>{t("common.edit")}</button>
+                {open && <><button className="complete-text" onClick={() => completeQuest(boss)}>{t("boss.confirmClearShort")}</button><button onClick={() => failQuest(boss)}>{t("boss.recordAttempt")}</button></>}
+                {!open && <button onClick={() => undoQuest(boss)}>{t("common.undo")}</button>}
+                {canAwardQuest(boss.id, state.transactions) && <button onClick={() => editBoss(boss)}>{t("common.edit")}</button>}
               </div>
             </footer>
           </div>
-        </article>
-      ))}</div>
+        </article>;
+      })}</div>
     </div>;
   };
 
@@ -1123,6 +1226,7 @@ export default function SoloApp() {
           <Field label={t("editor.difficulty")}><select value={questDraft.difficulty} onChange={e => updateQuestDraft({ ...questDraft, difficulty: e.target.value as Quest["difficulty"] })}>{(["Easy", "Normal", "Hard", "Extreme"] as const).map(difficulty => <option key={difficulty} value={difficulty}>{t(`difficulty.${difficulty}` as TranslationKey)}</option>)}</select></Field>
           <Field label={t("editor.attribute")}><select value={questDraft.attributeId} onChange={e => { const id = e.target.value; updateQuestDraft({ ...questDraft, attributeId: id, skillId: state.skills.find(s => s.attributeId === id && !s.deletedAt)?.id ?? "" }); }}>{availableAttributes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}{questDraft.attributeId && !availableAttributes.some(a => a.id === questDraft.attributeId) && <option value={questDraft.attributeId}>{attrName(questDraft.attributeId)} ({t("status.archived")})</option>}</select></Field>
           <Field label={t("editor.skill")}><select value={questDraft.skillId} onChange={e => updateQuestDraft({ ...questDraft, skillId: e.target.value })}>{state.skills.filter(s => s.attributeId === questDraft.attributeId && (!s.deletedAt || s.id === questDraft.skillId)).map(s => <option key={s.id} value={s.id}>{s.name}{s.deletedAt ? ` (${t("quest.deletedSkill")})` : ""}</option>)}</select></Field>
+          {questDraft.type !== "Boss" && openBossQuests.length > 0 && <Field label={t("editor.preparationFor")} wide><select value={questDraft.parentQuestId ?? ""} onChange={e => updateQuestDraft({ ...questDraft, parentQuestId: e.target.value || undefined, stepOrder: e.target.value ? (questDraft.stepOrder ?? state.quests.filter(quest => quest.parentQuestId === e.target.value).length) : undefined })}><option value="">{t("editor.independentQuest")}</option>{openBossQuests.map(boss => <option key={boss.id} value={boss.id}>{boss.title}</option>)}</select><small>{t("editor.preparationForText")}</small></Field>}
           <Field label={state.settings.manualXpOverride ? t("editor.manualReward") : t("editor.calculatedReward")}>
             {state.settings.manualXpOverride
               ? <input type="number" min="0" value={questDraft.xp} onChange={e => { setQuestDraft({ ...questDraft, xp: Math.max(0, Number(e.target.value) || 0), xpSource: "manual", xpArgumentReason: undefined }); setXpSuggestion(null); setXpArgument(null); setXpAiOffline(false); }} />

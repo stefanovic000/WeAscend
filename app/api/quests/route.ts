@@ -22,7 +22,15 @@ function publicUser(user: AuthenticatedUser) {
 
 function normalizeCommand(value: unknown): { revision: number; mutation: QuestMutation } | null {
   if (!value || typeof value !== "object") return null;
-  const payload = value as { action?: unknown; revision?: unknown; quest?: unknown; questId?: unknown };
+  const payload = value as {
+    action?: unknown;
+    revision?: unknown;
+    quest?: unknown;
+    questId?: unknown;
+    bossQuestId?: unknown;
+    outcome?: unknown;
+    result?: unknown;
+  };
   if (!Number.isInteger(payload.revision) || Number(payload.revision) < 0) return null;
   const revision = Number(payload.revision);
 
@@ -31,6 +39,25 @@ function normalizeCommand(value: unknown): { revision: number; mutation: QuestMu
   }
   if ((payload.action === "create" || payload.action === "update") && isValidQuest(payload.quest)) {
     return { revision, mutation: { action: payload.action, quest: payload.quest } };
+  }
+  if (
+    payload.action === "boss_attempt" &&
+    typeof payload.bossQuestId === "string" &&
+    (payload.outcome === "failed" || payload.outcome === "cleared") &&
+    typeof payload.result === "string"
+  ) {
+    return {
+      revision,
+      mutation: {
+        action: "boss_attempt",
+        bossQuestId: payload.bossQuestId,
+        outcome: payload.outcome,
+        result: payload.result,
+      },
+    };
+  }
+  if (payload.action === "undo_boss_clear" && typeof payload.bossQuestId === "string") {
+    return { revision, mutation: { action: "undo_boss_clear", bossQuestId: payload.bossQuestId } };
   }
   return null;
 }

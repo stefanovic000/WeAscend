@@ -121,7 +121,6 @@ test("server quest mutations change only the targeted quest and preserve XP hist
   const createdSecond = applyQuestMutation(createdFirst.state, { action: "create", quest: second }, "server-2");
   assert.equal(createdSecond.ok, true);
   if (!createdSecond.ok) return;
-  createdSecond.state.transactions = [{ id: "tx", questId: "q1", amount: 20, kind: "quest", attributeId: "a", skillId: "s", createdAt: "server-2" }];
 
   const updated = applyQuestMutation(createdSecond.state, { action: "update", quest: { ...first, title: "Updated" } }, "server-3");
   assert.equal(updated.ok, true);
@@ -129,6 +128,7 @@ test("server quest mutations change only the targeted quest and preserve XP hist
   assert.equal(updated.state.quests.find(quest => quest.id === "q1")?.title, "Updated");
   assert.equal(updated.state.quests.find(quest => quest.id === "q1")?.createdAt, "server-1");
   assert.equal(updated.state.quests.find(quest => quest.id === "q2")?.title, "Second");
+  updated.state.transactions = [{ id: "tx", questId: "q1", amount: 20, kind: "quest", attributeId: "a", skillId: "s", createdAt: "server-2" }];
 
   const deleted = applyQuestMutation(updated.state, { action: "delete", questId: "q1" }, "server-4");
   assert.equal(deleted.ok, true);
@@ -146,6 +146,87 @@ test("server quest validation rejects malformed content and missing relationship
   const validShape = { ...quest, title: "Valid" } as Quest;
   assert.equal(isValidQuest(validShape), true);
   assert.deepEqual(applyQuestMutation(state, { action: "create", quest: validShape }), { ok: false, code: "invalid_quest" });
+});
+
+test("a quest that already awarded XP locks scoring content but still permits notes", () => {
+  const state = makeInitialState();
+  state.attributes = [{ id: "a", name: "Intelligence", color: "#866bff", createdAt: "now", updatedAt: "now" }];
+  state.skills = [{ id: "s", attributeId: "a", name: "University", createdAt: "now", updatedAt: "now" }];
+  const quest: Quest = { id: "q", title: "Earned work", description: "", type: "Side", attributeId: "a", skillId: "s", xp: 20, date: "2026-07-23", deadline: "", recurrence: "none", difficulty: "Normal", completionConditions: "Finish", failureConsequence: "", status: "completed", createdAt: "now", updatedAt: "now" };
+  state.quests = [quest];
+  state.transactions = [{ id: "tx", questId: "q", amount: 20, kind: "quest", attributeId: "a", skillId: "s", createdAt: "now" }];
+
+  assert.deepEqual(
+    applyQuestMutation(state, { action: "update", quest: { ...quest, title: "Replaced work" } }),
+    { ok: false, code: "earned_quest_locked" },
+  );
+  const noteUpdate = applyQuestMutation(state, { action: "update", quest: { ...quest, note: "Useful reflection" } }, "later");
+  assert.equal(noteUpdate.ok, true);
+  if (noteUpdate.ok) assert.equal(noteUpdate.state.quests[0]?.note, "Useful reflection");
+});
+
+test("Boss attempts preserve preparation XP and award Boss XP only on the first clear", () => {
+  const state = makeInitialState();
+  state.attributes = [{ id: "a", name: "Intelligence", color: "#866bff", createdAt: "2026-01-01", updatedAt: "2026-01-01" }];
+  state.skills = [{ id: "s", attributeId: "a", name: "University", createdAt: "2026-01-01", updatedAt: "2026-01-01" }];
+  const boss: Quest = { id: "boss", title: "Pass exam", description: "", type: "Boss", attributeId: "a", skillId: "s", xp: 300, xpCategory: "boss", xpSource: "ai", date: "2026-07-23", deadline: "", recurrence: "none", difficulty: "Extreme", completionConditions: "Pass", failureConsequence: "", status: "active", createdAt: "now", updatedAt: "now" };
+  const step: Quest = { ...boss, id: "step", title: "Master question 1", type: "Side", xp: 20, xpCategory: "growth", parentQuestId: "boss", status: "completed" };
+  state.quests = [boss, step];
+  state.transactions = [{ id: "step-xp", questId: "step", amount: 20, kind: "quest", attributeId: "a", skillId: "s", createdAt: "now" }];
+
+  const failed = applyQuestMutation(state, { action: "boss_attempt", bossQuestId: "boss", outcome: "failed", result: "Weakness in question 3" }, "attempt-1");
+  assert.equal(failed.ok, true);
+  if (!failed.ok) return;
+  assert.equal(failed.state.quests.find(quest => quest.id === "boss")?.status, "active");
+  assert.equal(activeXp(failed.state.transactions), 20);
+  assert.equal(failed.state.bossAttempts?.[0]?.outcome, "failed");
+
+  const cleared = applyQuestMutation(failed.state, { action: "boss_attempt", bossQuestId: "boss", outcome: "cleared", result: "Passed with 78%" }, "attempt-2");
+  assert.equal(cleared.ok, true);
+  if (!cleared.ok) return;
+  assert.equal(cleared.state.quests.find(quest => quest.id === "boss")?.status, "completed");
+  assert.equal(activeXp(cleared.state.transactions), 320);
+  assert.equal(cleared.state.bossAttempts?.length, 2);
+
+  const duplicate = applyQuestMutation(cleared.state, { action: "boss_attempt", bossQuestId: "boss", outcome: "cleared", result: "Duplicate clear" }, "attempt-3");
+  assert.deepEqual(duplicate, { ok: false, code: "boss_already_cleared" });
+});
+
+test("undoing a Boss clear reverses only Boss XP and reopens steps closed by the clear", () => {
+  const state = makeInitialState();
+  state.attributes = [{ id: "a", name: "Intelligence", color: "#866bff", createdAt: "2026-01-01", updatedAt: "2026-01-01" }];
+  state.skills = [{ id: "s", attributeId: "a", name: "University", createdAt: "2026-01-01", updatedAt: "2026-01-01" }];
+  const boss: Quest = { id: "boss", title: "Pass exam", description: "", type: "Boss", attributeId: "a", skillId: "s", xp: 300, date: "2026-07-23", deadline: "", recurrence: "none", difficulty: "Extreme", completionConditions: "Pass", failureConsequence: "", status: "active", createdAt: "now", updatedAt: "now" };
+  const step: Quest = { ...boss, id: "step", title: "Timed simulation", type: "Side", xp: 30, parentQuestId: "boss" };
+  state.quests = [boss, step];
+
+  const cleared = applyQuestMutation(state, { action: "boss_attempt", bossQuestId: "boss", outcome: "cleared", result: "Passed" }, "clear");
+  assert.equal(cleared.ok, true);
+  if (!cleared.ok) return;
+  assert.equal(cleared.state.quests.find(quest => quest.id === "step")?.status, "archived");
+  assert.equal(cleared.state.quests.find(quest => quest.id === "step")?.parentClosedAt, "clear");
+
+  const undone = applyQuestMutation(cleared.state, { action: "undo_boss_clear", bossQuestId: "boss" }, "undo");
+  assert.equal(undone.ok, true);
+  if (!undone.ok) return;
+  assert.equal(undone.state.quests.find(quest => quest.id === "boss")?.status, "active");
+  assert.equal(undone.state.quests.find(quest => quest.id === "step")?.status, "active");
+  assert.equal(activeXp(undone.state.transactions), 0);
+  assert.ok(undone.state.bossAttempts?.[0]?.reversedAt);
+});
+
+test("deleting a Boss removes linked preparation and attempt content but preserves XP transactions", () => {
+  const state = makeInitialState();
+  const boss = { id: "boss", title: "Private exam", description: "Private", type: "Boss", attributeId: "a", skillId: "s", xp: 300, date: "2026-07-23", deadline: "", recurrence: "none", difficulty: "Extreme", completionConditions: "Pass", failureConsequence: "", status: "completed", createdAt: "now", updatedAt: "now" } as Quest;
+  const step = { ...boss, id: "step", title: "Private question", type: "Side", parentQuestId: "boss" } as Quest;
+  state.quests = [boss, step];
+  state.bossAttempts = [{ id: "attempt", bossQuestId: "boss", attemptNumber: 1, outcome: "failed", result: "Private analysis", createdAt: "now" }];
+  state.transactions = [{ id: "tx", questId: "step", amount: 20, kind: "quest", attributeId: "a", skillId: "s", createdAt: "now" }];
+
+  const deleted = deleteQuestFromState(state, "boss");
+  assert.deepEqual(deleted.quests, []);
+  assert.deepEqual(deleted.bossAttempts, []);
+  assert.equal(activeXp(deleted.transactions), 20);
 });
 
 test("cloud validation rejects duplicate active XP awards and negative XP", () => {

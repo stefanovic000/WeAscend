@@ -171,6 +171,17 @@ Brisanje skilla ne briše legitimno zarađen XP.
 
 Quest Manager podržava izbor budućeg datuma i mesečni kalendar. Ponavljajući quest dobija zasebnu instancu za svaki datum, pa završavanje jedne instance ne boduje ostale.
 
+## Boss priprema i pokušaji
+
+Boss quest može imati povezane pripremne questove. Svaki pripremni korak koristi običan quest i sopstvenu AI XP procenu, pa se boduje tačno jednom kao konkretan rad. Boss Clear nagrada je odvojena i dobija se samo pri prvom uspešnom rezultatu.
+
+- Neuspešan pokušaj daje `0 XP`, čuva kratku analizu i ostavlja Boss aktivnim.
+- Sledeći pokušaj i dalje može dobiti punu Boss nagradu.
+- Prethodno zarađen pripremni XP ostaje čak i kada Boss pokušaj ne uspe.
+- Boss Clear arhivira nedovršene pripremne korake; Undo ih ponovo otvara i poništava samo Boss XP.
+- Brisanje Bossa uklanja njegov sadržaj, povezane pripremne questove i analize pokušaja. Već zarađene anonimne XP transakcije ostaju u ledgeru.
+- Quest koji je već dao XP ne može naknadno promeniti naziv, uslov ili XP sadržaj; beleška i arhivski status ostaju dozvoljeni.
+
 ## Opcioni DeepSeek XP advisor
 
 Quest editor je AI-first: korisnik opisuje quest, a DeepSeek interno bira jednu od četiri skrivene kategorije i primenjuje njihovu ograničenu XP skalu. Kategorije, vreme, output bonus i rule tier nisu deo korisničkog interfejsa.
@@ -182,7 +193,7 @@ Quest editor je AI-first: korisnik opisuje quest, a DeepSeek interno bira jednu 
 - DeepSeek ne traži dokaz i ne procenjuje iskrenost. Negativne, pasivne, besciljne i kružne aktivnosti dobijaju `0 XP`.
 - Direktan ručni XP unos je podrazumevano skriven. Može se svesno uključiti u **Settings → Experience Rules → Allow manual XP override**.
 - Ako DeepSeek nije dostupan, editor prikazuje **AI system offline** i XP ostaje `0`; nema alternativnog birača nagrade. Ručni unos se dobija isključivo preko Settings opcije.
-- Naziv, opis, tip, težina, attribute, skill i uslov završetka šalju se DeepSeek API-ju samo kada korisnik zatraži procenu ili prigovor.
+- Naziv, opis, tip, težina, attribute, skill, uslov završetka i naziv povezanog Bossa šalju se DeepSeek API-ju samo kada korisnik zatraži procenu ili prigovor.
 - API ključ nikada ne dolazi u browser i nije deo backupa.
 - Server prekida DeepSeek zahtev nakon 20 sekundi.
 - Podrazumevani model je `deepseek-v4-flash` u non-thinking režimu radi manje potrošnje i bržeg odgovora; model se može promeniti preko `DEEPSEEK_MODEL`.

@@ -47,6 +47,9 @@ export interface Quest {
   failureConsequence: string;
   status: QuestStatus;
   seriesId?: string;
+  parentQuestId?: string;
+  stepOrder?: number;
+  parentClosedAt?: string;
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
@@ -77,6 +80,15 @@ export interface Boss {
   createdAt: string;
   updatedAt: string;
 }
+export interface BossAttempt {
+  id: string;
+  bossQuestId: string;
+  attemptNumber: number;
+  outcome: "failed" | "cleared";
+  result: string;
+  createdAt: string;
+  reversedAt?: string;
+}
 export interface AppState {
   version: 1;
   attributes: Attribute[];
@@ -84,6 +96,7 @@ export interface AppState {
   quests: Quest[];
   transactions: XpTransaction[];
   bosses: Boss[];
+  bossAttempts?: BossAttempt[];
   settings: Settings;
   levelEvents: { id: string; type: "level" | "rank"; value: string; createdAt: string }[];
 }
@@ -91,11 +104,13 @@ export interface AppState {
 export type QuestMutation =
   | { action: "create"; quest: Quest }
   | { action: "update"; quest: Quest }
-  | { action: "delete"; questId: string };
+  | { action: "delete"; questId: string }
+  | { action: "boss_attempt"; bossQuestId: string; outcome: "failed" | "cleared"; result: string }
+  | { action: "undo_boss_clear"; bossQuestId: string };
 
 export type QuestMutationResult =
   | { ok: true; state: AppState }
-  | { ok: false; code: "invalid_quest" | "quest_not_found" };
+  | { ok: false; code: "invalid_quest" | "quest_not_found" | "invalid_attempt" | "boss_already_cleared" | "earned_quest_locked" };
 
 export const defaultSettings: Settings = {
   baseXp: 100,
@@ -201,9 +216,14 @@ export function deleteAttributeFromState(state: AppState, attributeId: string, s
 }
 
 export function deleteQuestFromState(state: AppState, questId: string): AppState {
+  const questIds = new Set([
+    questId,
+    ...state.quests.filter(quest => quest.parentQuestId === questId).map(quest => quest.id),
+  ]);
   return {
     ...state,
-    quests: state.quests.filter(quest => quest.id !== questId),
+    quests: state.quests.filter(quest => !questIds.has(quest.id)),
+    bossAttempts: (state.bossAttempts ?? []).filter(attempt => attempt.bossQuestId !== questId),
   };
 }
 
@@ -243,6 +263,9 @@ export function isValidQuest(value: unknown): value is Quest {
     boundedString(quest.failureConsequence, 10_000) &&
     QUEST_STATUSES.includes(quest.status as QuestStatus) &&
     (quest.seriesId === undefined || boundedString(quest.seriesId, 120, true)) &&
+    (quest.parentQuestId === undefined || boundedString(quest.parentQuestId, 120, true)) &&
+    (quest.stepOrder === undefined || (Number.isInteger(quest.stepOrder) && Number(quest.stepOrder) >= 0 && Number(quest.stepOrder) <= 10_000)) &&
+    (quest.parentClosedAt === undefined || boundedString(quest.parentClosedAt, 100, true)) &&
     boundedString(quest.createdAt, 100, true) &&
     boundedString(quest.updatedAt, 100, true) &&
     (quest.completedAt === undefined || boundedString(quest.completedAt, 100, true));
@@ -254,10 +277,113 @@ export function applyQuestMutation(state: AppState, mutation: QuestMutation, sta
     return { ok: true, state: deleteQuestFromState(state, mutation.questId) };
   }
 
+  if (mutation.action === "boss_attempt") {
+    if (!boundedString(mutation.bossQuestId, 120, true) || !boundedString(mutation.result, 1_000, true)) {
+      return { ok: false, code: "invalid_attempt" };
+    }
+    const boss = state.quests.find(quest => quest.id === mutation.bossQuestId && quest.type === "Boss");
+    if (!boss) return { ok: false, code: "quest_not_found" };
+    if (boss.status === "completed" || !canAwardQuest(boss.id, state.transactions)) {
+      return { ok: false, code: "boss_already_cleared" };
+    }
+
+    const previousAttempts = state.bossAttempts ?? [];
+    const attempt: BossAttempt = {
+      id: crypto.randomUUID(),
+      bossQuestId: boss.id,
+      attemptNumber: previousAttempts.filter(item => item.bossQuestId === boss.id && !item.reversedAt).length + 1,
+      outcome: mutation.outcome,
+      result: mutation.result.trim(),
+      createdAt: stamp,
+    };
+    if (mutation.outcome === "failed") {
+      return {
+        ok: true,
+        state: {
+          ...state,
+          quests: state.quests.map(quest => quest.id === boss.id
+            ? { ...quest, status: "active", completedAt: undefined, updatedAt: stamp }
+            : quest),
+          bossAttempts: [...previousAttempts, attempt],
+        },
+      };
+    }
+
+    const beforeXp = activeXp(state.transactions);
+    const beforeProgress = progressFromXp(beforeXp, state.settings);
+    const beforeRank = rankForLevel(beforeProgress.level, state.settings.ranks);
+    const transaction: XpTransaction | null = boss.xp > 0 ? {
+      id: crypto.randomUUID(),
+      questId: boss.id,
+      amount: boss.xp,
+      kind: "quest",
+      attributeId: boss.attributeId,
+      skillId: boss.skillId,
+      createdAt: stamp,
+    } : null;
+    const transactions = transaction ? [...state.transactions, transaction] : state.transactions;
+    const afterProgress = progressFromXp(activeXp(transactions), state.settings);
+    const afterRank = rankForLevel(afterProgress.level, state.settings.ranks);
+    return {
+      ok: true,
+      state: {
+        ...state,
+        quests: state.quests.map(quest => {
+          if (quest.id === boss.id) return { ...quest, status: "completed", completedAt: stamp, updatedAt: stamp };
+          if (quest.parentQuestId === boss.id && quest.status === "active") {
+            return { ...quest, status: "archived", parentClosedAt: stamp, updatedAt: stamp };
+          }
+          return quest;
+        }),
+        transactions,
+        bossAttempts: [...previousAttempts, attempt],
+        levelEvents: [
+          ...state.levelEvents,
+          ...(afterProgress.level > beforeProgress.level ? [{ id: crypto.randomUUID(), type: "level" as const, value: String(afterProgress.level), createdAt: stamp }] : []),
+          ...(afterRank !== beforeRank ? [{ id: crypto.randomUUID(), type: "rank" as const, value: afterRank, createdAt: stamp }] : []),
+        ],
+      },
+    };
+  }
+
+  if (mutation.action === "undo_boss_clear") {
+    if (!boundedString(mutation.bossQuestId, 120, true)) return { ok: false, code: "invalid_attempt" };
+    const boss = state.quests.find(quest => quest.id === mutation.bossQuestId && quest.type === "Boss");
+    if (!boss) return { ok: false, code: "quest_not_found" };
+    return {
+      ok: true,
+      state: {
+        ...state,
+        quests: state.quests.map(quest => {
+          if (quest.id === boss.id) return { ...quest, status: "active", completedAt: undefined, updatedAt: stamp };
+          if (quest.parentQuestId === boss.id && quest.parentClosedAt) {
+            return { ...quest, status: "active", parentClosedAt: undefined, updatedAt: stamp };
+          }
+          return quest;
+        }),
+        transactions: state.transactions.map(transaction => transaction.questId === boss.id && !transaction.reversedAt
+          ? { ...transaction, reversedAt: stamp }
+          : transaction),
+        bossAttempts: (state.bossAttempts ?? []).map(attempt => attempt.bossQuestId === boss.id && attempt.outcome === "cleared" && !attempt.reversedAt
+          ? { ...attempt, reversedAt: stamp }
+          : attempt),
+      },
+    };
+  }
+
   if (!isValidQuest(mutation.quest)) return { ok: false, code: "invalid_quest" };
   const skill = state.skills.find(item => item.id === mutation.quest.skillId);
   if (!state.attributes.some(item => item.id === mutation.quest.attributeId) || skill?.attributeId !== mutation.quest.attributeId) {
     return { ok: false, code: "invalid_quest" };
+  }
+  if (mutation.quest.parentQuestId) {
+    const parent = state.quests.find(item => item.id === mutation.quest.parentQuestId);
+    if (!parent || parent.type !== "Boss" || mutation.quest.type === "Boss" || parent.id === mutation.quest.id) {
+      return { ok: false, code: "invalid_quest" };
+    }
+    if (mutation.action === "create" && (parent.status === "completed" || parent.status === "archived")) {
+      return { ok: false, code: "invalid_quest" };
+    }
   }
 
   const existing = state.quests.find(item => item.id === mutation.quest.id);
@@ -268,6 +394,17 @@ export function applyQuestMutation(state: AppState, mutation: QuestMutation, sta
   }
 
   if (!existing) return { ok: false, code: "quest_not_found" };
+  if (state.transactions.some(transaction => transaction.questId === existing.id && !transaction.reversedAt)) {
+    const lockedFields: (keyof Quest)[] = [
+      "title", "description", "type", "attributeId", "skillId", "xp", "xpCategory", "focusMinutes",
+      "outputBonus", "xpRuleValue", "xpSource", "xpArgumentReason", "date", "deadline", "recurrence",
+      "difficulty", "completionConditions", "failureConsequence", "seriesId", "parentQuestId", "stepOrder",
+      "parentClosedAt",
+    ];
+    if (lockedFields.some(field => existing[field] !== mutation.quest[field])) {
+      return { ok: false, code: "earned_quest_locked" };
+    }
+  }
   const quest = { ...mutation.quest, id: existing.id, createdAt: existing.createdAt, updatedAt: stamp };
   return {
     ok: true,
@@ -320,7 +457,20 @@ export function isValidCloudState(value: unknown): value is AppState {
       activeAwards.add(transaction.questId);
     }
   }
-  return value.quests.every(isValidQuest);
+  return value.quests.every(isValidQuest) &&
+    (value.bossAttempts === undefined || (
+      Array.isArray(value.bossAttempts) &&
+      value.bossAttempts.every(attempt =>
+        boundedString(attempt.id, 120, true) &&
+        boundedString(attempt.bossQuestId, 120, true) &&
+        Number.isInteger(attempt.attemptNumber) &&
+        attempt.attemptNumber > 0 &&
+        (attempt.outcome === "failed" || attempt.outcome === "cleared") &&
+        boundedString(attempt.result, 1_000, true) &&
+        boundedString(attempt.createdAt, 100, true) &&
+        (attempt.reversedAt === undefined || boundedString(attempt.reversedAt, 100, true))
+      )
+    ));
 }
 
 export function makeInitialState(): AppState {
@@ -332,6 +482,7 @@ export function makeInitialState(): AppState {
     quests: [],
     transactions: [],
     bosses: [],
+    bossAttempts: [],
     levelEvents: [],
   };
 }
