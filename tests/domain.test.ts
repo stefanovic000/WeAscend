@@ -5,6 +5,7 @@ import { translate } from "../app/i18n.ts";
 import { applyBossPreparationFloor, parseXpSuggestion } from "../app/xpAdvisor.ts";
 import { authenticateRequest } from "../server/auth.ts";
 import { toLocalDateTimeValue, toStoredDateTime } from "../app/dateTime.ts";
+import { parseBossStepPlan } from "../app/bossStepPlanner.ts";
 
 test("initial state is completely empty at level 1 with zero XP", () => {
   const state = makeInitialState();
@@ -148,6 +149,29 @@ test("server quest mutations change only the targeted quest and preserve XP hist
   assert.equal(deleted.state.quests.some(quest => quest.id === "q1"), false);
   assert.equal(deleted.state.quests.find(quest => quest.id === "q2")?.title, "Second");
   assert.equal(deleted.state.transactions.length, 1);
+});
+
+test("generated Boss preparation steps are created atomically and reject duplicates", () => {
+  const state = makeInitialState();
+  state.attributes = [{ id: "a", name: "Intelligence", color: "#866bff", createdAt: "now", updatedAt: "now" }];
+  state.skills = [{ id: "s", attributeId: "a", name: "University", createdAt: "now", updatedAt: "now" }];
+  const boss: Quest = { id: "boss", title: "Exam", description: "", type: "Boss", attributeId: "a", skillId: "s", xp: 300, date: "2026-08-10", deadline: "", recurrence: "none", difficulty: "Extreme", completionConditions: "Pass", failureConsequence: "", status: "active", createdAt: "now", updatedAt: "now" };
+  const step: Quest = { ...boss, id: "step-1", title: "Question 1", type: "Side", xp: 20, xpCategory: "growth", xpSource: "ai", parentQuestId: "boss", stepOrder: 0 };
+  const second: Quest = { ...step, id: "step-2", title: "Question 2", stepOrder: 1 };
+  state.quests = [boss];
+
+  const created = applyQuestMutation(state, { action: "create_many", quests: [step, second] }, "server-time");
+  assert.equal(created.ok, true);
+  if (!created.ok) return;
+  assert.equal(created.state.quests.filter(quest => quest.parentQuestId === "boss").length, 2);
+  assert.equal(created.state.quests.find(quest => quest.id === "step-1")?.createdAt, "server-time");
+
+  const duplicate = applyQuestMutation(created.state, {
+    action: "create_many",
+    quests: [{ ...step, id: "step-3", title: " question 1 " }],
+  });
+  assert.deepEqual(duplicate, { ok: false, code: "invalid_quest" });
+  assert.equal(created.state.quests.some(quest => quest.id === "step-3"), false);
 });
 
 test("server quest validation rejects malformed content and missing relationships", () => {
@@ -333,6 +357,22 @@ test("bounded Boss preparation cannot receive zero only because details are brie
     activity: "productive",
     language: "en",
   }).xp, 0);
+});
+
+test("AI Boss-step plans validate XP, dates, and existing-title duplicates", () => {
+  const plan = parseBossStepPlan({
+    steps: [
+      { title: "Question 1", description: "Learn and solve it.", completionConditions: "Solve without notes.", date: "2026-08-01", xp: 20, rationale: "A substantial focused unit." },
+      { title: "Question 2", description: "Learn and solve it.", completionConditions: "Solve without notes.", date: "2026-08-02", xp: 20, rationale: "A substantial focused unit." },
+    ],
+  }, ["Question 1"]);
+  assert.deepEqual(plan?.map(step => step.title), ["Question 2"]);
+  assert.equal(parseBossStepPlan({
+    steps: [{ title: "Bad date", description: "", completionConditions: "Done", date: "2026-02-31", xp: 20, rationale: "Invalid." }],
+  }), null);
+  assert.equal(parseBossStepPlan({
+    steps: [{ title: "Inflated", description: "", completionConditions: "Done", date: "2026-08-01", xp: 100, rationale: "Too much." }],
+  }), null);
 });
 
 test("English is the primary UI language and Serbian translations interpolate values", () => {

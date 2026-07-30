@@ -26,6 +26,7 @@ function normalizeCommand(value: unknown): { revision: number; mutation: QuestMu
     action?: unknown;
     revision?: unknown;
     quest?: unknown;
+    quests?: unknown;
     questId?: unknown;
     bossQuestId?: unknown;
     outcome?: unknown;
@@ -39,6 +40,15 @@ function normalizeCommand(value: unknown): { revision: number; mutation: QuestMu
   }
   if ((payload.action === "create" || payload.action === "update") && isValidQuest(payload.quest)) {
     return { revision, mutation: { action: payload.action, quest: payload.quest } };
+  }
+  if (
+    payload.action === "create_many" &&
+    Array.isArray(payload.quests) &&
+    payload.quests.length > 0 &&
+    payload.quests.length <= 12 &&
+    payload.quests.every(isValidQuest)
+  ) {
+    return { revision, mutation: { action: "create_many", quests: payload.quests } };
   }
   if (
     payload.action === "boss_attempt" &&

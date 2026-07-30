@@ -103,6 +103,7 @@ export interface AppState {
 
 export type QuestMutation =
   | { action: "create"; quest: Quest }
+  | { action: "create_many"; quests: Quest[] }
   | { action: "update"; quest: Quest }
   | { action: "delete"; questId: string }
   | { action: "boss_attempt"; bossQuestId: string; outcome: "failed" | "cleared"; result: string }
@@ -272,6 +273,35 @@ export function isValidQuest(value: unknown): value is Quest {
 }
 
 export function applyQuestMutation(state: AppState, mutation: QuestMutation, stamp = new Date().toISOString()): QuestMutationResult {
+  if (mutation.action === "create_many") {
+    if (mutation.quests.length < 1 || mutation.quests.length > 12 || mutation.quests.some(quest => !isValidQuest(quest))) {
+      return { ok: false, code: "invalid_quest" };
+    }
+
+    const existingIds = new Set(state.quests.map(quest => quest.id));
+    const siblingTitles = new Set(state.quests
+      .filter(quest => quest.parentQuestId)
+      .map(quest => `${quest.parentQuestId}\u0000${quest.title.trim().toLocaleLowerCase()}`));
+    const incomingIds = new Set<string>();
+
+    for (const quest of mutation.quests) {
+      const titleKey = `${quest.parentQuestId ?? ""}\u0000${quest.title.trim().toLocaleLowerCase()}`;
+      if (!quest.parentQuestId || existingIds.has(quest.id) || incomingIds.has(quest.id) || siblingTitles.has(titleKey)) {
+        return { ok: false, code: "invalid_quest" };
+      }
+      incomingIds.add(quest.id);
+      siblingTitles.add(titleKey);
+    }
+
+    let nextState = state;
+    for (const quest of mutation.quests) {
+      const created = applyQuestMutation(nextState, { action: "create", quest }, stamp);
+      if (!created.ok) return created;
+      nextState = created.state;
+    }
+    return { ok: true, state: nextState };
+  }
+
   if (mutation.action === "delete") {
     if (!boundedString(mutation.questId, 120, true)) return { ok: false, code: "invalid_quest" };
     return { ok: true, state: deleteQuestFromState(state, mutation.questId) };

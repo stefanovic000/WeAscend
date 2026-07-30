@@ -6,6 +6,7 @@ import { toLocalDateTimeValue, toStoredDateTime } from "./dateTime";
 import { loadState, saveState } from "./db";
 import { translate, type Language, type TranslationKey } from "./i18n";
 import type { XpSuggestion } from "./xpAdvisor";
+import type { BossStepSuggestion } from "./bossStepPlanner";
 
 type View = "dashboard" | "quests" | "growth" | "bosses" | "history" | "settings";
 type SyncMode = "starting" | "online" | "syncing" | "offline" | "local";
@@ -16,6 +17,7 @@ type CloudStateResponse = {
   user?: { email: string; name: string };
   code?: string;
 };
+type GeneratedBossStep = BossStepSuggestion & { id: string; selected: boolean };
 const views: { id: View; labelKey: TranslationKey; icon: string }[] = [
   { id: "dashboard", labelKey: "nav.command", icon: "◇" },
   { id: "quests", labelKey: "nav.quests", icon: "✦" },
@@ -120,6 +122,13 @@ export default function SoloApp() {
   const [lastEstimatedRevision, setLastEstimatedRevision] = useState(-1);
   const [xpArgument, setXpArgument] = useState<{ requestedXp: number; reason: string } | null>(null);
   const [argumentUsed, setArgumentUsed] = useState(false);
+  const [stepPlanner, setStepPlanner] = useState<{
+    bossId: string;
+    instruction: string;
+    loading: boolean;
+    offline: boolean;
+    steps: GeneratedBossStep[];
+  } | null>(null);
   const [commandBusy, setCommandBusy] = useState(false);
   const [toast, setToast] = useState("");
   const [ceremony, setCeremony] = useState<{ eyebrow: string; title: string; text: string } | null>(null);
@@ -929,6 +938,121 @@ export default function SoloApp() {
       deadline: deadline.toISOString(),
     });
   };
+  const openBossStepPlanner = (boss: Quest) => {
+    if (!ensureWritable()) return;
+    setStepPlanner({ bossId: boss.id, instruction: "", loading: false, offline: false, steps: [] });
+  };
+  const generateBossSteps = async () => {
+    if (!stepPlanner || stepPlanner.instruction.trim().length < 3 || !ensureWritable()) return;
+    const boss = state.quests.find(quest => quest.id === stepPlanner.bossId && quest.type === "Boss");
+    if (!boss) {
+      setStepPlanner(null);
+      return;
+    }
+    const existingTitles = state.quests.filter(quest => quest.parentQuestId === boss.id).map(quest => quest.title);
+    setStepPlanner(current => current ? { ...current, loading: true, offline: false, steps: [] } : current);
+    try {
+      const response = await cloudFetch("/api/boss-steps", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instruction: stepPlanner.instruction,
+          language,
+          today: dayKey(new Date()),
+          existingTitles,
+          boss: {
+            title: boss.title,
+            description: boss.description,
+            completionConditions: boss.completionConditions,
+            deadline: boss.deadline,
+            attribute: attrName(boss.attributeId),
+            skill: skillName(boss.skillId),
+          },
+        }),
+      }, 28_000);
+      const result = await response.json() as { steps?: BossStepSuggestion[]; code?: string };
+      if (!response.ok || !result.steps?.length) {
+        setStepPlanner(current => current ? { ...current, loading: false, offline: true, steps: [] } : current);
+        setToast(t("ai.offline"));
+        return;
+      }
+      setStepPlanner(current => current ? {
+        ...current,
+        loading: false,
+        offline: false,
+        steps: result.steps!.map(step => ({ ...step, id: crypto.randomUUID(), selected: true })),
+      } : current);
+    } catch {
+      setStepPlanner(current => current ? { ...current, loading: false, offline: true, steps: [] } : current);
+      setToast(t("ai.offline"));
+    }
+  };
+  const updateGeneratedBossStep = (id: string, patch: Partial<GeneratedBossStep>) => {
+    setStepPlanner(current => current ? {
+      ...current,
+      steps: current.steps.map(step => step.id === id ? { ...step, ...patch } : step),
+    } : current);
+  };
+  const createGeneratedBossSteps = async () => {
+    if (!stepPlanner || !ensureWritable()) return;
+    const boss = state.quests.find(quest => quest.id === stepPlanner.bossId && quest.type === "Boss");
+    if (!boss) {
+      setStepPlanner(null);
+      return;
+    }
+    const existingTitles = new Set(state.quests
+      .filter(quest => quest.parentQuestId === boss.id)
+      .map(quest => quest.title.trim().toLocaleLowerCase().replace(/\s+/g, " ")));
+    const selected = stepPlanner.steps.filter(step => step.selected);
+    if (!selected.length) {
+      setToast(t("boss.noGeneratedSelection"));
+      return;
+    }
+    const usedTitles = new Set(existingTitles);
+    const invalidSelection = selected.some(step => {
+      const key = step.title.trim().toLocaleLowerCase().replace(/\s+/g, " ");
+      const invalid = !key || usedTitles.has(key) || !toStoredDateTime(`${step.date}T09:00`);
+      usedTitles.add(key);
+      return invalid;
+    });
+    if (invalidSelection) {
+      setToast(t("boss.noGeneratedSelection"));
+      return;
+    }
+
+    const stamp = new Date().toISOString();
+    const firstOrder = state.quests.filter(quest => quest.parentQuestId === boss.id).length;
+    const quests: Quest[] = selected.map((step, index) => {
+      const date = toStoredDateTime(`${step.date}T09:00`);
+      return {
+        id: crypto.randomUUID(),
+        title: step.title.trim(),
+        description: step.description.trim(),
+        type: "Side",
+        attributeId: boss.attributeId,
+        skillId: boss.skillId,
+        xp: step.xp,
+        xpCategory: "growth",
+        xpSource: "ai",
+        date,
+        deadline: new Date(new Date(date).getTime() + 3_600_000).toISOString(),
+        recurrence: "none",
+        difficulty: "Normal",
+        completionConditions: step.completionConditions.trim(),
+        failureConsequence: "",
+        status: "active",
+        parentQuestId: boss.id,
+        stepOrder: firstOrder + index,
+        createdAt: stamp,
+        updatedAt: stamp,
+      };
+    });
+    const saved = await runQuestMutation({ action: "create_many", quests });
+    if (!saved) return;
+    setStepPlanner(null);
+    setToast(t("boss.generatedCreated", { count: quests.length }));
+  };
   const shiftCalendarMonth = (amount: number) => {
     const date = new Date(`${calendarMonth}T12:00:00`);
     date.setMonth(date.getMonth() + amount);
@@ -1146,7 +1270,7 @@ export default function SoloApp() {
               <div><dt>{t("boss.deadline")}</dt><dd>{formatDate(boss.deadline)}</dd></div>
             </dl>
             <section className="boss-preparation">
-              <header><div><span>{t("boss.preparation")}</span><strong>{completedSteps}/{steps.length}</strong></div>{open && <button onClick={() => beginPreparationQuest(boss)}>＋ {t("boss.addStep")}</button>}</header>
+              <header><div><span>{t("boss.preparation")}</span><strong>{completedSteps}/{steps.length}</strong></div>{open && <div className="boss-step-actions"><button onClick={() => openBossStepPlanner(boss)}>✦ {t("boss.generateSteps")}</button><button onClick={() => beginPreparationQuest(boss)}>＋ {t("boss.addStep")}</button></div>}</header>
               {steps.length
                 ? <div className="boss-step-list">{steps.map(step => <div className={step.status} key={step.id}>
                   <button className="step-check" onClick={() => step.status === "active" ? completeQuest(step) : undefined} disabled={step.status !== "active"}>{step.status === "completed" ? "✓" : "○"}</button>
@@ -1266,6 +1390,48 @@ export default function SoloApp() {
         <footer><button type="button" onClick={() => setXpArgument(null)}>{t("common.cancel")}</button><button className="primary" type="submit" disabled={xpEstimating || xpArgument.reason.trim().length < 10}>{xpEstimating ? t("ai.estimating") : t("ai.submitArgument")}</button></footer>
       </form>
     </div>}
+    {stepPlanner && (() => {
+      const boss = state.quests.find(quest => quest.id === stepPlanner.bossId);
+      if (!boss) return null;
+      const selectedCount = stepPlanner.steps.filter(step => step.selected).length;
+      return <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && setStepPlanner(null)}>
+        <form className="modal step-planner-modal" role="dialog" aria-modal="true" aria-label={t("boss.generatorTitle")} onSubmit={e => {
+          e.preventDefault();
+          if (stepPlanner.steps.length) void createGeneratedBossSteps();
+          else void generateBossSteps();
+        }}>
+          <header><div><p>{t("boss.generatorEyebrow")}</p><h2>{t("boss.generatorTitle")}</h2><span>{boss.title}</span></div><button type="button" onClick={() => setStepPlanner(null)} aria-label={t("common.close")}>×</button></header>
+          <div className="step-planner-body">
+            {stepPlanner.steps.length === 0
+              ? <>
+                <Field label={t("boss.generatorInstruction")}><textarea autoFocus rows={5} maxLength={1_000} value={stepPlanner.instruction} onChange={e => setStepPlanner({ ...stepPlanner, instruction: e.target.value, offline: false })} placeholder={t("boss.generatorPlaceholder")} /></Field>
+                <p className="step-planner-note">{t("boss.generatorPrivacy")}</p>
+                {stepPlanner.offline && <div className="ai-offline"><strong>{t("ai.offline")}</strong><span>{t("boss.generatorOffline")}</span></div>}
+              </>
+              : <>
+                <div className="step-planner-summary"><span>{t("boss.generatorPreview")}</span><strong>{t("boss.generatorSelected", { count: selectedCount })}</strong></div>
+                <div className="generated-step-list">{stepPlanner.steps.map((step, index) => <article key={step.id} className={step.selected ? "" : "excluded"}>
+                  <label className="generated-step-select"><input type="checkbox" checked={step.selected} onChange={e => updateGeneratedBossStep(step.id, { selected: e.target.checked })} /><span>{String(index + 1).padStart(2, "0")}</span></label>
+                  <div className="generated-step-fields">
+                    <input aria-label={t("boss.generatedTitle")} maxLength={180} value={step.title} onChange={e => updateGeneratedBossStep(step.id, { title: e.target.value })} />
+                    <textarea aria-label={t("boss.generatedDescription")} rows={2} maxLength={1_500} value={step.description} onChange={e => updateGeneratedBossStep(step.id, { description: e.target.value })} />
+                    <div><input aria-label={t("boss.generatedDate")} type="date" value={step.date} onChange={e => updateGeneratedBossStep(step.id, { date: e.target.value })} /><input aria-label={t("boss.generatedCondition")} maxLength={500} value={step.completionConditions} onChange={e => updateGeneratedBossStep(step.id, { completionConditions: e.target.value })} /></div>
+                    <small>{step.rationale}</small>
+                  </div>
+                  <strong>{step.xp} XP</strong>
+                </article>)}</div>
+              </>}
+          </div>
+          <footer>
+            <button type="button" onClick={() => setStepPlanner(null)}>{t("common.cancel")}</button>
+            {stepPlanner.steps.length > 0 && <button type="button" onClick={() => setStepPlanner({ ...stepPlanner, offline: false, steps: [] })}>{t("boss.generatorBack")}</button>}
+            <button className="primary" type="submit" disabled={stepPlanner.loading || (!stepPlanner.steps.length && stepPlanner.instruction.trim().length < 3) || (stepPlanner.steps.length > 0 && selectedCount === 0)}>
+              {stepPlanner.loading ? t("boss.generating") : stepPlanner.steps.length ? t("boss.createGenerated", { count: selectedCount }) : t("boss.generate")}
+            </button>
+          </footer>
+        </form>
+      </div>;
+    })()}
     {inputDialog && <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && setInputDialog(null)}>
       <form className={`modal input-modal ${inputDialog.compact ? "note-modal" : ""}`} role="dialog" aria-modal="true" aria-label={inputDialog.title} onSubmit={e => {
         e.preventDefault();
