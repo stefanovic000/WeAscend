@@ -1,5 +1,5 @@
 import { authenticateRequest } from "../../../server/auth";
-import { parseBossStepPlan } from "../../bossStepPlanner";
+import { detectBossStepLanguage, parseBossStepPlan } from "../../bossStepPlanner";
 
 export const dynamic = "force-dynamic";
 
@@ -38,10 +38,11 @@ function normalizeRequest(payload: StepPlanRequest) {
   const existingTitles = Array.isArray(payload.existingTitles)
     ? payload.existingTitles.slice(0, 40).map(value => clean(value, 180)).filter(Boolean)
     : [];
+  const interfaceLanguage = payload.language === "sr" ? "sr" as const : "en" as const;
 
   return {
     instruction,
-    language: payload.language === "sr" ? "sr" as const : "en" as const,
+    language: detectBossStepLanguage(instruction, interfaceLanguage),
     today,
     existingTitles,
     boss: {

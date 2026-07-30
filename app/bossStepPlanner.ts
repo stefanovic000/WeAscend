@@ -1,5 +1,15 @@
 const STEP_XP_VALUES = [10, 15, 20, 25, 30] as const;
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const SERBIAN_MARKERS = new Set([
+  "napravi", "napraviti", "generisi", "generisati", "zadatak", "zadatka", "zadatke", "zadataka",
+  "ispit", "ispita", "ispitni", "pitanje", "pitanja", "oblast", "oblasti", "korak", "koraka",
+  "korake", "ucenje", "nauci", "nauciti", "resi", "resiti", "vezba", "vezbanje", "priprema",
+  "pripremu", "svaki", "svakog", "podeli", "lekcija", "gradivo",
+]);
+const ENGLISH_MARKERS = new Set([
+  "create", "make", "generate", "task", "tasks", "exam", "question", "questions", "topic", "topics",
+  "step", "steps", "study", "learn", "solve", "practice", "preparation", "each", "split", "chapter",
+]);
 
 export interface BossStepSuggestion {
   title: string;
@@ -17,6 +27,18 @@ const text = (value: unknown, max: number, required = false) => {
 };
 
 const titleKey = (value: string) => value.trim().toLocaleLowerCase().replace(/\s+/g, " ");
+
+export function detectBossStepLanguage(instruction: string, fallback: "en" | "sr") {
+  const words = instruction.toLocaleLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .match(/[a-z]+/g) ?? [];
+  const serbianScore = words.reduce((score, word) => score + (SERBIAN_MARKERS.has(word) ? 1 : 0), 0);
+  const englishScore = words.reduce((score, word) => score + (ENGLISH_MARKERS.has(word) ? 1 : 0), 0);
+  if (serbianScore > englishScore) return "sr" as const;
+  if (englishScore > serbianScore) return "en" as const;
+  return fallback;
+}
 
 function validDate(value: string) {
   if (!DATE_ONLY.test(value)) return false;

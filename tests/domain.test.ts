@@ -5,7 +5,7 @@ import { translate } from "../app/i18n.ts";
 import { applyBossPreparationFloor, parseXpSuggestion } from "../app/xpAdvisor.ts";
 import { authenticateRequest } from "../server/auth.ts";
 import { toLocalDateTimeValue, toStoredDateTime } from "../app/dateTime.ts";
-import { parseBossStepPlan } from "../app/bossStepPlanner.ts";
+import { detectBossStepLanguage, parseBossStepPlan } from "../app/bossStepPlanner.ts";
 
 test("initial state is completely empty at level 1 with zero XP", () => {
   const state = makeInitialState();
@@ -373,6 +373,14 @@ test("AI Boss-step plans validate XP, dates, and existing-title duplicates", () 
   assert.equal(parseBossStepPlan({
     steps: [{ title: "Inflated", description: "", completionConditions: "Done", date: "2026-08-01", xp: 100, rationale: "Too much." }],
   }), null);
+});
+
+test("Boss-step generator detects Serbian instructions independently of UI language", () => {
+  assert.equal(detectBossStepLanguage("Napravi po jedan korak za svih 5 ispitnih zadataka", "en"), "sr");
+  assert.equal(detectBossStepLanguage("Generisi pitanja za ucenje bez gledanja resenja", "en"), "sr");
+  assert.equal(detectBossStepLanguage("Create one preparation step for each exam question", "sr"), "en");
+  assert.equal(detectBossStepLanguage("5 × OE1", "sr"), "sr");
+  assert.equal(detectBossStepLanguage("5 × OE1", "en"), "en");
 });
 
 test("English is the primary UI language and Serbian translations interpolate values", () => {
