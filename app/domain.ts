@@ -389,7 +389,9 @@ export function applyQuestMutation(state: AppState, mutation: QuestMutation, sta
   const existing = state.quests.find(item => item.id === mutation.quest.id);
   if (mutation.action === "create") {
     if (existing) return { ok: true, state };
-    const quest = { ...mutation.quest, status: "active" as const, completedAt: undefined, createdAt: stamp, updatedAt: stamp };
+    const questInput = { ...mutation.quest };
+    delete questInput.completedAt;
+    const quest = { ...questInput, status: "active" as const, createdAt: stamp, updatedAt: stamp };
     return { ok: true, state: { ...state, quests: [quest, ...state.quests] } };
   }
 
@@ -471,6 +473,37 @@ export function isValidCloudState(value: unknown): value is AppState {
         (attempt.reversedAt === undefined || boundedString(attempt.reversedAt, 100, true))
       )
     ));
+}
+
+const NULLABLE_OPTIONAL_STATE_FIELDS = new Set([
+  "deletedAt",
+  "note",
+  "xpCategory",
+  "focusMinutes",
+  "outputBonus",
+  "xpRuleValue",
+  "xpSource",
+  "xpArgumentReason",
+  "seriesId",
+  "parentQuestId",
+  "stepOrder",
+  "parentClosedAt",
+  "completedAt",
+  "reversedAt",
+  "bossAttempts",
+  "manualXpOverride",
+]);
+
+export function normalizeCloudState(value: unknown): AppState | null {
+  if (!value || typeof value !== "object") return null;
+  try {
+    const normalized = JSON.parse(JSON.stringify(value, (key, item) =>
+      item === null && NULLABLE_OPTIONAL_STATE_FIELDS.has(key) ? undefined : item,
+    )) as unknown;
+    return isValidCloudState(normalized) ? normalized : null;
+  } catch {
+    return null;
+  }
 }
 
 export function makeInitialState(): AppState {

@@ -1,4 +1,4 @@
-import { applyQuestMutation, isValidCloudState, isValidQuest, type QuestMutation } from "../../domain";
+import { applyQuestMutation, normalizeCloudState, isValidQuest, type QuestMutation } from "../../domain";
 import { authenticateRequest, type AuthenticatedUser } from "../../../server/auth";
 import { withStateCollection } from "../../../server/mongo";
 
@@ -83,26 +83,33 @@ export async function POST(request: Request) {
   try {
     return await withStateCollection(async collection => {
       const current = await collection.findOne({ userId: auth.user.id });
-      if (!current?.state || !isValidCloudState(current.state)) return json({ code: "state_not_initialized" }, 409);
+      const currentState = normalizeCloudState(current?.state);
+      if (!current || !currentState) return json({ code: "state_not_initialized" }, 409);
       if (current.revision !== command.revision) {
-        return json({ code: "revision_conflict", state: current.state, revision: current.revision, user: publicUser(auth.user) }, 409);
+        return json({ code: "revision_conflict", state: currentState, revision: current.revision, user: publicUser(auth.user) }, 409);
       }
 
-      const result = applyQuestMutation(current.state, command.mutation);
+      const result = applyQuestMutation(currentState, command.mutation);
       if (!result.ok) return json({ code: result.code }, result.code === "quest_not_found" ? 404 : 400);
-      if (!isValidCloudState(result.state)) return json({ code: "invalid_state" }, 400);
+      const nextState = normalizeCloudState(result.state);
+      if (!nextState) return json({ code: "invalid_state" }, 400);
 
       const updated = await collection.findOneAndUpdate(
         { userId: auth.user.id, revision: current.revision },
         {
-          $set: { state: result.state, updatedAt: new Date() },
+          $set: { state: nextState, updatedAt: new Date() },
           $inc: { revision: 1 },
         },
         { returnDocument: "after" },
       );
       if (!updated) {
         const latest = await collection.findOne({ userId: auth.user.id });
-        return json({ code: "revision_conflict", state: latest?.state ?? null, revision: latest?.revision ?? 0, user: publicUser(auth.user) }, 409);
+        return json({
+          code: "revision_conflict",
+          state: normalizeCloudState(latest?.state),
+          revision: latest?.revision ?? 0,
+          user: publicUser(auth.user),
+        }, 409);
       }
 
       return json({

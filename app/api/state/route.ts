@@ -1,4 +1,4 @@
-import { isValidCloudState } from "../../domain";
+import { normalizeCloudState } from "../../domain";
 import { authenticateRequest, type AuthenticatedUser } from "../../../server/auth";
 import { withStateCollection } from "../../../server/mongo";
 
@@ -39,7 +39,7 @@ export async function GET(request: Request) {
     return await withStateCollection(async collection => {
       const document = await collection.findOne({ userId: user.id });
       return json({
-        state: document?.state ?? null,
+        state: normalizeCloudState(document?.state),
         revision: document?.revision ?? 0,
         updatedAt: document?.updatedAt?.toISOString() ?? null,
         user: publicUser(user),
@@ -70,7 +70,8 @@ export async function PUT(request: Request) {
     return json({ code: "invalid_json" }, 400);
   }
 
-  if (!isValidCloudState(payload.state) || !Number.isInteger(payload.revision) || Number(payload.revision) < 0) {
+  const normalizedState = normalizeCloudState(payload.state);
+  if (!normalizedState || !Number.isInteger(payload.revision) || Number(payload.revision) < 0) {
     return json({ code: "invalid_state" }, 400);
   }
 
@@ -82,7 +83,7 @@ export async function PUT(request: Request) {
       const updated = await collection.findOneAndUpdate(
         { userId: user.id, revision },
         {
-          $set: { state: payload.state, updatedAt: now },
+          $set: { state: normalizedState, updatedAt: now },
           $setOnInsert: { userId: user.id, createdAt: now },
           $inc: { revision: 1 },
         },
@@ -91,7 +92,7 @@ export async function PUT(request: Request) {
 
       if (!updated) {
         const current = await collection.findOne({ userId: user.id });
-        return json({ code: "revision_conflict", state: current?.state ?? null, revision: current?.revision ?? 0 }, 409);
+        return json({ code: "revision_conflict", state: normalizeCloudState(current?.state), revision: current?.revision ?? 0 }, 409);
       }
 
       return json({ state: updated.state, revision: updated.revision, updatedAt: updated.updatedAt.toISOString(), user: publicUser(user) });
@@ -103,7 +104,7 @@ export async function PUT(request: Request) {
     if (typeof error === "object" && error && "code" in error && error.code === 11000) {
       return await withStateCollection(async collection => {
         const current = await collection.findOne({ userId: user.id });
-        return json({ code: "revision_conflict", state: current?.state ?? null, revision: current?.revision ?? 0 }, 409);
+        return json({ code: "revision_conflict", state: normalizeCloudState(current?.state), revision: current?.revision ?? 0 }, 409);
       });
     }
     console.error("State write failed", error instanceof Error ? `${error.name}: ${error.message}` : error);

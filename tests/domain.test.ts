@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activeXp, applyQuestMutation, calculateQuestXp, canAwardQuest, defaultSettings, deleteAttributeFromState, deleteQuestFromState, isValidCloudState, isValidQuest, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type Quest, type XpTransaction } from "../app/domain.ts";
+import { activeXp, applyQuestMutation, calculateQuestXp, canAwardQuest, defaultSettings, deleteAttributeFromState, deleteQuestFromState, isValidCloudState, isValidQuest, makeInitialState, nextRecurringInstance, normalizeCloudState, progressFromXp, rankForLevel, type Quest, type XpTransaction } from "../app/domain.ts";
 import { translate } from "../app/i18n.ts";
 import { parseXpSuggestion } from "../app/xpAdvisor.ts";
 import { authenticateRequest } from "../server/auth.ts";
@@ -118,6 +118,7 @@ test("server quest mutations change only the targeted quest and preserve XP hist
   const createdFirst = applyQuestMutation(state, { action: "create", quest: first }, "server-1");
   assert.equal(createdFirst.ok, true);
   if (!createdFirst.ok) return;
+  assert.equal(Object.hasOwn(createdFirst.state.quests[0], "completedAt"), false);
   const createdSecond = applyQuestMutation(createdFirst.state, { action: "create", quest: second }, "server-2");
   assert.equal(createdSecond.ok, true);
   if (!createdSecond.ok) return;
@@ -243,6 +244,37 @@ test("cloud validation rejects duplicate active XP awards and negative XP", () =
 
   state.quests = [{ id: "q1", title: "Quest", description: "", note: "x".repeat(501), type: "Side", attributeId: "a", skillId: "s", xp: 20, date: "2026-01-01", deadline: "", recurrence: "none", difficulty: "Normal", completionConditions: "", failureConsequence: "", status: "active", createdAt: "2026-01-01", updatedAt: "2026-01-01" }];
   assert.equal(isValidCloudState(state), false);
+});
+
+test("cloud normalization repairs MongoDB nulls in optional quest fields", () => {
+  const state = makeInitialState();
+  state.attributes = [{ id: "a", name: "Intelligence", color: "#866bff", createdAt: "now", updatedAt: "now" }];
+  state.skills = [{ id: "s", attributeId: "a", name: "University", createdAt: "now", updatedAt: "now" }];
+  state.quests = [{
+    id: "q",
+    title: "New quest",
+    description: "",
+    type: "Side",
+    attributeId: "a",
+    skillId: "s",
+    xp: 0,
+    date: "2026-07-30",
+    deadline: "",
+    recurrence: "none",
+    difficulty: "Normal",
+    completionConditions: "",
+    failureConsequence: "",
+    status: "active",
+    createdAt: "now",
+    updatedAt: "now",
+    completedAt: null,
+  } as unknown as Quest];
+
+  assert.equal(isValidCloudState(state), false);
+  const normalized = normalizeCloudState(state);
+  assert.ok(normalized);
+  assert.equal(isValidCloudState(normalized), true);
+  assert.equal(Object.hasOwn(normalized.quests[0], "completedAt"), false);
 });
 
 test("AI XP suggestions accept only the fair scale and bounded rationale", () => {
