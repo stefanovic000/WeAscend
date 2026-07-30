@@ -2,6 +2,7 @@
 
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { activeXp, allowedXpForCategory, canAwardQuest, deleteAttributeFromState, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type AppState, type Quest, type QuestMutation, type QuestType, type XpTransaction } from "./domain";
+import { toLocalDateTimeValue, toStoredDateTime } from "./dateTime";
 import { loadState, saveState } from "./db";
 import { translate, type Language, type TranslationKey } from "./i18n";
 import type { XpSuggestion } from "./xpAdvisor";
@@ -40,7 +41,12 @@ const blankQuest = (state: AppState): Quest => {
 
 const prepareQuestDraft = (quest: Quest): Quest => {
   const xpSource = quest.xpSource === "rules" || !quest.xpSource ? "legacy" : quest.xpSource;
-  return { ...quest, xpSource };
+  return {
+    ...quest,
+    date: toLocalDateTimeValue(quest.date),
+    deadline: toLocalDateTimeValue(quest.deadline),
+    xpSource,
+  };
 };
 
 const estimateFingerprint = (quest: Quest, language: Language) => JSON.stringify({
@@ -59,8 +65,6 @@ const estimateFingerprint = (quest: Quest, language: Language) => JSON.stringify
   language,
 });
 
-const isoLocal = (value: string) => value ? new Date(value).toISOString().slice(0, 16) : "";
-const fromLocal = (value: string) => value ? new Date(value).toISOString() : "";
 const dayKey = (value: string | Date) => new Date(value).toLocaleDateString("sv-SE");
 const today = dayKey(new Date());
 const LANGUAGE_EVENT = "wesolo-language-change";
@@ -590,6 +594,8 @@ export default function SoloApp() {
     if (!ensureWritable()) return;
     if (!questDraft?.title.trim()) { setToast(t("quest.enterName")); return; }
     if (!questDraft.attributeId || !questDraft.skillId) { setToast(t("quest.choosePath")); return; }
+    const storedDate = toStoredDateTime(questDraft.date);
+    if (!storedDate) { setToast(t("quest.enterDate")); return; }
     const exists = state.quests.some(q => q.id === questDraft.id);
     const manualAllowed = state.settings.manualXpOverride === true;
     const keepChosenXp = questDraft.xpSource === "ai" || questDraft.xpSource === "argument" || (manualAllowed && questDraft.xpSource === "manual") || questDraft.xpSource === "legacy";
@@ -597,6 +603,8 @@ export default function SoloApp() {
       ...questDraft,
       note: questDraft.note?.trim().slice(0, 500) || undefined,
       updatedAt: new Date().toISOString(),
+      date: storedDate,
+      deadline: toStoredDateTime(questDraft.deadline),
       xp: keepChosenXp ? Math.max(0, Number(questDraft.xp) || 0) : 0,
       xpSource: keepChosenXp ? questDraft.xpSource : undefined,
     };
@@ -895,7 +903,7 @@ export default function SoloApp() {
       deadline: deadline.toISOString(),
     });
   };
-  const beginNewQuest = () => beginQuestOnDate(today);
+  const beginNewQuest = () => beginQuestOnDate(dayKey(new Date()));
   const beginBossQuest = () => {
     const date = new Date();
     date.setDate(date.getDate() + 7);
@@ -1240,8 +1248,8 @@ export default function SoloApp() {
               : <button type="button" onClick={() => void estimateQuestXp()} disabled={xpEstimating || estimateLocked}>{xpEstimating ? t("ai.estimating") : estimateLocked ? t("ai.reestimate") : t("ai.estimate")}</button>}
             {currentXpSuggestion && <div className="xp-suggestion"><span><b>{currentXpSuggestion.xp} XP</b><small>{t(`ai.confidence.${currentXpSuggestion.confidence}` as TranslationKey)} · {t(`ai.decision.${currentXpSuggestion.decision ?? "estimate"}` as TranslationKey)}</small></span><p>{currentXpSuggestion.rationale}</p><div className="xp-suggestion-actions"><button type="button" onClick={applyXpSuggestion}>{t("ai.apply")}</button>{!argumentUsed && <button type="button" className="argue-button" onClick={() => { const allowed = allowedXpForCategory(currentXpSuggestion.category); const requestedXp = allowed.find(value => value > currentXpSuggestion.xp) ?? [...allowed].reverse().find(value => value < currentXpSuggestion.xp) ?? currentXpSuggestion.xp; setXpArgument({ requestedXp, reason: "" }); }}>{t("ai.argue")}</button>}</div></div>}
           </div>
-          <Field label={t("editor.date")}><input type="datetime-local" value={isoLocal(questDraft.date)} onChange={e => updateQuestDraft({ ...questDraft, date: fromLocal(e.target.value) })} /></Field>
-          <Field label={t("editor.deadline")}><input type="datetime-local" value={isoLocal(questDraft.deadline)} onChange={e => updateQuestDraft({ ...questDraft, deadline: fromLocal(e.target.value) })} /></Field>
+          <Field label={t("editor.date")}><input type="datetime-local" required value={questDraft.date} onChange={e => updateQuestDraft({ ...questDraft, date: e.target.value })} /></Field>
+          <Field label={t("editor.deadline")}><input type="datetime-local" value={questDraft.deadline} onChange={e => updateQuestDraft({ ...questDraft, deadline: e.target.value })} /></Field>
           <Field label={t("editor.condition")} wide><input value={questDraft.completionConditions} onChange={e => updateQuestDraft({ ...questDraft, completionConditions: e.target.value })} placeholder={t("editor.conditionPlaceholder")} /></Field>
           {(questDraft.type === "Mandatory" || questDraft.type === "Correction") && <Field label={t("editor.consequence")} wide><textarea value={questDraft.failureConsequence} onChange={e => updateQuestDraft({ ...questDraft, failureConsequence: e.target.value })} placeholder={t("editor.consequencePlaceholder")} /></Field>}
         </div>

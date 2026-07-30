@@ -4,6 +4,7 @@ import { activeXp, applyQuestMutation, calculateQuestXp, canAwardQuest, defaultS
 import { translate } from "../app/i18n.ts";
 import { parseXpSuggestion } from "../app/xpAdvisor.ts";
 import { authenticateRequest } from "../server/auth.ts";
+import { toLocalDateTimeValue, toStoredDateTime } from "../app/dateTime.ts";
 
 test("initial state is completely empty at level 1 with zero XP", () => {
   const state = makeInitialState();
@@ -14,6 +15,16 @@ test("initial state is completely empty at level 1 with zero XP", () => {
   assert.deepEqual(state.quests, []);
   assert.deepEqual(state.bosses, []);
   assert.equal(state.settings.manualXpOverride, false);
+});
+
+test("quest date input preserves typed local values and stores a valid instant", () => {
+  const typed = "2026-07-30T14:05";
+  assert.equal(toLocalDateTimeValue(typed), typed);
+  assert.equal(toStoredDateTime(typed), new Date(typed).toISOString());
+
+  const localDate = new Date(2026, 6, 30, 9, 7);
+  assert.equal(toLocalDateTimeValue(localDate.toISOString()), "2026-07-30T09:07");
+  assert.equal(toLocalDateTimeValue("2026-07-30"), "2026-07-30T09:00");
 });
 
 test("the four XP categories produce deterministic rewards", () => {
