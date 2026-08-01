@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { activeXp, allowedXpForCategory, canAwardQuest, deleteAttributeFromState, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, nextRecurringInstance, progressFromXp, rankForLevel, type AppState, type Quest, type QuestMutation, type QuestType, type XpTransaction } from "./domain";
+import { activeXp, addTemplateQuestForDate, allowedXpForCategory, canAwardQuest, deleteAttributeFromState, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, materializeRoutineInstances, nextRecurringInstance, progressFromXp, questTemplateFromQuest, rankForLevel, type AppState, type Quest, type QuestMutation, type QuestTemplate, type QuestType, type XpTransaction } from "./domain";
 import { toLocalDateTimeValue, toStoredDateTime } from "./dateTime";
 import { loadState, saveState } from "./db";
 import { translate, type Language, type TranslationKey } from "./i18n";
@@ -91,7 +91,8 @@ function Empty({ title, text }: { title: string; text: string }) {
 
 function hasUserData(state: AppState) {
   return state.attributes.length > 0 || state.skills.length > 0 || state.quests.length > 0 ||
-    state.transactions.length > 0 || state.bosses.length > 0 || state.levelEvents.length > 0;
+    state.transactions.length > 0 || state.bosses.length > 0 || state.levelEvents.length > 0 ||
+    (state.questTemplates?.length ?? 0) > 0;
 }
 
 async function cloudFetch(input: RequestInfo | URL, init?: RequestInit, timeoutMs = 8_000) {
@@ -365,6 +366,14 @@ export default function SoloApp() {
     return () => clearTimeout(timer);
   }, [toast]);
 
+  useEffect(() => {
+    if (syncMode !== "online") return;
+    const materialize = () => setState(current => current ? materializeRoutineInstances(current, new Date()) : current);
+    materialize();
+    const timer = window.setInterval(materialize, 60_000);
+    return () => window.clearInterval(timer);
+  }, [syncMode]);
+
   const metrics = useMemo(() => {
     if (!state) return null;
     const xp = activeXp(state.transactions);
@@ -488,6 +497,7 @@ export default function SoloApp() {
   const availableSkills = state.skills.filter(skill => !skill.deletedAt && availableAttributes.some(attribute => attribute.id === skill.attributeId));
   const activeQuests = state.quests.filter(q => q.status === "active");
   const openBossQuests = state.quests.filter(q => q.type === "Boss" && q.status !== "completed" && q.status !== "archived");
+  const questTemplates = state.questTemplates ?? [];
   const todayQuests = activeQuests.filter(q => dayKey(q.date) === today);
   const mainQuest = todayQuests.find(q => q.type === "Main") ?? activeQuests.find(q => q.type === "Main");
 
@@ -1059,6 +1069,56 @@ export default function SoloApp() {
     setCalendarMonth(`${dayKey(date).slice(0, 7)}-01`);
   };
 
+  const saveQuestAsTemplate = (quest: Quest) => {
+    if (!ensureWritable()) return;
+    if (quest.type === "Boss" || quest.parentQuestId) return;
+    if (questTemplates.some(template => template.sourceQuestId === quest.id)) {
+      setToast(t("template.exists"));
+      return;
+    }
+    const template = questTemplateFromQuest(quest);
+    if (!template) return;
+    updateState(current => ({ ...current, questTemplates: [template, ...(current.questTemplates ?? [])] }));
+    setToast(t("template.saved"));
+  };
+
+  const updateQuestTemplate = (templateId: string, patch: Partial<QuestTemplate>) => {
+    if (!ensureWritable()) return;
+    const stamp = new Date().toISOString();
+    updateState(current => materializeRoutineInstances({
+      ...current,
+      questTemplates: (current.questTemplates ?? []).map(template => template.id === templateId
+        ? { ...template, ...patch, updatedAt: stamp }
+        : template),
+    }, new Date(), stamp));
+  };
+
+  const addTemplateToday = (templateId: string) => {
+    if (!ensureWritable()) return;
+    const next = addTemplateQuestForDate(state, templateId, dayKey(new Date()));
+    if (next === state) {
+      setToast(t("template.alreadyToday"));
+      return;
+    }
+    updateState(() => next);
+    setSelectedDate(today);
+    setShowAllDates(false);
+    setToast(t("template.todayAdded"));
+  };
+
+  const deleteQuestTemplate = (template: QuestTemplate) => {
+    if (!ensureWritable()) return;
+    setConfirmAction({
+      title: t("template.deleteTitle", { name: template.title }),
+      text: t("template.deleteText"),
+      action: () => {
+        updateState(current => ({ ...current, questTemplates: (current.questTemplates ?? []).filter(item => item.id !== template.id) }));
+        setConfirmAction(null);
+        setToast(t("template.deleted"));
+      },
+    });
+  };
+
   const exportJson = () => {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
     const link = document.createElement("a");
@@ -1096,6 +1156,7 @@ export default function SoloApp() {
         <div className="quest-meta">
           <span className={`type-badge type-${quest.type.toLowerCase()}`}>{t(`type.${quest.type}` as TranslationKey)}</span>
           {quest.parentQuestId && <span className="prep-badge">{t("boss.preparationStep")}</span>}
+          {quest.templateId && <span className="routine-badge">{t("template.instance")}</span>}
           <span>{attrName(quest.attributeId)} / {skillName(quest.skillId)}</span>
         </div>
         <h3>{quest.title}</h3>
@@ -1117,6 +1178,7 @@ export default function SoloApp() {
         <button className={quest.note ? "has-note" : ""} onClick={() => openQuestNote(quest)} aria-label={t("quest.noteEditLabel", { name: quest.title })} title={t("quest.note")}>{compact ? "✎" : t("quest.note")}</button>
         {!compact && <>
           {canAwardQuest(quest.id, state.transactions) && <button onClick={() => { if (ensureWritable()) openQuestEditor(quest); }}>{t("common.edit")}</button>}
+          {quest.type !== "Boss" && !quest.parentQuestId && <button onClick={() => saveQuestAsTemplate(quest)}>{t("template.save")}</button>}
           <button onClick={() => archiveQuest(quest)}>{t("common.archive")}</button>
           <button className="danger-link" onClick={() => deleteQuest(quest)}>{t("common.delete")}</button>
         </>}
@@ -1209,6 +1271,44 @@ export default function SoloApp() {
         </button>;
       })}</div>
       <footer><div><span>{t("planner.selectedDay")}</span><strong>{selectedLabel}</strong></div><button onClick={() => beginQuestOnDate(selectedDate)}>{t("planner.addDay")}</button></footer>
+    </section>
+    <section className="routine-panel">
+      <header>
+        <div><p>{t("template.eyebrow")}</p><h2>{t("template.title")}</h2><span>{t("template.subtitle")}</span></div>
+        <strong>{questTemplates.length}</strong>
+      </header>
+      {questTemplates.length === 0
+        ? <Empty title={t("template.empty")} text={t("template.emptyText")} />
+        : <div className="template-grid">{questTemplates.map(template => {
+          const pathAvailable = availableAttributes.some(attribute => attribute.id === template.attributeId) && availableSkills.some(skill => skill.id === template.skillId);
+          const alreadyToday = state.quests.some(quest =>
+            (quest.templateId === template.id && quest.routineDate === today) ||
+            (quest.id === template.sourceQuestId && dayKey(quest.date) === today)
+          );
+          const weekdayLabels = t("planner.weekdays").split(",");
+          const weekdayOrder = [1, 2, 3, 4, 5, 6, 0];
+          return <article className={!pathAvailable ? "invalid" : ""} key={template.id}>
+            <div className="template-main">
+              <div className="quest-meta"><span className={`type-badge type-${template.type.toLowerCase()}`}>{t(`type.${template.type}` as TranslationKey)}</span><span>{attrName(template.attributeId)} / {skillName(template.skillId)}</span></div>
+              <h3>{template.title}</h3>
+              <p>{template.xp} XP · {t(`difficulty.${template.difficulty}` as TranslationKey)}</p>
+              {!pathAvailable && <em>{t("template.pathUnavailable")}</em>}
+            </div>
+            <div className="template-controls">
+              <label><span>{t("template.schedule")}</span><select value={template.schedule} disabled={!pathAvailable} onChange={event => {
+                const schedule = event.target.value as QuestTemplate["schedule"];
+                updateQuestTemplate(template.id, { schedule, weekdays: schedule === "weekly" && template.weekdays.length === 0 ? [new Date().getDay()] : template.weekdays, startDate: today });
+              }}><option value="none">{t("template.none")}</option><option value="daily">{t("template.daily")}</option><option value="weekly">{t("template.weekly")}</option></select></label>
+              <label><span>{t("template.time")}</span><input type="time" value={template.time} disabled={!pathAvailable} onChange={event => updateQuestTemplate(template.id, { time: event.target.value })} /></label>
+            </div>
+            {template.schedule === "weekly" && <div className="weekday-picker" aria-label={t("template.weekdays")}>
+              {weekdayOrder.map((day, index) => <button type="button" key={day} className={template.weekdays.includes(day) ? "active" : ""} disabled={!pathAvailable} onClick={() => updateQuestTemplate(template.id, {
+                weekdays: template.weekdays.includes(day) ? template.weekdays.filter(item => item !== day) : [...template.weekdays, day],
+              })}>{weekdayLabels[index]}</button>)}
+            </div>}
+            <footer><button className="template-use" disabled={!pathAvailable || alreadyToday} onClick={() => addTemplateToday(template.id)}>{alreadyToday ? t("template.alreadyAdded") : t("template.addToday")}</button><button className="danger-link" onClick={() => deleteQuestTemplate(template)}>{t("common.delete")}</button></footer>
+          </article>;
+        })}</div>}
     </section>
     <section className="filters">
       <input aria-label={t("planner.searchLabel")} placeholder={t("planner.search")} value={filters.search} onChange={e => setFilters({ ...filters, search: e.target.value })} />

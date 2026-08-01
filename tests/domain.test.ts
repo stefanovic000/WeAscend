@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activeXp, applyQuestMutation, calculateQuestXp, canAwardQuest, defaultSettings, deleteAttributeFromState, deleteQuestFromState, isValidCloudState, isValidQuest, makeInitialState, nextRecurringInstance, normalizeCloudState, progressFromXp, rankForLevel, type Quest, type XpTransaction } from "../app/domain.ts";
+import { activeXp, addTemplateQuestForDate, applyQuestMutation, calculateQuestXp, canAwardQuest, defaultSettings, deleteAttributeFromState, deleteQuestFromState, isValidCloudState, isValidQuest, makeInitialState, materializeRoutineInstances, nextRecurringInstance, normalizeCloudState, progressFromXp, questTemplateFromQuest, rankForLevel, type Quest, type QuestTemplate, type XpTransaction } from "../app/domain.ts";
 import { translate } from "../app/i18n.ts";
 import { applyBossPreparationFloor, parseXpSuggestion } from "../app/xpAdvisor.ts";
 import { authenticateRequest } from "../server/auth.ts";
@@ -106,6 +106,51 @@ test("recurring quest preserves its AI reward without copying its note or appeal
   assert.equal(next.xp, 30);
   assert.equal(next.xpSource, "argument");
   assert.equal(next.xpArgumentReason, undefined);
+});
+
+test("quest templates omit private notes and create at most one independent instance per day", () => {
+  const state = makeInitialState();
+  state.attributes = [{ id: "a", name: "Strength", color: "#866bff", createdAt: "now", updatedAt: "now" }];
+  state.skills = [{ id: "s", attributeId: "a", name: "Gym", createdAt: "now", updatedAt: "now" }];
+  const quest: Quest = { id: "q", title: "Upper body", description: "Training plan", note: "Private note", type: "Daily", attributeId: "a", skillId: "s", xp: 25, xpSource: "ai", date: "2026-08-01T08:00:00.000Z", deadline: "2026-08-01T09:30:00.000Z", recurrence: "daily", difficulty: "Hard", completionConditions: "Finish all sets", failureConsequence: "", status: "active", createdAt: "now", updatedAt: "now" };
+  const template = questTemplateFromQuest(quest, "stamp");
+  assert.ok(template);
+  if (!template) return;
+  assert.equal(Object.hasOwn(template, "note"), false);
+  template.schedule = "daily";
+  state.questTemplates = [template];
+  state.quests = [quest];
+
+  const sourceDay = materializeRoutineInstances(state, new Date(2026, 7, 1, 12), "source");
+  const first = materializeRoutineInstances(state, new Date(2026, 7, 2, 12), "first");
+  const duplicate = materializeRoutineInstances(first, new Date(2026, 7, 2, 18), "duplicate");
+  const nextDay = materializeRoutineInstances(duplicate, new Date(2026, 7, 3, 12), "second");
+
+  assert.equal(sourceDay.quests.length, 1);
+  assert.equal(first.quests.length, 2);
+  assert.equal(duplicate.quests.length, 2);
+  assert.equal(nextDay.quests.length, 3);
+  assert.equal(nextDay.quests[0]?.recurrence, "none");
+  assert.notEqual(nextDay.quests[0]?.id, nextDay.quests[1]?.id);
+});
+
+test("weekly routines use selected weekdays and manual template use is idempotent", () => {
+  const state = makeInitialState();
+  state.attributes = [{ id: "a", name: "Strength", color: "#866bff", createdAt: "now", updatedAt: "now" }];
+  state.skills = [{ id: "s", attributeId: "a", name: "Gym", createdAt: "now", updatedAt: "now" }];
+  const template: QuestTemplate = { id: "template", title: "Gym", description: "", type: "Daily", attributeId: "a", skillId: "s", xp: 20, difficulty: "Normal", completionConditions: "Done", failureConsequence: "", schedule: "weekly", weekdays: [1, 4], startDate: "2026-08-01", time: "09:00", deadlineOffsetMinutes: 60, createdAt: "now", updatedAt: "now" };
+  state.questTemplates = [template];
+
+  const sunday = materializeRoutineInstances(state, new Date(2026, 7, 2, 12));
+  const monday = materializeRoutineInstances(sunday, new Date(2026, 7, 3, 12));
+  const manual = addTemplateQuestForDate(monday, template.id, "2026-08-04");
+  const manualAgain = addTemplateQuestForDate(manual, template.id, "2026-08-04");
+
+  assert.equal(sunday.quests.length, 0);
+  assert.equal(monday.quests.length, 1);
+  assert.equal(manual.quests.length, 2);
+  assert.equal(manualAgain.quests.length, 2);
+  assert.equal(isValidCloudState(manualAgain), true);
 });
 
 test("deleting a quest removes its note and content while preserving XP history", () => {

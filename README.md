@@ -171,6 +171,15 @@ Brisanje skilla ne briše legitimno zarađen XP.
 
 Quest Manager podržava izbor budućeg datuma i mesečni kalendar. Ponavljajući quest dobija zasebnu instancu za svaki datum, pa završavanje jedne instance ne boduje ostale.
 
+### Quest šabloni i rutine
+
+- Na postojećem nezavisnom questu izaberi **Save as template / Sačuvaj kao šablon**.
+- Šablon može ostati ručni, raditi svakog dana ili samo izabranim danima u nedelji.
+- **Add today / Dodaj danas** pravi jednu zasebnu instancu za današnji datum.
+- Rutina automatski pravi današnju instancu kada je aplikacija online; ne popunjava propuštene dane retroaktivno.
+- Jedan šablon može napraviti najviše jednu instancu po datumu. Svaka instanca ima sopstveni status, belešku i XP transakciju.
+- Brisanje šablona ne briše questove niti XP koji su ranije napravljeni iz njega.
+
 ## Boss priprema i pokušaji
 
 Boss quest može imati povezane pripremne questove. Svaki pripremni korak koristi običan quest i sopstvenu AI XP procenu, pa se boduje tačno jednom kao konkretan rad. Boss Clear nagrada je odvojena i dobija se samo pri prvom uspešnom rezultatu.

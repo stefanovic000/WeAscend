@@ -50,9 +50,36 @@ export interface Quest {
   parentQuestId?: string;
   stepOrder?: number;
   parentClosedAt?: string;
+  templateId?: string;
+  routineDate?: string;
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
+}
+export interface QuestTemplate {
+  id: string;
+  sourceQuestId?: string;
+  title: string;
+  description: string;
+  type: Exclude<QuestType, "Boss">;
+  attributeId: string;
+  skillId: string;
+  xp: number;
+  xpCategory?: XpCategory;
+  focusMinutes?: number;
+  outputBonus?: 0 | 5 | 10;
+  xpRuleValue?: number;
+  xpSource?: XpSource;
+  difficulty: Quest["difficulty"];
+  completionConditions: string;
+  failureConsequence: string;
+  schedule: "none" | "daily" | "weekly";
+  weekdays: number[];
+  startDate: string;
+  time: string;
+  deadlineOffsetMinutes: number;
+  createdAt: string;
+  updatedAt: string;
 }
 export interface XpTransaction {
   id: string;
@@ -97,6 +124,7 @@ export interface AppState {
   transactions: XpTransaction[];
   bosses: Boss[];
   bossAttempts?: BossAttempt[];
+  questTemplates?: QuestTemplate[];
   settings: Settings;
   levelEvents: { id: string; type: "level" | "rank"; value: string; createdAt: string }[];
 }
@@ -233,6 +261,7 @@ const QUEST_STATUSES: QuestStatus[] = ["active", "completed", "failed", "skipped
 const QUEST_RECURRENCES: Quest["recurrence"][] = ["none", "daily", "weekly"];
 const QUEST_DIFFICULTIES: Quest["difficulty"][] = ["Easy", "Normal", "Hard", "Extreme"];
 const XP_SOURCES: XpSource[] = ["rules", "ai", "argument", "manual", "legacy"];
+const TEMPLATE_SCHEDULES: QuestTemplate["schedule"][] = ["none", "daily", "weekly"];
 
 function boundedString(value: unknown, maxLength: number, required = false) {
   return typeof value === "string" && value.length <= maxLength && (!required || value.trim().length > 0);
@@ -267,9 +296,142 @@ export function isValidQuest(value: unknown): value is Quest {
     (quest.parentQuestId === undefined || boundedString(quest.parentQuestId, 120, true)) &&
     (quest.stepOrder === undefined || (Number.isInteger(quest.stepOrder) && Number(quest.stepOrder) >= 0 && Number(quest.stepOrder) <= 10_000)) &&
     (quest.parentClosedAt === undefined || boundedString(quest.parentClosedAt, 100, true)) &&
+    (quest.templateId === undefined || boundedString(quest.templateId, 80, true)) &&
+    (quest.routineDate === undefined || /^\d{4}-\d{2}-\d{2}$/.test(quest.routineDate)) &&
     boundedString(quest.createdAt, 100, true) &&
     boundedString(quest.updatedAt, 100, true) &&
     (quest.completedAt === undefined || boundedString(quest.completedAt, 100, true));
+}
+
+export function isValidQuestTemplate(value: unknown): value is QuestTemplate {
+  if (!value || typeof value !== "object") return false;
+  const template = value as Partial<QuestTemplate>;
+  return boundedString(template.id, 80, true) &&
+    (template.sourceQuestId === undefined || boundedString(template.sourceQuestId, 120, true)) &&
+    boundedString(template.title, 500, true) &&
+    boundedString(template.description, 10_000) &&
+    QUEST_TYPES.includes(template.type as QuestType) && template.type !== "Boss" &&
+    boundedString(template.attributeId, 120, true) &&
+    boundedString(template.skillId, 120, true) &&
+    Number.isFinite(template.xp) && Number(template.xp) >= 0 &&
+    (template.xpCategory === undefined || Object.hasOwn(XP_BY_CATEGORY, template.xpCategory)) &&
+    (template.focusMinutes === undefined || (Number.isFinite(template.focusMinutes) && Number(template.focusMinutes) >= 0 && Number(template.focusMinutes) <= 1440)) &&
+    (template.outputBonus === undefined || template.outputBonus === 0 || template.outputBonus === 5 || template.outputBonus === 10) &&
+    (template.xpRuleValue === undefined || Number.isFinite(template.xpRuleValue)) &&
+    (template.xpSource === undefined || XP_SOURCES.includes(template.xpSource)) &&
+    QUEST_DIFFICULTIES.includes(template.difficulty as Quest["difficulty"]) &&
+    boundedString(template.completionConditions, 10_000) &&
+    boundedString(template.failureConsequence, 10_000) &&
+    TEMPLATE_SCHEDULES.includes(template.schedule as QuestTemplate["schedule"]) &&
+    Array.isArray(template.weekdays) && template.weekdays.length <= 7 &&
+    template.weekdays.every(day => Number.isInteger(day) && day >= 0 && day <= 6) &&
+    new Set(template.weekdays).size === template.weekdays.length &&
+    typeof template.startDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(template.startDate) &&
+    typeof template.time === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(template.time) &&
+    Number.isInteger(template.deadlineOffsetMinutes) && template.deadlineOffsetMinutes >= 0 && template.deadlineOffsetMinutes <= 43_200 &&
+    boundedString(template.createdAt, 100, true) &&
+    boundedString(template.updatedAt, 100, true);
+}
+
+const localDateKey = (date: Date) => [
+  date.getFullYear(),
+  String(date.getMonth() + 1).padStart(2, "0"),
+  String(date.getDate()).padStart(2, "0"),
+].join("-");
+
+function dateAtTemplateTime(dateKey: string, time: string) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  return new Date(year, month - 1, day, hour, minute, 0, 0);
+}
+
+export function questTemplateFromQuest(quest: Quest, stamp = new Date().toISOString()): QuestTemplate | null {
+  if (quest.type === "Boss" || quest.parentQuestId) return null;
+  const start = new Date(quest.date);
+  const end = quest.deadline ? new Date(quest.deadline) : null;
+  const deadlineOffsetMinutes = end && Number.isFinite(end.getTime())
+    ? Math.max(0, Math.min(43_200, Math.round((end.getTime() - start.getTime()) / 60_000)))
+    : 0;
+  return {
+    id: crypto.randomUUID(),
+    sourceQuestId: quest.id,
+    title: quest.title,
+    description: quest.description,
+    type: quest.type,
+    attributeId: quest.attributeId,
+    skillId: quest.skillId,
+    xp: quest.xp,
+    xpCategory: quest.xpCategory,
+    focusMinutes: quest.focusMinutes,
+    outputBonus: quest.outputBonus,
+    xpRuleValue: quest.xpRuleValue,
+    xpSource: quest.xpSource,
+    difficulty: quest.difficulty,
+    completionConditions: quest.completionConditions,
+    failureConsequence: quest.failureConsequence,
+    schedule: "none",
+    weekdays: [start.getDay()],
+    startDate: localDateKey(new Date()),
+    time: `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`,
+    deadlineOffsetMinutes,
+    createdAt: stamp,
+    updatedAt: stamp,
+  };
+}
+
+export function questFromTemplate(template: QuestTemplate, dateKey: string, stamp = new Date().toISOString()): Quest {
+  const start = dateAtTemplateTime(dateKey, template.time);
+  const deadline = template.deadlineOffsetMinutes > 0
+    ? new Date(start.getTime() + template.deadlineOffsetMinutes * 60_000).toISOString()
+    : "";
+  return {
+    id: `routine:${template.id}:${dateKey}`,
+    title: template.title,
+    description: template.description,
+    type: template.type,
+    attributeId: template.attributeId,
+    skillId: template.skillId,
+    xp: template.xp,
+    xpCategory: template.xpCategory,
+    focusMinutes: template.focusMinutes,
+    outputBonus: template.outputBonus,
+    xpRuleValue: template.xpRuleValue,
+    xpSource: template.xpSource,
+    date: start.toISOString(),
+    deadline,
+    recurrence: "none",
+    difficulty: template.difficulty,
+    completionConditions: template.completionConditions,
+    failureConsequence: template.failureConsequence,
+    status: "active",
+    templateId: template.id,
+    routineDate: dateKey,
+    createdAt: stamp,
+    updatedAt: stamp,
+  };
+}
+
+export function addTemplateQuestForDate(state: AppState, templateId: string, dateKey: string, stamp = new Date().toISOString()) {
+  const template = (state.questTemplates ?? []).find(item => item.id === templateId);
+  if (!template || state.quests.some(quest =>
+    (quest.templateId === templateId && quest.routineDate === dateKey) ||
+    (quest.id === template.sourceQuestId && localDateKey(new Date(quest.date)) === dateKey)
+  )) return state;
+  const attribute = state.attributes.find(item => item.id === template.attributeId && !item.deletedAt);
+  const skill = state.skills.find(item => item.id === template.skillId && item.attributeId === template.attributeId && !item.deletedAt);
+  if (!attribute || !skill) return state;
+  return { ...state, quests: [questFromTemplate(template, dateKey, stamp), ...state.quests] };
+}
+
+export function materializeRoutineInstances(state: AppState, date = new Date(), stamp = new Date().toISOString()) {
+  const dateKey = localDateKey(date);
+  return (state.questTemplates ?? []).reduce((current, template) => {
+    const due = template.startDate <= dateKey && (
+      template.schedule === "daily" ||
+      (template.schedule === "weekly" && template.weekdays.includes(date.getDay()))
+    );
+    return due ? addTemplateQuestForDate(current, template.id, dateKey, stamp) : current;
+  }, state);
 }
 
 export function applyQuestMutation(state: AppState, mutation: QuestMutation, stamp = new Date().toISOString()): QuestMutationResult {
@@ -431,7 +593,7 @@ export function applyQuestMutation(state: AppState, mutation: QuestMutation, sta
       "title", "description", "type", "attributeId", "skillId", "xp", "xpCategory", "focusMinutes",
       "outputBonus", "xpRuleValue", "xpSource", "xpArgumentReason", "date", "deadline", "recurrence",
       "difficulty", "completionConditions", "failureConsequence", "seriesId", "parentQuestId", "stepOrder",
-      "parentClosedAt",
+      "parentClosedAt", "templateId", "routineDate",
     ];
     if (lockedFields.some(field => existing[field] !== mutation.quest[field])) {
       return { ok: false, code: "earned_quest_locked" };
@@ -490,6 +652,7 @@ export function isValidCloudState(value: unknown): value is AppState {
     }
   }
   return value.quests.every(isValidQuest) &&
+    (value.questTemplates === undefined || (Array.isArray(value.questTemplates) && value.questTemplates.every(isValidQuestTemplate))) &&
     (value.bossAttempts === undefined || (
       Array.isArray(value.bossAttempts) &&
       value.bossAttempts.every(attempt =>
@@ -521,6 +684,7 @@ const NULLABLE_OPTIONAL_STATE_FIELDS = new Set([
   "completedAt",
   "reversedAt",
   "bossAttempts",
+  "questTemplates",
   "manualXpOverride",
 ]);
 
@@ -546,6 +710,7 @@ export function makeInitialState(): AppState {
     transactions: [],
     bosses: [],
     bossAttempts: [],
+    questTemplates: [],
     levelEvents: [],
   };
 }
