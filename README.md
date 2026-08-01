@@ -169,7 +169,7 @@ Brisanje skilla ne briše legitimno zarađen XP.
 
 ### Arhiviranje questa
 
-- **Archive / Arhiviraj** odmah sklanja quest iz podrazumevane liste, ali ne briše njegov sadržaj niti XP.
+- **Archive / Arhiviraj** odmah sklanja quest iz podrazumevanog filtera **Current (not archived) / Aktuelni (bez arhiviranih)**, ali ne briše njegov sadržaj niti XP.
 - U filteru statusa izaberi **Archived / Arhiviran** da vidiš arhivirane questove.
 - **Restore / Vrati** vraća quest u tačan status koji je imao pre arhiviranja (`active`, `completed`, `failed` ili `skipped`).
 - Aktivni quest kojem je prošao rok dobija crvenu **Overdue / Rok prošao** oznaku. To je samo informacija: aplikacija ne menja status, ne aktivira posledicu i ne dira XP.
