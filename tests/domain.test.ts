@@ -153,6 +153,27 @@ test("weekly routines use selected weekdays and manual template use is idempoten
   assert.equal(isValidCloudState(manualAgain), true);
 });
 
+test("editing a template changes only future instances", () => {
+  const state = makeInitialState();
+  state.attributes = [{ id: "a", name: "Strength", color: "#866bff", createdAt: "now", updatedAt: "now" }];
+  state.skills = [{ id: "s", attributeId: "a", name: "Gym", createdAt: "now", updatedAt: "now" }];
+  const template: QuestTemplate = { id: "editable", title: "Old routine", description: "", type: "Daily", attributeId: "a", skillId: "s", xp: 20, xpSource: "ai", difficulty: "Normal", completionConditions: "Old condition", failureConsequence: "", schedule: "daily", weekdays: [], startDate: "2026-08-01", time: "09:00", deadlineOffsetMinutes: 60, createdAt: "now", updatedAt: "now" };
+  state.questTemplates = [template];
+
+  const first = materializeRoutineInstances(state, new Date(2026, 7, 2, 12), "first");
+  first.questTemplates = [{ ...template, title: "Updated routine", xp: 30, completionConditions: "New condition", updatedAt: "edited" }];
+  const second = materializeRoutineInstances(first, new Date(2026, 7, 3, 12), "second");
+
+  const oldInstance = second.quests.find(quest => quest.routineDate === "2026-08-02");
+  const newInstance = second.quests.find(quest => quest.routineDate === "2026-08-03");
+  assert.equal(oldInstance?.title, "Old routine");
+  assert.equal(oldInstance?.xp, 20);
+  assert.equal(oldInstance?.completionConditions, "Old condition");
+  assert.equal(newInstance?.title, "Updated routine");
+  assert.equal(newInstance?.xp, 30);
+  assert.equal(newInstance?.completionConditions, "New condition");
+});
+
 test("deleting a quest removes its note and content while preserving XP history", () => {
   const state = makeInitialState();
   state.quests = [{ id: "q1", title: "Private task", description: "Private details", note: "Private note", type: "Side", attributeId: "a", skillId: "s", xp: 20, date: "2026-07-23T10:00:00.000Z", deadline: "", recurrence: "none", difficulty: "Normal", completionConditions: "", failureConsequence: "", status: "completed", createdAt: "2026-07-23", updatedAt: "2026-07-23" }];

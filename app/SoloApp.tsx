@@ -67,6 +67,17 @@ const estimateFingerprint = (quest: Quest, language: Language) => JSON.stringify
   language,
 });
 
+const templateEstimateFingerprint = (template: QuestTemplate) => JSON.stringify({
+  title: template.title.trim(),
+  description: template.description.trim(),
+  type: template.type,
+  difficulty: template.difficulty,
+  attributeId: template.attributeId,
+  skillId: template.skillId,
+  completionConditions: template.completionConditions.trim(),
+  failureConsequence: template.failureConsequence.trim(),
+});
+
 const dayKey = (value: string | Date) => new Date(value).toLocaleDateString("sv-SE");
 const today = dayKey(new Date());
 const LANGUAGE_EVENT = "wesolo-language-change";
@@ -115,6 +126,10 @@ export default function SoloApp() {
   const [accessDenied, setAccessDenied] = useState(false);
   const [view, setView] = useState<View>("dashboard");
   const [questDraft, setQuestDraft] = useState<Quest | null>(null);
+  const [templateDraft, setTemplateDraft] = useState<QuestTemplate | null>(null);
+  const [templateSuggestion, setTemplateSuggestion] = useState<XpSuggestion | null>(null);
+  const [templateEstimating, setTemplateEstimating] = useState(false);
+  const [templateAiOffline, setTemplateAiOffline] = useState(false);
   const [xpSuggestion, setXpSuggestion] = useState<XpSuggestion | null>(null);
   const [xpEstimating, setXpEstimating] = useState(false);
   const [xpAiOffline, setXpAiOffline] = useState(false);
@@ -1119,6 +1134,120 @@ export default function SoloApp() {
     });
   };
 
+  const openTemplateEditor = (template: QuestTemplate) => {
+    if (!ensureWritable()) return;
+    setTemplateSuggestion(null);
+    setTemplateAiOffline(false);
+    setTemplateDraft({ ...template, weekdays: [...template.weekdays] });
+  };
+
+  const updateTemplateDraft = (next: QuestTemplate) => {
+    const scoringChanged = templateDraft
+      ? templateEstimateFingerprint(templateDraft) !== templateEstimateFingerprint(next)
+      : false;
+    setTemplateDraft(scoringChanged ? {
+      ...next,
+      xp: 0,
+      xpCategory: undefined,
+      focusMinutes: undefined,
+      outputBonus: undefined,
+      xpRuleValue: undefined,
+      xpSource: undefined,
+    } : next);
+    if (scoringChanged) setTemplateSuggestion(null);
+    setTemplateAiOffline(false);
+  };
+
+  const estimateTemplateXp = async () => {
+    if (!templateDraft || !ensureWritable()) return;
+    if (!templateDraft.title.trim()) {
+      setToast(t("quest.enterBeforeAi"));
+      return;
+    }
+    setTemplateEstimating(true);
+    setTemplateAiOffline(false);
+    setTemplateSuggestion(null);
+    try {
+      const response = await cloudFetch("/api/xp-estimate", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: templateDraft.title,
+          description: templateDraft.description,
+          type: templateDraft.type,
+          difficulty: templateDraft.difficulty,
+          attribute: attrName(templateDraft.attributeId),
+          skill: skillName(templateDraft.skillId),
+          parentBoss: "",
+          completionConditions: templateDraft.completionConditions,
+          language,
+          mode: "estimate",
+        }),
+      }, 22_000);
+      const result = await response.json() as { suggestion?: XpSuggestion; code?: string };
+      if (!response.ok || !result.suggestion) {
+        setTemplateAiOffline(true);
+        setToast(t("ai.offline"));
+        return;
+      }
+      setTemplateSuggestion(result.suggestion);
+    } catch {
+      setTemplateAiOffline(true);
+      setToast(t("ai.offline"));
+    } finally {
+      setTemplateEstimating(false);
+    }
+  };
+
+  const applyTemplateSuggestion = () => {
+    if (!templateDraft || !templateSuggestion) return;
+    setTemplateDraft({
+      ...templateDraft,
+      xp: templateSuggestion.xp,
+      xpCategory: templateSuggestion.category,
+      focusMinutes: undefined,
+      outputBonus: undefined,
+      xpRuleValue: undefined,
+      xpSource: "ai",
+    });
+    setTemplateSuggestion(null);
+  };
+
+  const saveTemplateDraft = () => {
+    if (!templateDraft || !ensureWritable()) return;
+    if (!templateDraft.title.trim()) {
+      setToast(t("quest.enterName"));
+      return;
+    }
+    const skill = availableSkills.find(item => item.id === templateDraft.skillId && item.attributeId === templateDraft.attributeId);
+    if (!skill || !availableAttributes.some(item => item.id === templateDraft.attributeId)) {
+      setToast(t("quest.choosePath"));
+      return;
+    }
+    if (templateDraft.schedule === "weekly" && templateDraft.weekdays.length === 0) {
+      setToast(t("template.chooseWeekday"));
+      return;
+    }
+    const stamp = new Date().toISOString();
+    const savedTemplate: QuestTemplate = {
+      ...templateDraft,
+      title: templateDraft.title.trim(),
+      description: templateDraft.description.trim(),
+      completionConditions: templateDraft.completionConditions.trim(),
+      failureConsequence: templateDraft.failureConsequence.trim(),
+      deadlineOffsetMinutes: Math.max(0, Math.min(43_200, Math.round(templateDraft.deadlineOffsetMinutes) || 0)),
+      updatedAt: stamp,
+    };
+    updateState(current => materializeRoutineInstances({
+      ...current,
+      questTemplates: (current.questTemplates ?? []).map(template => template.id === savedTemplate.id ? savedTemplate : template),
+    }, new Date(), stamp));
+    setTemplateDraft(null);
+    setTemplateSuggestion(null);
+    setToast(t("template.updated"));
+  };
+
   const exportJson = () => {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
     const link = document.createElement("a");
@@ -1306,7 +1435,7 @@ export default function SoloApp() {
                 weekdays: template.weekdays.includes(day) ? template.weekdays.filter(item => item !== day) : [...template.weekdays, day],
               })}>{weekdayLabels[index]}</button>)}
             </div>}
-            <footer><button className="template-use" disabled={!pathAvailable || alreadyToday} onClick={() => addTemplateToday(template.id)}>{alreadyToday ? t("template.alreadyAdded") : t("template.addToday")}</button><button className="danger-link" onClick={() => deleteQuestTemplate(template)}>{t("common.delete")}</button></footer>
+            <footer><button className="template-use" disabled={!pathAvailable || alreadyToday} onClick={() => addTemplateToday(template.id)}>{alreadyToday ? t("template.alreadyAdded") : t("template.addToday")}</button><button onClick={() => openTemplateEditor(template)}>{t("common.edit")}</button><button className="danger-link" onClick={() => deleteQuestTemplate(template)}>{t("common.delete")}</button></footer>
           </article>;
         })}</div>}
     </section>
@@ -1448,6 +1577,36 @@ export default function SoloApp() {
       {view === "settings" && SettingsView()}
     </main>
     <nav className="bottom-nav">{views.map(item => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><i>{item.icon}</i><span>{t(item.labelKey)}</span></button>)}</nav>
+    {templateDraft && <div className="modal-backdrop" onMouseDown={event => event.target === event.currentTarget && setTemplateDraft(null)}>
+      <section className="modal quest-modal template-modal" role="dialog" aria-modal="true" aria-label={t("template.editTitle")}>
+        <header><div><p>{t("template.eyebrow")}</p><h2>{t("template.editTitle")}</h2><span>{t("template.futureOnly")}</span></div><button onClick={() => setTemplateDraft(null)} aria-label={t("common.close")}>×</button></header>
+        <div className="form-grid">
+          <Field label={t("editor.name")} wide><input autoFocus maxLength={500} value={templateDraft.title} onChange={event => updateTemplateDraft({ ...templateDraft, title: event.target.value })} /></Field>
+          <Field label={t("editor.description")} wide><textarea maxLength={10_000} value={templateDraft.description} onChange={event => updateTemplateDraft({ ...templateDraft, description: event.target.value })} /></Field>
+          <Field label={t("editor.type")}><select value={templateDraft.type} onChange={event => updateTemplateDraft({ ...templateDraft, type: event.target.value as QuestTemplate["type"] })}>{state.settings.questTypes.filter(type => type !== "Boss").map(type => <option key={type} value={type}>{t(`type.${type}` as TranslationKey)}</option>)}</select></Field>
+          <Field label={t("editor.difficulty")}><select value={templateDraft.difficulty} onChange={event => updateTemplateDraft({ ...templateDraft, difficulty: event.target.value as Quest["difficulty"] })}>{(["Easy", "Normal", "Hard", "Extreme"] as const).map(difficulty => <option key={difficulty} value={difficulty}>{t(`difficulty.${difficulty}` as TranslationKey)}</option>)}</select></Field>
+          <Field label={t("editor.attribute")}><select value={templateDraft.attributeId} onChange={event => { const attributeId = event.target.value; updateTemplateDraft({ ...templateDraft, attributeId, skillId: availableSkills.find(skill => skill.attributeId === attributeId)?.id ?? "" }); }}>{availableAttributes.map(attribute => <option key={attribute.id} value={attribute.id}>{attribute.name}</option>)}</select></Field>
+          <Field label={t("editor.skill")}><select value={templateDraft.skillId} onChange={event => updateTemplateDraft({ ...templateDraft, skillId: event.target.value })}>{availableSkills.filter(skill => skill.attributeId === templateDraft.attributeId).map(skill => <option key={skill.id} value={skill.id}>{skill.name}</option>)}</select></Field>
+          <Field label={t("template.schedule")}><select value={templateDraft.schedule} onChange={event => updateTemplateDraft({ ...templateDraft, schedule: event.target.value as QuestTemplate["schedule"], startDate: today })}><option value="none">{t("template.none")}</option><option value="daily">{t("template.daily")}</option><option value="weekly">{t("template.weekly")}</option></select></Field>
+          <Field label={t("template.time")}><input type="time" value={templateDraft.time} onChange={event => updateTemplateDraft({ ...templateDraft, time: event.target.value })} /></Field>
+          {templateDraft.schedule === "weekly" && <div className="field wide template-weekday-field"><span>{t("template.weekdays")}</span><div className="weekday-picker">{[1, 2, 3, 4, 5, 6, 0].map((day, index) => <button type="button" key={day} className={templateDraft.weekdays.includes(day) ? "active" : ""} onClick={() => updateTemplateDraft({ ...templateDraft, weekdays: templateDraft.weekdays.includes(day) ? templateDraft.weekdays.filter(item => item !== day) : [...templateDraft.weekdays, day] })}>{t("planner.weekdays").split(",")[index]}</button>)}</div></div>}
+          <Field label={t("template.deadlineMinutes")}><input type="number" min="0" max="43200" value={templateDraft.deadlineOffsetMinutes} onChange={event => updateTemplateDraft({ ...templateDraft, deadlineOffsetMinutes: Math.max(0, Number(event.target.value) || 0) })} /><small>{t("template.deadlineMinutesText")}</small></Field>
+          <Field label={state.settings.manualXpOverride ? t("editor.manualReward") : t("template.futureXp")}>
+            {state.settings.manualXpOverride
+              ? <input type="number" min="0" value={templateDraft.xp} onChange={event => setTemplateDraft({ ...templateDraft, xp: Math.max(0, Number(event.target.value) || 0), xpSource: "manual" })} />
+              : <div className="xp-score-display"><strong>{templateDraft.xp} XP</strong><span>{templateDraft.xpSource === "ai" ? "AI" : templateDraft.xpSource === "legacy" ? "EXISTING" : templateDraft.xp === 0 ? "AI PENDING" : "SYSTEM"}</span></div>}
+          </Field>
+          <div className="xp-advisor field wide template-xp-advisor">
+            <div><span>{t("ai.optional")}</span><strong>{t("ai.title")}</strong><p>{t("template.aiText")}</p></div>
+            {templateAiOffline ? <div className="ai-offline"><strong>{t("ai.offline")}</strong><span>{t("ai.offlineText")}</span></div> : <button type="button" onClick={() => void estimateTemplateXp()} disabled={templateEstimating}>{templateEstimating ? t("ai.estimating") : t("template.estimateXp")}</button>}
+            {templateSuggestion && <div className="xp-suggestion"><span><b>{templateSuggestion.xp} XP</b><small>{t(`ai.confidence.${templateSuggestion.confidence}` as TranslationKey)}</small></span><p>{templateSuggestion.rationale}</p><button type="button" onClick={applyTemplateSuggestion}>{t("ai.apply")}</button></div>}
+          </div>
+          <Field label={t("editor.condition")} wide><input maxLength={10_000} value={templateDraft.completionConditions} onChange={event => updateTemplateDraft({ ...templateDraft, completionConditions: event.target.value })} /></Field>
+          {(templateDraft.type === "Mandatory" || templateDraft.type === "Correction") && <Field label={t("editor.consequence")} wide><textarea maxLength={10_000} value={templateDraft.failureConsequence} onChange={event => updateTemplateDraft({ ...templateDraft, failureConsequence: event.target.value })} /></Field>}
+        </div>
+        <footer><button onClick={() => setTemplateDraft(null)}>{t("common.cancel")}</button><button className="primary" onClick={saveTemplateDraft}>{t("template.saveChanges")}</button></footer>
+      </section>
+    </div>}
     {questDraft && <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && setQuestDraft(null)}>
       <section className="modal quest-modal" role="dialog" aria-modal="true" aria-label={t("editor.label")}>
         <header><div><p>{t("editor.mission")}</p><h2>{state.quests.some(q => q.id === questDraft.id) ? t("editor.edit") : t("editor.create")}</h2></div><button onClick={() => setQuestDraft(null)} aria-label={t("common.close")}>×</button></header>

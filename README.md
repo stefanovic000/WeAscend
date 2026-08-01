@@ -177,6 +177,8 @@ Quest Manager podržava izbor budućeg datuma i mesečni kalendar. Ponavljajući
 - Šablon može ostati ručni, raditi svakog dana ili samo izabranim danima u nedelji.
 - **Add today / Dodaj danas** pravi jednu zasebnu instancu za današnji datum.
 - Rutina automatski pravi današnju instancu kada je aplikacija online; ne popunjava propuštene dane retroaktivno.
+- **Edit / Uredi** menja sadržaj, putanju, raspored, vreme i rok samo budućih instanci. Već napravljeni questovi ostaju nepromenjeni.
+- Promena sadržaja koji utiče na bodovanje poništava stari template XP i omogućava novu System AI procenu; promene samo rasporeda ili vremena zadržavaju XP.
 - Jedan šablon može napraviti najviše jednu instancu po datumu. Svaka instanca ima sopstveni status, belešku i XP transakciju.
 - Brisanje šablona ne briše questove niti XP koji su ranije napravljeni iz njega.
 
