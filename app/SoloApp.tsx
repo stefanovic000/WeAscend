@@ -18,6 +18,12 @@ type CloudStateResponse = {
   code?: string;
 };
 type GeneratedBossStep = BossStepSuggestion & { id: string; selected: boolean };
+type MotionCue = {
+  key: string;
+  kind: "complete" | "create" | "archive" | "restore";
+  questId: string;
+  xp?: number;
+};
 const views: { id: View; labelKey: TranslationKey; icon: string }[] = [
   { id: "dashboard", labelKey: "nav.command", icon: "◇" },
   { id: "quests", labelKey: "nav.quests", icon: "✦" },
@@ -148,6 +154,7 @@ export default function SoloApp() {
   const [commandBusy, setCommandBusy] = useState(false);
   const [toast, setToast] = useState("");
   const [clock, setClock] = useState(() => Date.now());
+  const [motionCue, setMotionCue] = useState<MotionCue | null>(null);
   const [ceremony, setCeremony] = useState<{ eyebrow: string; title: string; text: string } | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ title: string; text: string; action: () => void } | null>(null);
   const [inputDialog, setInputDialog] = useState<{
@@ -383,6 +390,12 @@ export default function SoloApp() {
   }, [toast]);
 
   useEffect(() => {
+    if (!motionCue) return;
+    const timer = window.setTimeout(() => setMotionCue(null), 850);
+    return () => window.clearTimeout(timer);
+  }, [motionCue]);
+
+  useEffect(() => {
     if (syncMode !== "online") return;
     const materialize = () => setState(current => current ? materializeRoutineInstances(current, new Date()) : current);
     materialize();
@@ -407,6 +420,7 @@ export default function SoloApp() {
   if (!state || !metrics) return <main className="loading"><div className="loader-mark">W</div><p>{t("loading")}</p></main>;
 
   const readOnly = syncMode === "offline" || syncMode === "local";
+  const shouldAnimate = () => state.settings.animations && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const ensureWritable = () => {
     if (readOnly) {
       setToast(t("sync.readOnlyToast"));
@@ -585,6 +599,14 @@ export default function SoloApp() {
     const nextTransactions = transaction ? [...state.transactions, transaction] : state.transactions;
     const after = progressFromXp(activeXp(nextTransactions), state.settings);
     const newRank = rankForLevel(after.level, state.settings.ranks);
+    if (shouldAnimate()) {
+      setMotionCue({
+        key: `complete:${quest.id}`,
+        kind: "complete",
+        questId: quest.id,
+        xp: newRank === oldRank && after.level === before.level && quest.xp > 0 ? quest.xp : undefined,
+      });
+    }
     updateState(s => ({
       ...s,
       quests: [...s.quests.map(q => q.id === quest.id ? { ...q, status: "completed" as const, completedAt: stamp, updatedAt: stamp } : q), ...(next ? [next] : [])],
@@ -650,6 +672,9 @@ export default function SoloApp() {
     };
     const saved = await runQuestMutation({ action: exists ? "update" : "create", quest: updated });
     if (!saved) return;
+    if (!exists && shouldAnimate()) {
+      setMotionCue({ key: `create:${updated.id}`, kind: "create", questId: updated.id });
+    }
     setQuestDraft(null);
     setToast(exists ? t("quest.updated") : t("quest.created"));
   };
@@ -835,23 +860,39 @@ export default function SoloApp() {
   };
 
   const archiveQuest = (quest: Quest) => {
-    if (quest.status === "archived") return;
-    void runQuestMutation({
-      action: "update",
-      quest: { ...quest, status: "archived", archivedFromStatus: quest.status, updatedAt: new Date().toISOString() },
-    }).then(saved => {
-      if (saved) setToast(t("quest.archived"));
-    });
+    if (quest.status === "archived" || (motionCue?.questId === quest.id && motionCue.kind === "archive")) return;
+    const commitArchive = () => {
+      void runQuestMutation({
+        action: "update",
+        quest: { ...quest, status: "archived", archivedFromStatus: quest.status, updatedAt: new Date().toISOString() },
+      }).then(saved => {
+        if (saved) setToast(t("quest.archived"));
+      });
+    };
+    if (!shouldAnimate()) {
+      commitArchive();
+      return;
+    }
+    setMotionCue({ key: `archive:${quest.id}`, kind: "archive", questId: quest.id });
+    window.setTimeout(commitArchive, 220);
   };
 
   const restoreQuest = (quest: Quest) => {
-    if (quest.status !== "archived") return;
-    void runQuestMutation({
-      action: "update",
-      quest: { ...quest, status: quest.archivedFromStatus ?? "active", archivedFromStatus: undefined, updatedAt: new Date().toISOString() },
-    }).then(saved => {
-      if (saved) setToast(t("quest.restored"));
-    });
+    if (quest.status !== "archived" || (motionCue?.questId === quest.id && motionCue.kind === "restore")) return;
+    const commitRestore = () => {
+      void runQuestMutation({
+        action: "update",
+        quest: { ...quest, status: quest.archivedFromStatus ?? "active", archivedFromStatus: undefined, updatedAt: new Date().toISOString() },
+      }).then(saved => {
+        if (saved) setToast(t("quest.restored"));
+      });
+    };
+    if (!shouldAnimate()) {
+      commitRestore();
+      return;
+    }
+    setMotionCue({ key: `restore:${quest.id}`, kind: "restore", questId: quest.id });
+    window.setTimeout(commitRestore, 220);
   };
 
   const openQuestNote = (quest: Quest) => {
@@ -1301,10 +1342,11 @@ export default function SoloApp() {
   const renderQuestCard = (quest: Quest, compact = false) => {
     const deadlineTime = quest.deadline ? new Date(quest.deadline).getTime() : Number.NaN;
     const overdue = quest.status === "active" && Number.isFinite(deadlineTime) && deadlineTime < clock;
+    const cardMotion = motionCue?.questId === quest.id ? motionCue.kind : null;
     const canRestore = quest.status === "archived" && !quest.parentClosedAt &&
       availableAttributes.some(attribute => attribute.id === quest.attributeId) &&
       availableSkills.some(skill => skill.id === quest.skillId);
-    return <article className={`quest-card ${quest.status} ${overdue ? "overdue" : ""} ${compact ? "compact" : ""}`} key={quest.id}>
+    return <article className={`quest-card ${quest.status} ${overdue ? "overdue" : ""} ${cardMotion ? `motion-${cardMotion}` : ""} ${compact ? "compact" : ""}`} key={quest.id}>
       <div className="quest-accent" style={{ background: attrColor(quest.attributeId) }} />
       <div className="quest-card-main">
         <div className="quest-meta">
@@ -1743,6 +1785,7 @@ export default function SoloApp() {
     </div>}
     {ceremony && <div className="modal-backdrop ceremony-backdrop"><section className="ceremony modal"><div className="ceremony-glyph">✦</div><p>{ceremony.eyebrow}</p><h2>{ceremony.title}</h2><span>{ceremony.text}</span><button className="primary" onClick={() => setCeremony(null)}>{t("common.continue")}</button></section></div>}
     {confirmAction && <div className="modal-backdrop"><section className="modal confirm-modal"><div className="warning-mark">!</div><h2>{confirmAction.title}</h2><p>{confirmAction.text}</p><footer><button onClick={() => setConfirmAction(null)}>{t("common.cancel")}</button><button className="danger" onClick={confirmAction.action}>{t("common.confirm")}</button></footer></section></div>}
+    {motionCue?.kind === "complete" && motionCue.xp && <div className="xp-float" key={motionCue.key} aria-hidden="true">+{motionCue.xp} XP</div>}
     {toast && <div className="toast"><span>✓</span>{toast}</div>}
   </div>;
 }

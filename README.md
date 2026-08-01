@@ -174,6 +174,12 @@ Brisanje skilla ne briše legitimno zarađen XP.
 - **Restore / Vrati** vraća quest u tačan status koji je imao pre arhiviranja (`active`, `completed`, `failed` ili `skipped`).
 - Aktivni quest kojem je prošao rok dobija crvenu **Overdue / Rok prošao** oznaku. To je samo informacija: aplikacija ne menja status, ne aktivira posledicu i ne dira XP.
 
+### Animacije
+
+- Kratke animacije potvrđuju kreiranje, završavanje, arhiviranje i vraćanje questa; običan XP dobitak dobija malu `+XP` oznaku.
+- Level Up, Rank Up i Boss Clear zadržavaju poseban modal, ali bez agresivnih ili stalnih efekata.
+- Overdue oznaka je potpuno statična. Animacije se mogu isključiti u Settings i automatski poštuju sistemski Reduced Motion režim.
+
 ## Kalendar i planiranje
 
 Quest Manager podržava izbor budućeg datuma i mesečni kalendar. Ponavljajući quest dobija zasebnu instancu za svaki datum, pa završavanje jedne instance ne boduje ostale.
