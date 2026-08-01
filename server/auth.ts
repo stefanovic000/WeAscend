@@ -20,6 +20,15 @@ function safeDecode(value: string | null) {
   }
 }
 
+function getAllowedEmails() {
+  return new Set(
+    [process.env.OWNER_EMAIL ?? "", process.env.OWNER_EMAILS ?? ""]
+      .flatMap(value => value.split(/[,;\n]/))
+      .map(value => value.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
 export function authenticateRequest(request: Request): AuthenticationResult {
   let email = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase() ?? "";
   let name = "";
@@ -34,8 +43,8 @@ export function authenticateRequest(request: Request): AuthenticationResult {
     name = safeDecode(request.headers.get("oai-authenticated-user-full-name")) ?? "";
   }
 
-  const allowedEmail = process.env.OWNER_EMAIL?.trim().toLowerCase();
-  if (allowedEmail && email !== allowedEmail) return { status: "forbidden", user: null };
+  const allowedEmails = getAllowedEmails();
+  if (allowedEmails.size > 0 && !allowedEmails.has(email)) return { status: "forbidden", user: null };
 
   return {
     status: "authenticated",

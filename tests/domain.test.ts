@@ -394,8 +394,10 @@ test("English is the primary UI language and Serbian translations interpolate va
 test("owner allowlist distinguishes missing, wrong and authorized accounts", () => {
   const previousNodeEnv = process.env.NODE_ENV;
   const previousOwnerEmail = process.env.OWNER_EMAIL;
+  const previousOwnerEmails = process.env.OWNER_EMAILS;
   process.env.NODE_ENV = "production";
   process.env.OWNER_EMAIL = "owner@example.com";
+  process.env.OWNER_EMAILS = " second@example.com, THIRD@example.com ";
 
   try {
     assert.equal(authenticateRequest(new Request("https://wesolo.example/api/state")).status, "unauthenticated");
@@ -411,10 +413,27 @@ test("owner allowlist distinguishes missing, wrong and authorized accounts", () 
     }));
     assert.equal(owner.status, "authenticated");
     if (owner.status === "authenticated") assert.equal(owner.user.email, "owner@example.com");
+
+    const second = authenticateRequest(new Request("https://wesolo.example/api/state", {
+      headers: { "oai-authenticated-user-email": "second@example.com" },
+    }));
+    assert.equal(second.status, "authenticated");
+    if (owner.status === "authenticated" && second.status === "authenticated") {
+      assert.notEqual(second.user.id, owner.user.id);
+    }
+
+    assert.equal(
+      authenticateRequest(new Request("https://wesolo.example/api/state", {
+        headers: { "oai-authenticated-user-email": "third@example.com" },
+      })).status,
+      "authenticated",
+    );
   } finally {
     if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
     else process.env.NODE_ENV = previousNodeEnv;
     if (previousOwnerEmail === undefined) delete process.env.OWNER_EMAIL;
     else process.env.OWNER_EMAIL = previousOwnerEmail;
+    if (previousOwnerEmails === undefined) delete process.env.OWNER_EMAILS;
+    else process.env.OWNER_EMAILS = previousOwnerEmails;
   }
 });
