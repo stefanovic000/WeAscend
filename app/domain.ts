@@ -46,6 +46,7 @@ export interface Quest {
   completionConditions: string;
   failureConsequence: string;
   status: QuestStatus;
+  archivedFromStatus?: Exclude<QuestStatus, "archived">;
   seriesId?: string;
   parentQuestId?: string;
   stepOrder?: number;
@@ -73,7 +74,8 @@ export interface QuestTemplate {
   difficulty: Quest["difficulty"];
   completionConditions: string;
   failureConsequence: string;
-  schedule: "none" | "daily" | "weekly";
+  schedule: "none" | "daily" | "weekly" | "interval";
+  intervalDays?: number;
   weekdays: number[];
   startDate: string;
   time: string;
@@ -239,7 +241,7 @@ export function deleteAttributeFromState(state: AppState, attributeId: string, s
       ? { ...skill, deletedAt: skill.deletedAt ?? stamp, updatedAt: stamp }
       : skill),
     quests: state.quests.map(quest => quest.attributeId === attributeId && quest.status === "active"
-      ? { ...quest, status: "archived", updatedAt: stamp }
+      ? { ...quest, status: "archived", archivedFromStatus: quest.status, updatedAt: stamp }
       : quest),
   };
 }
@@ -261,7 +263,7 @@ const QUEST_STATUSES: QuestStatus[] = ["active", "completed", "failed", "skipped
 const QUEST_RECURRENCES: Quest["recurrence"][] = ["none", "daily", "weekly"];
 const QUEST_DIFFICULTIES: Quest["difficulty"][] = ["Easy", "Normal", "Hard", "Extreme"];
 const XP_SOURCES: XpSource[] = ["rules", "ai", "argument", "manual", "legacy"];
-const TEMPLATE_SCHEDULES: QuestTemplate["schedule"][] = ["none", "daily", "weekly"];
+const TEMPLATE_SCHEDULES: QuestTemplate["schedule"][] = ["none", "daily", "weekly", "interval"];
 
 function boundedString(value: unknown, maxLength: number, required = false) {
   return typeof value === "string" && value.length <= maxLength && (!required || value.trim().length > 0);
@@ -292,6 +294,7 @@ export function isValidQuest(value: unknown): value is Quest {
     boundedString(quest.completionConditions, 10_000) &&
     boundedString(quest.failureConsequence, 10_000) &&
     QUEST_STATUSES.includes(quest.status as QuestStatus) &&
+    (quest.archivedFromStatus === undefined || (QUEST_STATUSES.includes(quest.archivedFromStatus) && quest.archivedFromStatus !== "archived")) &&
     (quest.seriesId === undefined || boundedString(quest.seriesId, 120, true)) &&
     (quest.parentQuestId === undefined || boundedString(quest.parentQuestId, 120, true)) &&
     (quest.stepOrder === undefined || (Number.isInteger(quest.stepOrder) && Number(quest.stepOrder) >= 0 && Number(quest.stepOrder) <= 10_000)) &&
@@ -323,6 +326,7 @@ export function isValidQuestTemplate(value: unknown): value is QuestTemplate {
     boundedString(template.completionConditions, 10_000) &&
     boundedString(template.failureConsequence, 10_000) &&
     TEMPLATE_SCHEDULES.includes(template.schedule as QuestTemplate["schedule"]) &&
+    (template.intervalDays === undefined || (Number.isInteger(template.intervalDays) && template.intervalDays >= 2 && template.intervalDays <= 365)) &&
     Array.isArray(template.weekdays) && template.weekdays.length <= 7 &&
     template.weekdays.every(day => Number.isInteger(day) && day >= 0 && day <= 6) &&
     new Set(template.weekdays).size === template.weekdays.length &&
@@ -370,6 +374,7 @@ export function questTemplateFromQuest(quest: Quest, stamp = new Date().toISOStr
     completionConditions: quest.completionConditions,
     failureConsequence: quest.failureConsequence,
     schedule: "none",
+    intervalDays: 2,
     weekdays: [start.getDay()],
     startDate: localDateKey(new Date()),
     time: `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`,
@@ -426,9 +431,13 @@ export function addTemplateQuestForDate(state: AppState, templateId: string, dat
 export function materializeRoutineInstances(state: AppState, date = new Date(), stamp = new Date().toISOString()) {
   const dateKey = localDateKey(date);
   return (state.questTemplates ?? []).reduce((current, template) => {
+    const start = dateAtTemplateTime(template.startDate, "00:00");
+    const currentDate = dateAtTemplateTime(dateKey, "00:00");
+    const elapsedDays = Math.round((currentDate.getTime() - start.getTime()) / 86_400_000);
     const due = template.startDate <= dateKey && (
       template.schedule === "daily" ||
-      (template.schedule === "weekly" && template.weekdays.includes(date.getDay()))
+      (template.schedule === "weekly" && template.weekdays.includes(date.getDay())) ||
+      (template.schedule === "interval" && elapsedDays % (template.intervalDays ?? 2) === 0)
     );
     return due ? addTemplateQuestForDate(current, template.id, dateKey, stamp) : current;
   }, state);
@@ -523,7 +532,7 @@ export function applyQuestMutation(state: AppState, mutation: QuestMutation, sta
         quests: state.quests.map(quest => {
           if (quest.id === boss.id) return { ...quest, status: "completed", completedAt: stamp, updatedAt: stamp };
           if (quest.parentQuestId === boss.id && quest.status === "active") {
-            return { ...quest, status: "archived", parentClosedAt: stamp, updatedAt: stamp };
+            return { ...quest, status: "archived", archivedFromStatus: quest.status, parentClosedAt: stamp, updatedAt: stamp };
           }
           return quest;
         }),
@@ -549,7 +558,7 @@ export function applyQuestMutation(state: AppState, mutation: QuestMutation, sta
         quests: state.quests.map(quest => {
           if (quest.id === boss.id) return { ...quest, status: "active", completedAt: undefined, updatedAt: stamp };
           if (quest.parentQuestId === boss.id && quest.parentClosedAt) {
-            return { ...quest, status: "active", parentClosedAt: undefined, updatedAt: stamp };
+            return { ...quest, status: "active", archivedFromStatus: undefined, parentClosedAt: undefined, updatedAt: stamp };
           }
           return quest;
         }),
@@ -627,6 +636,7 @@ export function nextRecurringInstance(quest: Quest, now = new Date()): Quest | n
     note: undefined,
     xpArgumentReason: undefined,
     status: "active",
+    archivedFromStatus: undefined,
     completedAt: undefined,
     createdAt: stamp,
     updatedAt: stamp,
@@ -671,12 +681,14 @@ export function isValidCloudState(value: unknown): value is AppState {
 const NULLABLE_OPTIONAL_STATE_FIELDS = new Set([
   "deletedAt",
   "note",
+  "archivedFromStatus",
   "xpCategory",
   "focusMinutes",
   "outputBonus",
   "xpRuleValue",
   "xpSource",
   "xpArgumentReason",
+  "intervalDays",
   "seriesId",
   "parentQuestId",
   "stepOrder",

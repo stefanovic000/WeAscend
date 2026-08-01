@@ -153,6 +153,24 @@ test("weekly routines use selected weekdays and manual template use is idempoten
   assert.equal(isValidCloudState(manualAgain), true);
 });
 
+test("Every N days routines use their start date as an anchor without backfilling missed days", () => {
+  const state = makeInitialState();
+  state.attributes = [{ id: "a", name: "Strength", color: "#866bff", createdAt: "now", updatedAt: "now" }];
+  state.skills = [{ id: "s", attributeId: "a", name: "Gym", createdAt: "now", updatedAt: "now" }];
+  const template: QuestTemplate = { id: "interval", title: "Mobility", description: "", type: "Daily", attributeId: "a", skillId: "s", xp: 10, difficulty: "Easy", completionConditions: "Done", failureConsequence: "", schedule: "interval", intervalDays: 2, weekdays: [], startDate: "2026-08-01", time: "09:00", deadlineOffsetMinutes: 90, createdAt: "now", updatedAt: "now" };
+  state.questTemplates = [template];
+
+  const first = materializeRoutineInstances(state, new Date(2026, 7, 1, 12), "first");
+  const skipped = materializeRoutineInstances(first, new Date(2026, 7, 2, 12), "skipped");
+  const third = materializeRoutineInstances(skipped, new Date(2026, 7, 3, 12), "third");
+
+  assert.equal(first.quests.length, 1);
+  assert.equal(skipped.quests.length, 1);
+  assert.equal(third.quests.length, 2);
+  assert.deepEqual(third.quests.map(quest => quest.routineDate).sort(), ["2026-08-01", "2026-08-03"]);
+  assert.equal(third.quests.find(quest => quest.routineDate === "2026-08-03")?.deadline, new Date(2026, 7, 3, 10, 30).toISOString());
+});
+
 test("editing a template changes only future instances", () => {
   const state = makeInitialState();
   state.attributes = [{ id: "a", name: "Strength", color: "#866bff", createdAt: "now", updatedAt: "now" }];
@@ -265,6 +283,31 @@ test("a quest that already awarded XP locks scoring content but still permits no
   const noteUpdate = applyQuestMutation(state, { action: "update", quest: { ...quest, note: "Useful reflection" } }, "later");
   assert.equal(noteUpdate.ok, true);
   if (noteUpdate.ok) assert.equal(noteUpdate.state.quests[0]?.note, "Useful reflection");
+});
+
+test("archiving and restoring returns a quest to its exact previous status without changing XP", () => {
+  const state = makeInitialState();
+  state.attributes = [{ id: "a", name: "Intelligence", color: "#866bff", createdAt: "now", updatedAt: "now" }];
+  state.skills = [{ id: "s", attributeId: "a", name: "University", createdAt: "now", updatedAt: "now" }];
+  const quest: Quest = { id: "q", title: "Passed exam", description: "", type: "Side", attributeId: "a", skillId: "s", xp: 30, date: "2026-07-23", deadline: "", recurrence: "none", difficulty: "Hard", completionConditions: "Pass", failureConsequence: "", status: "completed", completedAt: "done", createdAt: "now", updatedAt: "now" };
+  state.quests = [quest];
+  state.transactions = [{ id: "tx", questId: "q", amount: 30, kind: "quest", attributeId: "a", skillId: "s", createdAt: "done" }];
+
+  const archived = applyQuestMutation(state, { action: "update", quest: { ...quest, status: "archived", archivedFromStatus: "completed" } }, "archive");
+  assert.equal(archived.ok, true);
+  if (!archived.ok) return;
+  assert.equal(archived.state.quests[0]?.status, "archived");
+  assert.equal(archived.state.quests[0]?.archivedFromStatus, "completed");
+  assert.equal(activeXp(archived.state.transactions), 30);
+
+  const archivedQuest = archived.state.quests[0];
+  assert.ok(archivedQuest);
+  const restored = applyQuestMutation(archived.state, { action: "update", quest: { ...archivedQuest, status: archivedQuest.archivedFromStatus ?? "active", archivedFromStatus: undefined } }, "restore");
+  assert.equal(restored.ok, true);
+  if (!restored.ok) return;
+  assert.equal(restored.state.quests[0]?.status, "completed");
+  assert.equal(restored.state.quests[0]?.archivedFromStatus, undefined);
+  assert.equal(activeXp(restored.state.transactions), 30);
 });
 
 test("Boss attempts preserve preparation XP and award Boss XP only on the first clear", () => {

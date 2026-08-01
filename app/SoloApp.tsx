@@ -147,6 +147,7 @@ export default function SoloApp() {
   } | null>(null);
   const [commandBusy, setCommandBusy] = useState(false);
   const [toast, setToast] = useState("");
+  const [clock, setClock] = useState(() => Date.now());
   const [ceremony, setCeremony] = useState<{ eyebrow: string; title: string; text: string } | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ title: string; text: string; action: () => void } | null>(null);
   const [inputDialog, setInputDialog] = useState<{
@@ -388,6 +389,11 @@ export default function SoloApp() {
     const timer = window.setInterval(materialize, 60_000);
     return () => window.clearInterval(timer);
   }, [syncMode]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const metrics = useMemo(() => {
     if (!state) return null;
@@ -829,9 +835,22 @@ export default function SoloApp() {
   };
 
   const archiveQuest = (quest: Quest) => {
+    if (quest.status === "archived") return;
     void runQuestMutation({
       action: "update",
-      quest: { ...quest, status: "archived", updatedAt: new Date().toISOString() },
+      quest: { ...quest, status: "archived", archivedFromStatus: quest.status, updatedAt: new Date().toISOString() },
+    }).then(saved => {
+      if (saved) setToast(t("quest.archived"));
+    });
+  };
+
+  const restoreQuest = (quest: Quest) => {
+    if (quest.status !== "archived") return;
+    void runQuestMutation({
+      action: "update",
+      quest: { ...quest, status: quest.archivedFromStatus ?? "active", archivedFromStatus: undefined, updatedAt: new Date().toISOString() },
+    }).then(saved => {
+      if (saved) setToast(t("quest.restored"));
     });
   };
 
@@ -1236,6 +1255,7 @@ export default function SoloApp() {
       description: templateDraft.description.trim(),
       completionConditions: templateDraft.completionConditions.trim(),
       failureConsequence: templateDraft.failureConsequence.trim(),
+      intervalDays: Math.max(2, Math.min(365, Math.round(templateDraft.intervalDays ?? 2))),
       deadlineOffsetMinutes: Math.max(0, Math.min(43_200, Math.round(templateDraft.deadlineOffsetMinutes) || 0)),
       updatedAt: stamp,
     };
@@ -1273,19 +1293,25 @@ export default function SoloApp() {
   const filteredQuests = state.quests.filter(q =>
     (showAllDates || dayKey(q.date) === selectedDate) &&
     (filters.type === "all" || q.type === filters.type) &&
-    (filters.status === "all" || q.status === filters.status) &&
+    (filters.status === "all" ? q.status !== "archived" : q.status === filters.status) &&
     (filters.attribute === "all" || q.attributeId === filters.attribute) &&
     (!filters.search || `${q.title} ${q.description} ${q.note ?? ""}`.toLowerCase().includes(filters.search.toLowerCase()))
   ).sort((a, b) => a.date.localeCompare(b.date));
 
-  const renderQuestCard = (quest: Quest, compact = false) => (
-    <article className={`quest-card ${quest.status} ${compact ? "compact" : ""}`} key={quest.id}>
+  const renderQuestCard = (quest: Quest, compact = false) => {
+    const deadlineTime = quest.deadline ? new Date(quest.deadline).getTime() : Number.NaN;
+    const overdue = quest.status === "active" && Number.isFinite(deadlineTime) && deadlineTime < clock;
+    const canRestore = quest.status === "archived" && !quest.parentClosedAt &&
+      availableAttributes.some(attribute => attribute.id === quest.attributeId) &&
+      availableSkills.some(skill => skill.id === quest.skillId);
+    return <article className={`quest-card ${quest.status} ${overdue ? "overdue" : ""} ${compact ? "compact" : ""}`} key={quest.id}>
       <div className="quest-accent" style={{ background: attrColor(quest.attributeId) }} />
       <div className="quest-card-main">
         <div className="quest-meta">
           <span className={`type-badge type-${quest.type.toLowerCase()}`}>{t(`type.${quest.type}` as TranslationKey)}</span>
           {quest.parentQuestId && <span className="prep-badge">{t("boss.preparationStep")}</span>}
           {quest.templateId && <span className="routine-badge">{t("template.instance")}</span>}
+          {overdue && <span className="overdue-badge">{t("quest.overdue")}</span>}
           <span>{attrName(quest.attributeId)} / {skillName(quest.skillId)}</span>
         </div>
         <h3>{quest.title}</h3>
@@ -1306,14 +1332,16 @@ export default function SoloApp() {
         {quest.status === "completed" && <button onClick={() => undoQuest(quest)}>{t("common.undo")}</button>}
         <button className={quest.note ? "has-note" : ""} onClick={() => openQuestNote(quest)} aria-label={t("quest.noteEditLabel", { name: quest.title })} title={t("quest.note")}>{compact ? "✎" : t("quest.note")}</button>
         {!compact && <>
-          {canAwardQuest(quest.id, state.transactions) && <button onClick={() => { if (ensureWritable()) openQuestEditor(quest); }}>{t("common.edit")}</button>}
-          {quest.type !== "Boss" && !quest.parentQuestId && <button onClick={() => saveQuestAsTemplate(quest)}>{t("template.save")}</button>}
-          <button onClick={() => archiveQuest(quest)}>{t("common.archive")}</button>
+          {quest.status !== "archived" && canAwardQuest(quest.id, state.transactions) && <button onClick={() => { if (ensureWritable()) openQuestEditor(quest); }}>{t("common.edit")}</button>}
+          {quest.status !== "archived" && quest.type !== "Boss" && !quest.parentQuestId && <button onClick={() => saveQuestAsTemplate(quest)}>{t("template.save")}</button>}
+          {canRestore
+            ? <button className="restore-link" onClick={() => restoreQuest(quest)}>{t("common.restore")}</button>
+            : quest.status !== "archived" && <button onClick={() => archiveQuest(quest)}>{t("common.archive")}</button>}
           <button className="danger-link" onClick={() => deleteQuest(quest)}>{t("common.delete")}</button>
         </>}
       </div>
-    </article>
-  );
+    </article>;
+  };
 
   const Dashboard = () => {
     const recent = [...state.transactions].filter(tx => !tx.reversedAt).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 4);
@@ -1426,9 +1454,10 @@ export default function SoloApp() {
             <div className="template-controls">
               <label><span>{t("template.schedule")}</span><select value={template.schedule} disabled={!pathAvailable} onChange={event => {
                 const schedule = event.target.value as QuestTemplate["schedule"];
-                updateQuestTemplate(template.id, { schedule, weekdays: schedule === "weekly" && template.weekdays.length === 0 ? [new Date().getDay()] : template.weekdays, startDate: today });
-              }}><option value="none">{t("template.none")}</option><option value="daily">{t("template.daily")}</option><option value="weekly">{t("template.weekly")}</option></select></label>
+                updateQuestTemplate(template.id, { schedule, intervalDays: schedule === "interval" ? template.intervalDays ?? 2 : template.intervalDays, weekdays: schedule === "weekly" && template.weekdays.length === 0 ? [new Date().getDay()] : template.weekdays, startDate: today });
+              }}><option value="none">{t("template.none")}</option><option value="daily">{t("template.daily")}</option><option value="weekly">{t("template.weekly")}</option><option value="interval">{t("template.interval")}</option></select></label>
               <label><span>{t("template.time")}</span><input type="time" value={template.time} disabled={!pathAvailable} onChange={event => updateQuestTemplate(template.id, { time: event.target.value })} /></label>
+              {template.schedule === "interval" && <label><span>{t("template.intervalDays")}</span><input type="number" min="2" max="365" value={template.intervalDays ?? 2} disabled={!pathAvailable} onChange={event => updateQuestTemplate(template.id, { intervalDays: Math.max(2, Math.min(365, Number(event.target.value) || 2)), startDate: today })} /></label>}
             </div>
             {template.schedule === "weekly" && <div className="weekday-picker" aria-label={t("template.weekdays")}>
               {weekdayOrder.map((day, index) => <button type="button" key={day} className={template.weekdays.includes(day) ? "active" : ""} disabled={!pathAvailable} onClick={() => updateQuestTemplate(template.id, {
@@ -1587,9 +1616,10 @@ export default function SoloApp() {
           <Field label={t("editor.difficulty")}><select value={templateDraft.difficulty} onChange={event => updateTemplateDraft({ ...templateDraft, difficulty: event.target.value as Quest["difficulty"] })}>{(["Easy", "Normal", "Hard", "Extreme"] as const).map(difficulty => <option key={difficulty} value={difficulty}>{t(`difficulty.${difficulty}` as TranslationKey)}</option>)}</select></Field>
           <Field label={t("editor.attribute")}><select value={templateDraft.attributeId} onChange={event => { const attributeId = event.target.value; updateTemplateDraft({ ...templateDraft, attributeId, skillId: availableSkills.find(skill => skill.attributeId === attributeId)?.id ?? "" }); }}>{availableAttributes.map(attribute => <option key={attribute.id} value={attribute.id}>{attribute.name}</option>)}</select></Field>
           <Field label={t("editor.skill")}><select value={templateDraft.skillId} onChange={event => updateTemplateDraft({ ...templateDraft, skillId: event.target.value })}>{availableSkills.filter(skill => skill.attributeId === templateDraft.attributeId).map(skill => <option key={skill.id} value={skill.id}>{skill.name}</option>)}</select></Field>
-          <Field label={t("template.schedule")}><select value={templateDraft.schedule} onChange={event => updateTemplateDraft({ ...templateDraft, schedule: event.target.value as QuestTemplate["schedule"], startDate: today })}><option value="none">{t("template.none")}</option><option value="daily">{t("template.daily")}</option><option value="weekly">{t("template.weekly")}</option></select></Field>
+          <Field label={t("template.schedule")}><select value={templateDraft.schedule} onChange={event => { const schedule = event.target.value as QuestTemplate["schedule"]; updateTemplateDraft({ ...templateDraft, schedule, intervalDays: schedule === "interval" ? templateDraft.intervalDays ?? 2 : templateDraft.intervalDays, startDate: today }); }}><option value="none">{t("template.none")}</option><option value="daily">{t("template.daily")}</option><option value="weekly">{t("template.weekly")}</option><option value="interval">{t("template.interval")}</option></select></Field>
           <Field label={t("template.time")}><input type="time" value={templateDraft.time} onChange={event => updateTemplateDraft({ ...templateDraft, time: event.target.value })} /></Field>
           {templateDraft.schedule === "weekly" && <div className="field wide template-weekday-field"><span>{t("template.weekdays")}</span><div className="weekday-picker">{[1, 2, 3, 4, 5, 6, 0].map((day, index) => <button type="button" key={day} className={templateDraft.weekdays.includes(day) ? "active" : ""} onClick={() => updateTemplateDraft({ ...templateDraft, weekdays: templateDraft.weekdays.includes(day) ? templateDraft.weekdays.filter(item => item !== day) : [...templateDraft.weekdays, day] })}>{t("planner.weekdays").split(",")[index]}</button>)}</div></div>}
+          {templateDraft.schedule === "interval" && <Field label={t("template.intervalDays")}><input type="number" min="2" max="365" value={templateDraft.intervalDays ?? 2} onChange={event => updateTemplateDraft({ ...templateDraft, intervalDays: Math.max(2, Math.min(365, Number(event.target.value) || 2)), startDate: today })} /></Field>}
           <Field label={t("template.deadlineMinutes")}><input type="number" min="0" max="43200" value={templateDraft.deadlineOffsetMinutes} onChange={event => updateTemplateDraft({ ...templateDraft, deadlineOffsetMinutes: Math.max(0, Number(event.target.value) || 0) })} /><small>{t("template.deadlineMinutesText")}</small></Field>
           <Field label={state.settings.manualXpOverride ? t("editor.manualReward") : t("template.futureXp")}>
             {state.settings.manualXpOverride

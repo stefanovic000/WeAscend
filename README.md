@@ -167,6 +167,13 @@ Brisanje skilla ne briše legitimno zarađen XP.
 - Undo completion poništava samo XP transakciju konkretnog questa.
 - Server odbija negativan XP i duplu aktivnu nagradu za istu quest instancu.
 
+### Arhiviranje questa
+
+- **Archive / Arhiviraj** odmah sklanja quest iz podrazumevane liste, ali ne briše njegov sadržaj niti XP.
+- U filteru statusa izaberi **Archived / Arhiviran** da vidiš arhivirane questove.
+- **Restore / Vrati** vraća quest u tačan status koji je imao pre arhiviranja (`active`, `completed`, `failed` ili `skipped`).
+- Aktivni quest kojem je prošao rok dobija crvenu **Overdue / Rok prošao** oznaku. To je samo informacija: aplikacija ne menja status, ne aktivira posledicu i ne dira XP.
+
 ## Kalendar i planiranje
 
 Quest Manager podržava izbor budućeg datuma i mesečni kalendar. Ponavljajući quest dobija zasebnu instancu za svaki datum, pa završavanje jedne instance ne boduje ostale.
@@ -174,10 +181,10 @@ Quest Manager podržava izbor budućeg datuma i mesečni kalendar. Ponavljajući
 ### Quest šabloni i rutine
 
 - Na postojećem nezavisnom questu izaberi **Save as template / Sačuvaj kao šablon**.
-- Šablon može ostati ručni, raditi svakog dana ili samo izabranim danima u nedelji.
+- Šablon može ostati ručni, raditi svakog dana, samo izabranim danima u nedelji ili **svakih N dana**. Interval počinje od datuma kada je raspored podešen.
 - **Add today / Dodaj danas** pravi jednu zasebnu instancu za današnji datum.
 - Rutina automatski pravi današnju instancu kada je aplikacija online; ne popunjava propuštene dane retroaktivno.
-- **Edit / Uredi** menja sadržaj, putanju, raspored, vreme i rok samo budućih instanci. Već napravljeni questovi ostaju nepromenjeni.
+- **Edit / Uredi** menja sadržaj, putanju, raspored, vreme i **Completion window / Prozor za završetak** samo budućih instanci. Prozor određuje koliko minuta posle početka quest ostaje u planiranom roku; vrednost `0` znači da nema roka. Već napravljeni questovi ostaju nepromenjeni.
 - Promena sadržaja koji utiče na bodovanje poništava stari template XP i omogućava novu System AI procenu; promene samo rasporeda ili vremena zadržavaju XP.
 - Jedan šablon može napraviti najviše jednu instancu po datumu. Svaka instanca ima sopstveni status, belešku i XP transakciju.
 - Brisanje šablona ne briše questove niti XP koji su ranije napravljeni iz njega.
