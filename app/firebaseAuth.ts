@@ -2,6 +2,9 @@
 
 import { getApp, getApps, initializeApp, type FirebaseOptions } from "firebase/app";
 import {
+  applyActionCode,
+  checkActionCode,
+  confirmPasswordReset,
   GoogleAuthProvider,
   browserLocalPersistence,
   createUserWithEmailAndPassword,
@@ -15,9 +18,12 @@ import {
   signInWithPopup,
   signInWithRedirect,
   signOut,
+  verifyPasswordResetCode,
   type Auth,
   type User,
 } from "firebase/auth";
+
+type AuthLanguage = "en" | "sr";
 
 type AuthConfigResponse = {
   configured: boolean;
@@ -49,6 +55,15 @@ async function configuredAuth() {
       });
   }
   return authPromise;
+}
+
+function prepareEmailAction(auth: Auth, language: AuthLanguage) {
+  auth.languageCode = language;
+  if (typeof window === "undefined") return undefined;
+  return {
+    url: `${window.location.origin}/`,
+    handleCodeInApp: false,
+  };
 }
 
 function identityFromUser(user: User): WeAscendIdentity {
@@ -108,13 +123,13 @@ export async function signInWithGoogle() {
   }
 }
 
-export async function signInWithPassword(email: string, password: string) {
+export async function signInWithPassword(email: string, password: string, language: AuthLanguage = "en") {
   const { auth } = await configuredAuth();
   if (!auth) throw new Error("auth_not_configured");
   const result = await signInWithEmailAndPassword(auth, email.trim(), password);
   if (!result.user.emailVerified) {
-    auth.useDeviceLanguage();
-    await sendEmailVerification(result.user).catch(() => undefined);
+    const settings = prepareEmailAction(auth, language);
+    await sendEmailVerification(result.user, settings).catch(() => undefined);
     await signOut(auth);
     const error = new Error("email_verification_required") as Error & { code: string };
     error.code = "email_verification_required";
@@ -123,27 +138,53 @@ export async function signInWithPassword(email: string, password: string) {
   return identityFromUser(result.user);
 }
 
-export async function registerWithPassword(email: string, password: string) {
+export async function registerWithPassword(email: string, password: string, language: AuthLanguage = "en") {
   const { auth } = await configuredAuth();
   if (!auth) throw new Error("auth_not_configured");
-  auth.useDeviceLanguage();
+  const settings = prepareEmailAction(auth, language);
   const result = await createUserWithEmailAndPassword(auth, email.trim(), password);
-  await sendEmailVerification(result.user);
+  await sendEmailVerification(result.user, settings);
   await signOut(auth);
 }
 
-export async function requestPasswordReset(email: string) {
+export async function requestPasswordReset(email: string, language: AuthLanguage = "en") {
   const { auth } = await configuredAuth();
   if (!auth) throw new Error("auth_not_configured");
-  auth.useDeviceLanguage();
-  await sendPasswordResetEmail(auth, email.trim());
+  const settings = prepareEmailAction(auth, language);
+  await sendPasswordResetEmail(auth, email.trim(), settings);
 }
 
-export async function resendVerification() {
+export async function resendVerification(language: AuthLanguage = "en") {
   const { auth } = await configuredAuth();
   if (!auth?.currentUser) throw new Error("authentication_required");
-  auth.useDeviceLanguage();
-  await sendEmailVerification(auth.currentUser);
+  const settings = prepareEmailAction(auth, language);
+  await sendEmailVerification(auth.currentUser, settings);
+}
+
+export async function applyEmailVerificationCode(code: string) {
+  const { auth } = await configuredAuth();
+  if (!auth) throw new Error("auth_not_configured");
+  await applyActionCode(auth, code);
+}
+
+export async function inspectPasswordResetCode(code: string) {
+  const { auth } = await configuredAuth();
+  if (!auth) throw new Error("auth_not_configured");
+  return verifyPasswordResetCode(auth, code);
+}
+
+export async function applyPasswordResetCode(code: string, password: string) {
+  const { auth } = await configuredAuth();
+  if (!auth) throw new Error("auth_not_configured");
+  await confirmPasswordReset(auth, code, password);
+}
+
+export async function applyEmailRecoveryCode(code: string) {
+  const { auth } = await configuredAuth();
+  if (!auth) throw new Error("auth_not_configured");
+  const info = await checkActionCode(auth, code);
+  await applyActionCode(auth, code);
+  return info.data.email ?? "";
 }
 
 export async function signOutOfWeAscend() {

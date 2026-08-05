@@ -87,12 +87,12 @@ export default function AuthGate({ language, onAuthenticated }: { language: Lang
     event.preventDefault();
     void run(async () => {
       if (mode === "register") {
-        await registerWithPassword(email, password);
+        await registerWithPassword(email, password, language);
         setMessage(t.verifySent);
         setMode("signin");
         setPassword("");
       } else {
-        await signInWithPassword(email, password);
+        await signInWithPassword(email, password, language);
         onAuthenticated();
       }
     });
@@ -115,7 +115,7 @@ export default function AuthGate({ language, onAuthenticated }: { language: Lang
         <label><span>{t.email}</span><input required autoComplete="email" type="email" value={email} onChange={event => setEmail(event.target.value)} /></label>
         <label><span>{t.password}</span><input required minLength={6} autoComplete={mode === "signin" ? "current-password" : "new-password"} type="password" value={password} onChange={event => setPassword(event.target.value)} /></label>
         {mode === "signin" && <button className="auth-link" type="button" disabled={busy || !email.trim()} onClick={() => void run(async () => {
-          await requestPasswordReset(email);
+          await requestPasswordReset(email, language);
           setMessage(t.resetSent);
         })}>{t.forgot}</button>}
         <button className="primary auth-submit" disabled={busy} type="submit">{mode === "signin" ? t.signin : t.register}</button>
