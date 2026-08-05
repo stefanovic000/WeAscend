@@ -79,7 +79,7 @@ Važno:
 4. Kopiraj `projectId`, `apiKey`, `authDomain`, `appId` i `messagingSenderId` u environment vrednosti.
 5. U Authentication settings dodaj lokalni i produkcioni domen u **Authorized domains**.
 6. Uključi email-enumeration protection.
-7. U **Authentication → Templates** prilagodi verification i password-reset tekst WeAscend brendu i postavi zajednički action URL na `https://ascend-solo-progress.stefanovic000.chatgpt.site/auth/action`.
+7. U **Authentication → Templates** prilagodi verification i password-reset tekst WeAscend brendu i postavi zajednički action URL na `https://ascend-solo-progress.stefanovic000.chatgpt.site/email-action`.
 8. Firebase Android app je registrovan sa trajnim package ID-em `com.wesystemlabs.weascend`; signing SHA fingerprinti se dodaju kada nastane prvi ključ.
 
 Klijent šalje Firebase ID token serveru preko HTTPS-a. Server proverava potpis, issuer, audience/projekat, vreme važenja, `auth_time`, stabilni UID i potvrđen email. Browser nikada ne bira `userId`.
@@ -175,7 +175,7 @@ Proveri svih pet `FIREBASE_*` environment vrednosti i napravi novi deployment. Z
 
 Korisnik mora kliknuti verification link. Nova poruka za potvrdu se šalje pri sledećem pokušaju prijave.
 
-WeAscend ima sopstvenu javnu `/auth/action` stranicu za Firebase email akcije. Ona obrađuje potvrdu emaila, reset lozinke i vraćanje promenjene email adrese, sa engleskim ili srpskim tekstom prema jeziku email poruke. Firebase kod ostaje u URL-u samo tokom te akcije i ne upisuje se u MongoDB niti u aplikacioni state.
+WeAscend ima sopstvenu javnu `/email-action` stranicu za Firebase email akcije. Ona obrađuje potvrdu emaila, reset lozinke i vraćanje promenjene email adrese, sa engleskim ili srpskim tekstom prema jeziku email poruke. Firebase kod ostaje u URL-u samo tokom te akcije i ne upisuje se u MongoDB niti u aplikacioni state.
 
 ### Cloud je READ-ONLY
 

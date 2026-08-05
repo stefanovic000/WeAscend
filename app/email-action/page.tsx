@@ -7,7 +7,7 @@ import {
   applyEmailVerificationCode,
   applyPasswordResetCode,
   inspectPasswordResetCode,
-} from "../../firebaseAuth";
+} from "../firebaseAuth";
 
 type ActionMode = "verifyEmail" | "resetPassword" | "recoverEmail";
 type ViewState = "working" | "reset" | "success" | "error";
