@@ -51,6 +51,15 @@ FIREBASE_AUTH_DOMAIN=weascend-project.firebaseapp.com
 FIREBASE_APP_ID=Firebase-Web-App-ID
 FIREBASE_MESSAGING_SENDER_ID=Firebase-Sender-ID
 
+# Uključi tek kada su sve vrednosti podešene.
+AUTH_EMAIL_PROVIDER=resend
+RESEND_API_KEY=re_...
+AUTH_EMAIL_FROM=WeAscend <account@weascend.example>
+APP_BASE_URL=https://ascend-solo-progress.stefanovic000.chatgpt.site
+FIREBASE_ADMIN_CLIENT_EMAIL=firebase-adminsdk-...@weascend-project.iam.gserviceaccount.com
+FIREBASE_ADMIN_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+AUTH_EMAIL_RATE_LIMIT_SECRET=duga-nasumicna-tajna
+
 ANDROID_APPLICATION_ID=com.wesystemlabs.weascend
 
 DEEPSEEK_API_KEY=sk-...
@@ -65,8 +74,8 @@ AI_COOLDOWN_SECONDS=10
 Važno:
 
 - `.env.local` se ne šalje na hosting.
-- `MONGODB_URI` i `DEEPSEEK_API_KEY` su server-only tajne.
-- Nikada ne stavljaj MongoDB URI ili DeepSeek ključ u `VITE_*`, `NEXT_PUBLIC_*`, Git, JSON backup ili browser kod.
+- `MONGODB_URI`, `DEEPSEEK_API_KEY`, `RESEND_API_KEY`, Firebase Admin ključ i rate-limit secret su server-only tajne.
+- Nikada ih ne stavljaj u `VITE_*`, `NEXT_PUBLIC_*`, Git, JSON backup ili browser kod.
 - Firebase web konfiguracija identifikuje projekat i nije Firebase Admin credential, ali se i dalje učitava kroz environment konfiguraciju.
 - Bez Firebase konfiguracije lokalni development koristi lokalnog test korisnika. Produkcija nema taj bypass.
 - Bez MongoDB-a aplikacija može prikazati cache, ali ne dozvoljava trajne izmene.
@@ -79,10 +88,15 @@ Važno:
 4. Kopiraj `projectId`, `apiKey`, `authDomain`, `appId` i `messagingSenderId` u environment vrednosti.
 5. U Authentication settings dodaj lokalni i produkcioni domen u **Authorized domains**.
 6. Uključi email-enumeration protection.
-7. U **Authentication → Templates** prilagodi verification i password-reset tekst WeAscend brendu i postavi zajednički action URL na `https://ascend-solo-progress.stefanovic000.chatgpt.site/email-action`.
-8. Firebase Android app je registrovan sa trajnim package ID-em `com.wesystemlabs.weascend`; signing SHA fingerprinti se dodaju kada nastane prvi ključ.
+7. Za Resend migraciju napravi Firebase service account sa pravom `firebaseauth.users.sendEmail` i sačuvaj njegov email/private key samo u serverskim environment vrednostima.
+8. U Resend-u potvrdi domen, napravi server-only API ključ i koristi adresu tog domena u `AUTH_EMAIL_FROM`.
+9. Postavi `APP_BASE_URL` na tačan javni HTTPS origin, bez putanje. Linkovi se ne grade iz dolaznog Host headera.
+10. Tek nakon probnog verification i reset emaila postavi `AUTH_EMAIL_PROVIDER=resend`. Bez tog flag-a aplikacija privremeno koristi Firebase email slanje.
+11. Firebase Android app je registrovan sa trajnim package ID-em `com.wesystemlabs.weascend`; signing SHA fingerprinti se dodaju kada nastane prvi ključ.
 
 Klijent šalje Firebase ID token serveru preko HTTPS-a. Server proverava potpis, issuer, audience/projekat, vreme važenja, `auth_time`, stabilni UID i potvrđen email. Browser nikada ne bira `userId`.
+
+Kod prilagođenih poruka Firebase i dalje pravi jednokratni action code, dok Resend šalje WeAscend HTML i plain-text email. Verification endpoint prihvata i bezbedno proverava token još nepotvrđenog korisnika; ostali privatni API endpointi i dalje zahtevaju potvrđen email. Password-reset odgovor je isti bez obzira na to da li nalog postoji, a slanje je ograničeno cooldown-om i dnevnim limitom. API ključ, Firebase private key i sadržaj emaila ne ulaze u browser niti MongoDB.
 
 ## MongoDB Atlas
 
@@ -95,9 +109,10 @@ Database:    ascend
 Collections: user_states_v2
              users_v2
              ai_usage_v2
+             auth_email_usage_v2
 ```
 
-Svaka kolekcija je indeksirana stabilnim Firebase `userId`-em. Stara owner-only kolekcija `user_states` je trajno obrisana 5. avgusta 2026. Nova verzija ne pokušava migraciju starih podataka i svaki Firebase nalog dobija zasebno, prazno stanje.
+Kolekcije korisničkog stanja su indeksirane stabilnim Firebase `userId`-em. `auth_email_usage_v2` čuva samo hashovan rate-limit ključ, vrstu poruke, brojač i vreme; ne čuva adresu, action link ni sadržaj emaila i automatski ističe nakon 48 sati. Stara owner-only kolekcija `user_states` je trajno obrisana 5. avgusta 2026. Nova verzija ne pokušava migraciju starih podataka i svaki Firebase nalog dobija zasebno, prazno stanje.
 
 Dok nova verzija nije objavljena, trenutni live build je i dalje legacy build. Nemoj unositi nove podatke na live adresi pre multi-user objave: stari build bi mogao ponovo napraviti `user_states`. Neposredno pre buduće objave proveri i po potrebi ponovo obriši samo tu legacy kolekciju.
 
@@ -177,7 +192,7 @@ Korisnik mora kliknuti verification link. Nova poruka za potvrdu se šalje pri s
 
 WeAscend ima sopstvenu javnu `/email-action` stranicu za Firebase email akcije. Ona obrađuje potvrdu emaila, reset lozinke i vraćanje promenjene email adrese, sa engleskim ili srpskim tekstom prema jeziku email poruke. Firebase kod ostaje u URL-u samo tokom te akcije i ne upisuje se u MongoDB niti u aplikacioni state.
 
-Ako Firebase privremeno ne dozvoljava prilagođavanje action URL-a, ugrađeni Firebase handler koristi `/email-action` kao bezbedan `continueUrl`, pa se nakon završene potvrde ili promene lozinke korisnik vraća na brendirani WeAscend ekran. Kada Firebase dozvoli prilagođavanje šablona, ista stranica može direktno obraditi `mode` i `oobCode` bez izmene aplikacije.
+Kada je Resend aktiviran, server traži jednokratni Firebase kod, ugrađuje ga u fiksni WeAscend `/email-action` link i šalje naš brendirani email. Ako custom provider još nije potpuno podešen, klijent koristi postojeći Firebase email kao migracioni fallback. Operativna Resend greška se ne prebacuje tiho na Firebase, kako korisnik ne bi dobijao dve različite poruke.
 
 ### Cloud je READ-ONLY
 

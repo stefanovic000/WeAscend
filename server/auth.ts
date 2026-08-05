@@ -64,9 +64,10 @@ function localDevelopmentUser(): AuthenticatedUser {
   };
 }
 
-export async function authenticateRequest(
+async function authenticateFirebaseRequest(
   request: Request,
-  verifyToken: FirebaseTokenVerifier = verifyFirebaseIdToken,
+  verifyToken: FirebaseTokenVerifier,
+  requireVerifiedEmail: boolean,
 ): Promise<AuthenticationResult> {
   const token = bearerToken(request);
 
@@ -80,7 +81,9 @@ export async function authenticateRequest(
     const email = typeof decoded.email === "string" ? decoded.email.trim().toLowerCase() : "";
     const emailVerified = decoded.email_verified === true;
     if (!email) return { status: "unauthenticated", user: null, code: "invalid_token" };
-    if (!emailVerified) return { status: "forbidden", user: null, code: "email_verification_required" };
+    if (requireVerifiedEmail && !emailVerified) {
+      return { status: "forbidden", user: null, code: "email_verification_required" };
+    }
 
     return {
       status: "authenticated",
@@ -94,6 +97,20 @@ export async function authenticateRequest(
   } catch {
     return { status: "unauthenticated", user: null, code: "invalid_token" };
   }
+}
+
+export async function authenticateRequest(
+  request: Request,
+  verifyToken: FirebaseTokenVerifier = verifyFirebaseIdToken,
+): Promise<AuthenticationResult> {
+  return authenticateFirebaseRequest(request, verifyToken, true);
+}
+
+export async function authenticateRequestAllowUnverified(
+  request: Request,
+  verifyToken: FirebaseTokenVerifier = verifyFirebaseIdToken,
+): Promise<AuthenticationResult> {
+  return authenticateFirebaseRequest(request, verifyToken, false);
 }
 
 export async function getAuthenticatedUser(request: Request): Promise<AuthenticatedUser | null> {

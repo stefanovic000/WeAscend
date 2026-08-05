@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { activeXp, addTemplateQuestForDate, applyQuestMutation, calculateQuestXp, canAwardQuest, defaultSettings, deleteAttributeFromState, deleteQuestFromState, isValidCloudState, isValidQuest, makeInitialState, materializeRoutineInstances, nextRecurringInstance, normalizeCloudState, progressFromXp, questTemplateFromQuest, rankForLevel, type Quest, type QuestTemplate, type XpTransaction } from "../app/domain.ts";
 import { translate } from "../app/i18n.ts";
 import { applyBossPreparationFloor, parseXpSuggestion } from "../app/xpAdvisor.ts";
-import { authenticateRequest } from "../server/auth.ts";
+import { authenticateRequest, authenticateRequestAllowUnverified } from "../server/auth.ts";
+import { buildAuthEmail, buildCustomActionUrl } from "../server/authEmail.ts";
 import { toLocalDateTimeValue, toStoredDateTime } from "../app/dateTime.ts";
 import { detectBossStepLanguage, parseBossStepPlan } from "../app/bossStepPlanner.ts";
 
@@ -550,4 +551,52 @@ test("Firebase authentication requires a verified token and preserves distinct s
     if (previousProjectId === undefined) delete process.env.FIREBASE_PROJECT_ID;
     else process.env.FIREBASE_PROJECT_ID = previousProjectId;
   }
+});
+
+test("the email-only endpoint can authenticate an unverified Firebase user without weakening normal APIs", async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousProjectId = process.env.FIREBASE_PROJECT_ID;
+  process.env.NODE_ENV = "production";
+  process.env.FIREBASE_PROJECT_ID = "weascend-test";
+  const request = new Request("https://weascend.example/api/auth/email", {
+    headers: { Authorization: "Bearer unverified" },
+  });
+  const verifier = async () => ({
+    sub: "firebase-user-unverified",
+    email: "new@example.com",
+    email_verified: false,
+    auth_time: Math.floor(Date.now() / 1000) - 5,
+  });
+
+  try {
+    const normal = await authenticateRequest(request, verifier);
+    const emailOnly = await authenticateRequestAllowUnverified(request, verifier);
+    assert.equal(normal.status, "forbidden");
+    assert.equal(emailOnly.status, "authenticated");
+    if (emailOnly.status === "authenticated") {
+      assert.equal(emailOnly.user.id, "firebase-user-unverified");
+      assert.equal(emailOnly.user.emailVerified, false);
+    }
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+    if (previousProjectId === undefined) delete process.env.FIREBASE_PROJECT_ID;
+    else process.env.FIREBASE_PROJECT_ID = previousProjectId;
+  }
+});
+
+test("custom auth emails use the fixed WeAscend action page and provide HTML plus plain text", () => {
+  const url = buildCustomActionUrl("https://weascend.example/ignored?bad=1", "verification", "code + symbols", "sr");
+  const parsed = new URL(url);
+  assert.equal(parsed.origin, "https://weascend.example");
+  assert.equal(parsed.pathname, "/email-action");
+  assert.equal(parsed.searchParams.get("mode"), "verifyEmail");
+  assert.equal(parsed.searchParams.get("oobCode"), "code + symbols");
+  assert.equal(parsed.searchParams.get("lang"), "sr");
+
+  const email = buildAuthEmail("verification", "sr", url);
+  assert.match(email.subject, /Potvrdi email/);
+  assert.match(email.html, /WeAscend/);
+  assert.match(email.html, /Potvrdi email/);
+  assert.match(email.text, /https:\/\/weascend\.example\/email-action/);
 });

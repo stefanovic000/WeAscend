@@ -29,11 +29,21 @@ export interface AiUsageDocument {
   updatedAt: Date;
 }
 
+export interface AuthEmailUsageDocument {
+  keyHash: string;
+  kind: "verification" | "password_reset";
+  day: string;
+  count: number;
+  lastRequestAt: Date;
+  expiresAt: Date;
+}
+
 export interface WeAscendCollections {
   database: Db;
   states: Collection<StateDocument>;
   users: Collection<UserDocument>;
   aiUsage: Collection<AiUsageDocument>;
+  authEmailUsage: Collection<AuthEmailUsageDocument>;
 }
 
 let indexesEnsured = false;
@@ -64,6 +74,11 @@ async function ensureIndexes(collections: WeAscendCollections) {
     collections.states.createIndex({ userId: 1 }, { unique: true, name: "unique_user_state_v2" }),
     collections.users.createIndex({ userId: 1 }, { unique: true, name: "unique_user_profile_v2" }),
     collections.aiUsage.createIndex({ userId: 1, day: 1 }, { unique: true, name: "unique_user_ai_day_v2" }),
+    collections.authEmailUsage.createIndex(
+      { keyHash: 1, kind: 1, day: 1 },
+      { unique: true, name: "unique_auth_email_day_v2" },
+    ),
+    collections.authEmailUsage.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0, name: "expire_auth_email_usage_v2" }),
   ]);
   indexesEnsured = true;
 }
@@ -77,6 +92,7 @@ export async function withCollections<T>(action: (collections: WeAscendCollectio
       states: database.collection<StateDocument>("user_states_v2"),
       users: database.collection<UserDocument>("users_v2"),
       aiUsage: database.collection<AiUsageDocument>("ai_usage_v2"),
+      authEmailUsage: database.collection<AuthEmailUsageDocument>("auth_email_usage_v2"),
     };
     await ensureIndexes(collections);
     return await action(collections);
