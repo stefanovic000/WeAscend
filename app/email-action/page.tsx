@@ -87,11 +87,18 @@ export default function AuthActionPage() {
       const params = new URLSearchParams(window.location.search);
       const actionMode = params.get("mode") as ActionMode | null;
       const actionCode = params.get("oobCode") ?? "";
+      const completed = params.get("completed");
       const nextLanguage = languageFromUrl(params);
       await Promise.resolve();
       setLanguage(nextLanguage);
       setMode(actionMode);
       setCode(actionCode);
+
+      if (completed === "verify" || completed === "reset") {
+        setMode(completed === "verify" ? "verifyEmail" : "resetPassword");
+        setState("success");
+        return;
+      }
 
       if (!actionCode || !["verifyEmail", "resetPassword", "recoverEmail"].includes(actionMode ?? "")) {
         setState("error");

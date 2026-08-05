@@ -177,6 +177,8 @@ Korisnik mora kliknuti verification link. Nova poruka za potvrdu se šalje pri s
 
 WeAscend ima sopstvenu javnu `/email-action` stranicu za Firebase email akcije. Ona obrađuje potvrdu emaila, reset lozinke i vraćanje promenjene email adrese, sa engleskim ili srpskim tekstom prema jeziku email poruke. Firebase kod ostaje u URL-u samo tokom te akcije i ne upisuje se u MongoDB niti u aplikacioni state.
 
+Ako Firebase privremeno ne dozvoljava prilagođavanje action URL-a, ugrađeni Firebase handler koristi `/email-action` kao bezbedan `continueUrl`, pa se nakon završene potvrde ili promene lozinke korisnik vraća na brendirani WeAscend ekran. Kada Firebase dozvoli prilagođavanje šablona, ista stranica može direktno obraditi `mode` i `oobCode` bez izmene aplikacije.
+
 ### Cloud je READ-ONLY
 
 Proveri MongoDB URI, Atlas cluster, database korisnika i Network Access. Zatim proveri da li autentifikovani zahtev dobija važeći Firebase token.

@@ -57,11 +57,11 @@ async function configuredAuth() {
   return authPromise;
 }
 
-function prepareEmailAction(auth: Auth, language: AuthLanguage) {
+function prepareEmailAction(auth: Auth, language: AuthLanguage, completed: "verify" | "reset") {
   auth.languageCode = language;
   if (typeof window === "undefined") return undefined;
   return {
-    url: `${window.location.origin}/`,
+    url: `${window.location.origin}/email-action?completed=${completed}&lang=${language}`,
     handleCodeInApp: false,
   };
 }
@@ -128,7 +128,7 @@ export async function signInWithPassword(email: string, password: string, langua
   if (!auth) throw new Error("auth_not_configured");
   const result = await signInWithEmailAndPassword(auth, email.trim(), password);
   if (!result.user.emailVerified) {
-    const settings = prepareEmailAction(auth, language);
+    const settings = prepareEmailAction(auth, language, "verify");
     await sendEmailVerification(result.user, settings).catch(() => undefined);
     await signOut(auth);
     const error = new Error("email_verification_required") as Error & { code: string };
@@ -141,7 +141,7 @@ export async function signInWithPassword(email: string, password: string, langua
 export async function registerWithPassword(email: string, password: string, language: AuthLanguage = "en") {
   const { auth } = await configuredAuth();
   if (!auth) throw new Error("auth_not_configured");
-  const settings = prepareEmailAction(auth, language);
+  const settings = prepareEmailAction(auth, language, "verify");
   const result = await createUserWithEmailAndPassword(auth, email.trim(), password);
   await sendEmailVerification(result.user, settings);
   await signOut(auth);
@@ -150,14 +150,14 @@ export async function registerWithPassword(email: string, password: string, lang
 export async function requestPasswordReset(email: string, language: AuthLanguage = "en") {
   const { auth } = await configuredAuth();
   if (!auth) throw new Error("auth_not_configured");
-  const settings = prepareEmailAction(auth, language);
+  const settings = prepareEmailAction(auth, language, "reset");
   await sendPasswordResetEmail(auth, email.trim(), settings);
 }
 
 export async function resendVerification(language: AuthLanguage = "en") {
   const { auth } = await configuredAuth();
   if (!auth?.currentUser) throw new Error("authentication_required");
-  const settings = prepareEmailAction(auth, language);
+  const settings = prepareEmailAction(auth, language, "verify");
   await sendEmailVerification(auth.currentUser, settings);
 }
 
