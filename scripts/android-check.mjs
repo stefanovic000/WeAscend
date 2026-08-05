@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 
 const expected = {
   packageId: "com.wesystemlabs.weascend",
-  host: "ascend-solo-progress.stefanovic000.chatgpt.site",
+  host: "weascend.wesystemlabs.com",
 };
 
 const twaPath = resolve("android-twa", "twa-manifest.json");

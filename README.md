@@ -2,7 +2,7 @@
 
 Cloud-synced PWA za lični napredak inspirisana „Solo Leveling“ sistemom. Engleski je podrazumevani jezik, a srpski se bira u Settings. Svaki Firebase nalog ima sopstveno MongoDB stanje; IndexedDB čuva odvojenu poslednju potvrđenu verziju po nalogu samo za offline pregled.
 
-Produkcija: [WeAscend](https://ascend-solo-progress.stefanovic000.chatgpt.site)
+Produkcija: [WeAscend](https://weascend.wesystemlabs.com)
 
 ## Osnovno ponašanje
 
@@ -55,7 +55,7 @@ FIREBASE_MESSAGING_SENDER_ID=Firebase-Sender-ID
 AUTH_EMAIL_PROVIDER=resend
 RESEND_API_KEY=re_...
 AUTH_EMAIL_FROM=WeAscend <account@weascend.example>
-APP_BASE_URL=https://ascend-solo-progress.stefanovic000.chatgpt.site
+APP_BASE_URL=https://weascend.wesystemlabs.com
 FIREBASE_ADMIN_CLIENT_EMAIL=firebase-adminsdk-...@weascend-project.iam.gserviceaccount.com
 FIREBASE_ADMIN_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 AUTH_EMAIL_RATE_LIMIT_SECRET=duga-nasumicna-tajna
