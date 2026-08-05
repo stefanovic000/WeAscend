@@ -1,9 +1,13 @@
 "use client";
 
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import AuthGate from "./AuthGate";
 import { activeXp, addTemplateQuestForDate, allowedXpForCategory, canAwardQuest, deleteAttributeFromState, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, materializeRoutineInstances, nextRecurringInstance, progressFromXp, questTemplateFromQuest, rankForLevel, type AppState, type Quest, type QuestMutation, type QuestTemplate, type QuestType, type XpTransaction } from "./domain";
 import { toLocalDateTimeValue, toStoredDateTime } from "./dateTime";
-import { loadState, saveState } from "./db";
+import { clearLegacyState, clearState, loadState, saveState } from "./db";
+import { getFirebaseIdToken, signOutOfWeAscend, waitForIdentity } from "./firebaseAuth";
 import { translate, type Language, type TranslationKey } from "./i18n";
 import type { XpSuggestion } from "./xpAdvisor";
 import type { BossStepSuggestion } from "./bossStepPlanner";
@@ -14,7 +18,7 @@ type CloudStateResponse = {
   state: AppState | null;
   revision: number;
   updatedAt?: string | null;
-  user?: { email: string; name: string };
+  user?: { id: string; email: string; name: string; emailVerified: boolean };
   code?: string;
 };
 type GeneratedBossStep = BossStepSuggestion & { id: string; selected: boolean };
@@ -106,30 +110,31 @@ function Empty({ title, text }: { title: string; text: string }) {
   return <div className="empty"><span>◇</span><strong>{title}</strong><p>{text}</p></div>;
 }
 
-function hasUserData(state: AppState) {
-  return state.attributes.length > 0 || state.skills.length > 0 || state.quests.length > 0 ||
-    state.transactions.length > 0 || state.bosses.length > 0 || state.levelEvents.length > 0 ||
-    (state.questTemplates?.length ?? 0) > 0;
-}
-
 async function cloudFetch(input: RequestInfo | URL, init?: RequestInit, timeoutMs = 8_000) {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
+    const request = async (forceRefresh = false) => {
+      const headers = new Headers(init?.headers);
+      const token = await getFirebaseIdToken(forceRefresh);
+      if (token) headers.set("Authorization", `Bearer ${token}`);
+      return fetch(input, { ...init, headers, signal: controller.signal });
+    };
+    const response = await request();
+    return response.status === 401 && await getFirebaseIdToken() ? request(true) : response;
   } finally {
     window.clearTimeout(timeout);
   }
 }
 
 export default function SoloApp() {
+  const router = useRouter();
   const language = useSyncExternalStore(subscribeLanguage, getLanguageSnapshot, getServerLanguageSnapshot);
   const [state, setState] = useState<AppState | null>(null);
   const [syncMode, setSyncMode] = useState<SyncMode>("starting");
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
-  const [cloudUser, setCloudUser] = useState<{ email: string; name: string } | null>(null);
+  const [cloudUser, setCloudUser] = useState<{ id: string; email: string; name: string; emailVerified: boolean } | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
-  const [accessDenied, setAccessDenied] = useState(false);
   const [view, setView] = useState<View>("dashboard");
   const [questDraft, setQuestDraft] = useState<Quest | null>(null);
   const [templateDraft, setTemplateDraft] = useState<QuestTemplate | null>(null);
@@ -184,6 +189,7 @@ export default function SoloApp() {
   const commandInFlightRef = useRef(false);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncModeRef = useRef<SyncMode>("starting");
+  const currentUserIdRef = useRef("");
   const t = (key: TranslationKey, variables?: Record<string, string | number>) => translate(language, key, variables);
   const locale = language === "sr" ? "sr-Latn-RS" : "en-US";
   const formatDate = (value: string, time = true) => value
@@ -207,7 +213,16 @@ export default function SoloApp() {
     };
 
     const start = async () => {
-      const saved = await loadState().catch(() => null);
+      const identity = await waitForIdentity().catch(() => null);
+      if (cancelled) return;
+      if (!identity) {
+        setAuthRequired(true);
+        setMode("offline");
+        return;
+      }
+      currentUserIdRef.current = identity.id;
+      await clearLegacyState().catch(() => undefined);
+      const saved = await loadState(identity.id).catch(() => null);
       const local = saved && isValidBackup(saved) && !isUntouchedDemoState(saved) ? saved : makeInitialState();
 
       try {
@@ -217,13 +232,11 @@ export default function SoloApp() {
 
         if (response.status === 401) {
           setAuthRequired(true);
-          setAccessDenied(false);
           setMode("offline");
           return;
         }
-        if (response.status === 403 && cloud.code === "owner_access_denied") {
-          setAuthRequired(false);
-          setAccessDenied(true);
+        if (response.status === 403 && cloud.code === "email_verification_required") {
+          setAuthRequired(true);
           setMode("offline");
           return;
         }
@@ -237,25 +250,24 @@ export default function SoloApp() {
         if (!response.ok) throw new Error(cloud.code || "cloud_unavailable");
 
         setAuthRequired(false);
-        setAccessDenied(false);
         setCloudUser(cloud.user ?? null);
         revisionRef.current = cloud.revision;
         let selected = cloud.state && isValidCloudState(cloud.state) ? cloud.state : null;
 
-        if (!selected && hasUserData(local)) {
-          const migration = await cloudFetch("/api/state", {
+        if (!selected) {
+          const fresh = makeInitialState();
+          const initialization = await cloudFetch("/api/state", {
             method: "PUT",
             credentials: "same-origin",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ state: local, revision: cloud.revision }),
+            body: JSON.stringify({ state: fresh, revision: cloud.revision }),
           });
-          const migrated = await migration.json() as CloudStateResponse;
-          if (migration.ok && migrated.state && isValidCloudState(migrated.state)) {
-            selected = migrated.state;
-            revisionRef.current = migrated.revision;
-          } else if (migration.status === 409 && migrated.state && isValidCloudState(migrated.state)) {
-            selected = migrated.state;
-            revisionRef.current = migrated.revision;
+          const initialized = await initialization.json() as CloudStateResponse;
+          if ((initialization.ok || initialization.status === 409) && initialized.state && isValidCloudState(initialized.state)) {
+            selected = initialized.state;
+            revisionRef.current = initialized.revision;
+          } else {
+            throw new Error(initialized.code || "state_initialization_failed");
           }
         }
 
@@ -266,7 +278,7 @@ export default function SoloApp() {
         localStorage.setItem("wesolo-cloud-enabled", "1");
         setMode("online");
         setState(selected);
-        void saveState(selected);
+        void saveState(identity.id, selected);
       } catch {
         if (cancelled) return;
         hydratedRef.current = true;
@@ -313,18 +325,17 @@ export default function SoloApp() {
       });
       const result = await response.json() as CloudStateResponse;
 
-      if (response.status === 401 || (response.status === 403 && result.code === "owner_access_denied")) {
+      if (response.status === 401 || (response.status === 403 && result.code === "email_verification_required")) {
         const confirmed = lastSyncedRef.current;
         if (confirmed) {
           const restored: unknown = JSON.parse(confirmed);
           if (isValidCloudState(restored)) {
             pendingStateRef.current = restored;
             setState(restored);
-            void saveState(restored);
+            if (currentUserIdRef.current) void saveState(currentUserIdRef.current, restored);
           }
         }
         setAuthRequired(response.status === 401);
-        setAccessDenied(response.status === 403);
         syncModeRef.current = "offline";
         setSyncMode("offline");
         return;
@@ -355,7 +366,7 @@ export default function SoloApp() {
           if (isValidCloudState(restored)) {
             pendingStateRef.current = restored;
             setState(restored);
-            void saveState(restored);
+            if (currentUserIdRef.current) void saveState(currentUserIdRef.current, restored);
           }
         } catch {
           // Keep the already loaded read-only snapshot if the confirmed cache is unavailable.
@@ -374,7 +385,7 @@ export default function SoloApp() {
   useEffect(() => {
     if (!state || !hydratedRef.current) return;
     pendingStateRef.current = state;
-    saveState(state).catch(() => setToast(translate(language, "sync.cacheFailed")));
+    if (currentUserIdRef.current) saveState(currentUserIdRef.current, state).catch(() => setToast(translate(language, "sync.cacheFailed")));
     if (syncModeRef.current !== "online" && syncModeRef.current !== "syncing") return;
     if (JSON.stringify(state) === lastSyncedRef.current) return;
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
@@ -415,8 +426,11 @@ export default function SoloApp() {
     return { xp, progress, rank: rankForLevel(progress.level, state.settings.ranks) };
   }, [state]);
 
-  if (accessDenied) return <main className="auth-gate auth-denied"><div className="auth-mark">W</div><p>{t("auth.deniedCloud")}</p><h1>{t("auth.deniedTitle")}</h1><span>{t("auth.deniedText")}</span><a href="/signout-with-chatgpt?return_to=%2F">{t("auth.deniedAction")}</a></main>;
-  if (authRequired) return <main className="auth-gate"><div className="auth-mark">W</div><p>{t("auth.cloud")}</p><h1>{t("auth.title")}</h1><span>{t("auth.text")}</span><a href="/signin-with-chatgpt?return_to=%2F">{t("auth.action")}</a></main>;
+  if (authRequired) return <AuthGate language={language} onAuthenticated={() => {
+    setAuthRequired(false);
+    setSyncMode("starting");
+    setBootstrapAttempt(attempt => attempt + 1);
+  }} />;
   if (!state || !metrics) return <main className="loading"><div className="loader-mark">W</div><p>{t("loading")}</p></main>;
 
   const readOnly = syncMode === "offline" || syncMode === "local";
@@ -436,6 +450,25 @@ export default function SoloApp() {
     if (!ensureWritable()) return false;
     setState(current => current ? recipe(current) : current);
     return true;
+  };
+
+  const deleteCurrentAccount = async () => {
+    try {
+      const userId = cloudUser?.id ?? "";
+      const response = await cloudFetch("/api/account", { method: "DELETE", credentials: "same-origin" }, 15_000);
+      if (!response.ok) throw new Error("account_deletion_failed");
+      if (userId) await clearState(userId).catch(() => undefined);
+      await signOutOfWeAscend().catch(() => undefined);
+      setConfirmAction(null);
+      setCloudUser(null);
+      setState(null);
+      setSyncMode("offline");
+      setAuthRequired(true);
+      router.replace("/");
+    } catch {
+      setConfirmAction(null);
+      setToast(t("settings.deleteAccountFailed"));
+    }
   };
 
   const runQuestMutation = async (mutation: QuestMutation) => {
@@ -468,9 +501,8 @@ export default function SoloApp() {
         const result = await response.json() as CloudStateResponse;
         syncInFlightRef.current = false;
 
-        if (response.status === 401 || (response.status === 403 && result.code === "owner_access_denied")) {
+        if (response.status === 401 || (response.status === 403 && result.code === "email_verification_required")) {
           setAuthRequired(response.status === 401);
-          setAccessDenied(response.status === 403);
           syncModeRef.current = "offline";
           setSyncMode("offline");
           return null;
@@ -482,7 +514,7 @@ export default function SoloApp() {
           pendingStateRef.current = result.state;
           if (attempt === 0) continue;
           setState(result.state);
-          void saveState(result.state);
+          if (currentUserIdRef.current) void saveState(currentUserIdRef.current, result.state);
           setToast(t("sync.conflict"));
           syncModeRef.current = "online";
           setSyncMode("online");
@@ -501,7 +533,7 @@ export default function SoloApp() {
         pendingStateRef.current = result.state;
         setCloudUser(result.user ?? cloudUser);
         setState(result.state);
-        void saveState(result.state);
+        if (currentUserIdRef.current) void saveState(currentUserIdRef.current, result.state);
         syncModeRef.current = "online";
         setSyncMode("online");
         return result.state;
@@ -1616,11 +1648,19 @@ export default function SoloApp() {
     <header className="screen-header"><div><p>{t("settings.configuration")}</p><h1>{t("settings.title")}</h1><span>{t("settings.subtitle")}</span></div></header>
     <div className="settings-grid">
       <section className="settings-card language-card"><header><i>文</i><div><h2>{t("settings.language")}</h2><p>{t("settings.languageText")}</p></div></header><div className="language-switch" role="group" aria-label={t("settings.language")}><button className={language === "en" ? "active" : ""} onClick={() => chooseLanguage("en")}>{t("settings.english")}</button><button className={language === "sr" ? "active" : ""} onClick={() => chooseLanguage("sr")}>{t("settings.serbian")}</button></div></section>
-      <section className="settings-card cloud-card"><header><i>↻</i><div><h2>{t("settings.cloud")}</h2><p>{t("settings.cloudText")}</p></div></header><div className="cloud-status-row"><span className={`sync-dot ${syncMode}`} /><div><strong>{syncMode === "online" ? t("settings.synced") : syncMode === "syncing" ? t("settings.saving") : syncMode === "offline" ? t("settings.disconnected") : t("settings.notConnected")}</strong><small>{cloudUser?.email ?? (syncMode === "local" ? t("settings.localMode") : "WeAscend Cloud")}</small></div>{cloudUser && <a href="/signout-with-chatgpt?return_to=%2F">{t("settings.signOut")}</a>}</div></section>
+      <section className="settings-card cloud-card"><header><i>↻</i><div><h2>{t("settings.cloud")}</h2><p>{t("settings.cloudText")}</p></div></header><div className="cloud-status-row"><span className={`sync-dot ${syncMode}`} /><div><strong>{syncMode === "online" ? t("settings.synced") : syncMode === "syncing" ? t("settings.saving") : syncMode === "offline" ? t("settings.disconnected") : t("settings.notConnected")}</strong><small>{cloudUser?.email ?? (syncMode === "local" ? t("settings.localMode") : "WeAscend Cloud")}</small></div>{cloudUser && <button onClick={() => void signOutOfWeAscend().then(() => {
+        currentUserIdRef.current = "";
+        hydratedRef.current = false;
+        setState(null);
+        setCloudUser(null);
+        setAuthRequired(true);
+        setSyncMode("offline");
+      })}>{t("settings.signOut")}</button>}</div></section>
       <section className="settings-card"><header><i>ƒ</i><div><h2>{t("settings.formula")}</h2><p>{t("settings.formulaText")}</p></div></header><div className="settings-row"><Field label={t("settings.baseXp")}><input type="number" min="1" value={state.settings.baseXp} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, baseXp: Math.max(1, Number(e.target.value)) } }))} /></Field><Field label={t("settings.growth")}><input type="number" min="0" value={state.settings.levelGrowth} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, levelGrowth: Math.max(0, Number(e.target.value)) } }))} /></Field></div></section>
       <section className="settings-card"><header><i>R</i><div><h2>{t("settings.ranks")}</h2><p>{t("settings.ranksText")}</p></div></header><div className="rank-settings">{state.settings.ranks.map((rank, index) => <Field label={`${rank.name}-Rank`} key={rank.name}><input type="number" min="1" value={rank.minLevel} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, ranks: s.settings.ranks.map((r, i) => i === index ? { ...r, minLevel: Math.max(1, Number(e.target.value)) } : r) } }))} /></Field>)}</div></section>
       <section className="settings-card"><header><i>◈</i><div><h2>{t("settings.rules")}</h2><p>{t("settings.rulesText")}</p></div></header><label className="toggle-row"><div><strong>{t("settings.dailyRepeat")}</strong><span>{t("settings.dailyRepeatText")}</span></div><input type="checkbox" checked={state.settings.dailyRepeatLimit} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, dailyRepeatLimit: e.target.checked } }))} /></label><label className="toggle-row"><div><strong>{t("settings.manualXp")}</strong><span>{t("settings.manualXpText")}</span></div><input type="checkbox" checked={state.settings.manualXpOverride === true} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, manualXpOverride: e.target.checked } }))} /></label><label className="toggle-row"><div><strong>{t("settings.animations")}</strong><span>{t("settings.animationsText")}</span></div><input type="checkbox" checked={state.settings.animations} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, animations: e.target.checked } }))} /></label></section>
       <section className="settings-card"><header><i>⇅</i><div><h2>{t("settings.backup")}</h2><p>{t("settings.backupText")}</p></div></header><div className="button-row"><button className="primary" onClick={exportJson}>{t("settings.export")}</button><button onClick={() => importRef.current?.click()}>{t("settings.import")}</button><input ref={importRef} hidden type="file" accept="application/json" onChange={e => e.target.files?.[0] && importJson(e.target.files[0])} /></div></section>
+      <section className="settings-card account-card"><header><i>@</i><div><h2>{t("settings.account")}</h2><p>{t("settings.accountText")}</p></div></header><div className="account-summary"><div><strong>{cloudUser?.name}</strong><small>{cloudUser?.email}</small></div><div className="account-actions"><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link><button className="danger" onClick={() => setConfirmAction({ title: t("settings.deleteAccountTitle"), text: t("settings.deleteAccountConfirm"), action: () => void deleteCurrentAccount() })}>{t("settings.deleteAccount")}</button></div></div></section>
       <section className="settings-card danger-zone"><header><i>!</i><div><h2>{t("settings.reset")}</h2><p>{t("settings.resetText")}</p></div></header><button onClick={() => ensureWritable() && setConfirmAction({ title: t("settings.resetTitle"), text: t("settings.resetConfirm"), action: () => { updateState(() => makeInitialState()); setConfirmAction(null); setToast(t("settings.resetDone")); } })}>{t("settings.resetAction")}</button></section>
     </div>
   </div>;

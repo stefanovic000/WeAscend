@@ -73,9 +73,9 @@ function normalizeCommand(value: unknown): { revision: number; mutation: QuestMu
 }
 
 export async function POST(request: Request) {
-  const auth = authenticateRequest(request);
-  if (auth.status === "unauthenticated") return json({ code: "authentication_required" }, 401);
-  if (auth.status === "forbidden") return json({ code: "owner_access_denied" }, 403);
+  const auth = await authenticateRequest(request);
+  if (auth.status === "unauthenticated") return json({ code: auth.code }, 401);
+  if (auth.status === "forbidden") return json({ code: auth.code }, 403);
 
   const declaredLength = Number(request.headers.get("content-length") || 0);
   if (declaredLength > MAX_COMMAND_BYTES) return json({ code: "command_too_large" }, 413);

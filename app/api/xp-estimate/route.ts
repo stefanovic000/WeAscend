@@ -1,4 +1,5 @@
 import { authenticateRequest } from "../../../server/auth";
+import { registerAiRequest } from "../../../server/aiProtection";
 import { allowedXpForCategory, type XpCategory } from "../../domain";
 import { applyBossPreparationFloor, parseXpSuggestion, type XpActivityAssessment } from "../../xpAdvisor";
 
@@ -81,12 +82,15 @@ function deepSeekErrorCode(status: number) {
 }
 
 export async function POST(request: Request) {
-  const auth = authenticateRequest(request);
-  if (auth.status === "unauthenticated") return json({ code: "authentication_required" }, 401);
-  if (auth.status === "forbidden") return json({ code: "owner_access_denied" }, 403);
+  const auth = await authenticateRequest(request);
+  if (auth.status === "unauthenticated") return json({ code: auth.code }, 401);
+  if (auth.status === "forbidden") return json({ code: auth.code }, 403);
 
   const apiKey = process.env.DEEPSEEK_API_KEY?.trim();
   if (!apiKey) return json({ code: "ai_not_configured" }, 503);
+
+  const protection = await registerAiRequest(auth.user.id, "xp_estimate");
+  if (!protection.allowed) return json({ code: protection.code }, 429);
 
   const declaredLength = Number(request.headers.get("content-length") || 0);
   if (declaredLength > MAX_REQUEST_BYTES) return json({ code: "request_too_large" }, 413);

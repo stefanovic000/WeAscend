@@ -3,6 +3,8 @@
   "name": "WeAscend — Personal Progress System",
   "short_name": "WeAscend",
   "description": "Quests, skills, XP, ranks, and focused personal progress",
+  "lang": "en",
+  "categories": ["productivity", "lifestyle"],
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

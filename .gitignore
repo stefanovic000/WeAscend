@@ -21,6 +21,8 @@
 # misc
 .DS_Store
 *.pem
+*.jks
+*.keystore
 
 # debug
 npm-debug.log*
@@ -44,3 +46,11 @@ next-env.d.ts
 /.npm-cache/
 /.dev-*.log
 /.dev-pid
+
+# Android / Bubblewrap generated build output
+/android-twa/.gradle/
+/android-twa/app/build/
+/android-twa/build/
+/android-twa/decompressed/
+/android-twa/app-release-*.apk
+/android-twa/app-release-*.aab

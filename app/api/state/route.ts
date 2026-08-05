@@ -1,6 +1,6 @@
 import { normalizeCloudState } from "../../domain";
 import { authenticateRequest, type AuthenticatedUser } from "../../../server/auth";
-import { withStateCollection } from "../../../server/mongo";
+import { withCollections } from "../../../server/mongo";
 
 export const dynamic = "force-dynamic";
 
@@ -17,27 +17,36 @@ function json(body: unknown, status = 200) {
 }
 
 function publicUser(user: AuthenticatedUser) {
-  return { email: user.email, name: user.name };
+  return { id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified };
 }
 
-function requireOwner(request: Request) {
-  const auth = authenticateRequest(request);
+async function requireUser(request: Request) {
+  const auth = await authenticateRequest(request);
   if (auth.status === "unauthenticated") {
-    return { user: null, response: json({ code: "authentication_required" }, 401) };
+    return { user: null, response: json({ code: auth.code }, 401) };
   }
   if (auth.status === "forbidden") {
-    return { user: null, response: json({ code: "owner_access_denied" }, 403) };
+    return { user: null, response: json({ code: auth.code }, 403) };
   }
   return { user: auth.user, response: null };
 }
 
 export async function GET(request: Request) {
-  const { user, response } = requireOwner(request);
+  const { user, response } = await requireUser(request);
   if (response) return response;
 
   try {
-    return await withStateCollection(async collection => {
-      const document = await collection.findOne({ userId: user.id });
+    return await withCollections(async ({ states, users }) => {
+      const now = new Date();
+      await users.updateOne(
+        { userId: user.id },
+        {
+          $set: { email: user.email, displayName: user.name, updatedAt: now, status: "active" },
+          $setOnInsert: { userId: user.id, language: "en", role: "user", createdAt: now },
+        },
+        { upsert: true },
+      );
+      const document = await states.findOne({ userId: user.id });
       return json({
         state: normalizeCloudState(document?.state),
         revision: document?.revision ?? 0,
@@ -55,7 +64,7 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  const { user, response } = requireOwner(request);
+  const { user, response } = await requireUser(request);
   if (response) return response;
 
   const declaredLength = Number(request.headers.get("content-length") || 0);
@@ -79,8 +88,8 @@ export async function PUT(request: Request) {
   const now = new Date();
 
   try {
-    return await withStateCollection(async collection => {
-      const updated = await collection.findOneAndUpdate(
+    return await withCollections(async ({ states }) => {
+      const updated = await states.findOneAndUpdate(
         { userId: user.id, revision },
         {
           $set: { state: normalizedState, updatedAt: now },
@@ -91,7 +100,7 @@ export async function PUT(request: Request) {
       );
 
       if (!updated) {
-        const current = await collection.findOne({ userId: user.id });
+        const current = await states.findOne({ userId: user.id });
         return json({ code: "revision_conflict", state: normalizeCloudState(current?.state), revision: current?.revision ?? 0 }, 409);
       }
 
@@ -102,8 +111,8 @@ export async function PUT(request: Request) {
       return json({ code: "cloud_not_configured" }, 503);
     }
     if (typeof error === "object" && error && "code" in error && error.code === 11000) {
-      return await withStateCollection(async collection => {
-        const current = await collection.findOne({ userId: user.id });
+      return await withCollections(async ({ states }) => {
+        const current = await states.findOne({ userId: user.id });
         return json({ code: "revision_conflict", state: normalizeCloudState(current?.state), revision: current?.revision ?? 0 }, 409);
       });
     }

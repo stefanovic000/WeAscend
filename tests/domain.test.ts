@@ -118,6 +118,7 @@ test("quest templates omit private notes and create at most one independent inst
   if (!template) return;
   assert.equal(Object.hasOwn(template, "note"), false);
   template.schedule = "daily";
+  template.startDate = "2026-08-01";
   state.questTemplates = [template];
   state.quests = [quest];
 
@@ -500,49 +501,53 @@ test("English is the primary UI language and Serbian translations interpolate va
   assert.equal(translate("sr", "auth.deniedText"), "Nemaš pristup ovom WeAscend sistemu.");
 });
 
-test("owner allowlist distinguishes missing, wrong and authorized accounts", () => {
+test("Firebase authentication requires a verified token and preserves distinct stable user IDs", async () => {
   const previousNodeEnv = process.env.NODE_ENV;
-  const previousOwnerEmail = process.env.OWNER_EMAIL;
-  const previousOwnerEmails = process.env.OWNER_EMAILS;
+  const previousProjectId = process.env.FIREBASE_PROJECT_ID;
   process.env.NODE_ENV = "production";
-  process.env.OWNER_EMAIL = "owner@example.com";
-  process.env.OWNER_EMAILS = " second@example.com, THIRD@example.com ";
+  process.env.FIREBASE_PROJECT_ID = "weascend-test";
 
   try {
-    assert.equal(authenticateRequest(new Request("https://wesolo.example/api/state")).status, "unauthenticated");
-    assert.equal(
-      authenticateRequest(new Request("https://wesolo.example/api/state", {
-        headers: { "oai-authenticated-user-email": "other@example.com" },
-      })).status,
-      "forbidden",
-    );
+    const missing = await authenticateRequest(new Request("https://weascend.example/api/state"));
+    assert.equal(missing.status, "unauthenticated");
 
-    const owner = authenticateRequest(new Request("https://wesolo.example/api/state", {
-      headers: { "oai-authenticated-user-email": " OWNER@example.com " },
-    }));
-    assert.equal(owner.status, "authenticated");
-    if (owner.status === "authenticated") assert.equal(owner.user.email, "owner@example.com");
+    const tokenRequest = (token: string) => new Request("https://weascend.example/api/state", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const verifier = async (token: string) => ({
+      sub: token === "first" ? "firebase-user-1" : "firebase-user-2",
+      email: token === "first" ? "first@example.com" : "second@example.com",
+      name: token === "first" ? "First" : "Second",
+      email_verified: token !== "unverified",
+      auth_time: Math.floor(Date.now() / 1000) - 5,
+    });
 
-    const second = authenticateRequest(new Request("https://wesolo.example/api/state", {
-      headers: { "oai-authenticated-user-email": "second@example.com" },
+    const first = await authenticateRequest(tokenRequest("first"), verifier);
+    const second = await authenticateRequest(tokenRequest("second"), verifier);
+    const unverified = await authenticateRequest(tokenRequest("unverified"), verifier);
+    const missingEmail = await authenticateRequest(tokenRequest("missing-email"), async () => ({
+      sub: "firebase-user-3",
+      email_verified: true,
+      auth_time: Math.floor(Date.now() / 1000) - 5,
     }));
+    const invalid = await authenticateRequest(tokenRequest("invalid"), async () => {
+      throw new Error("invalid token");
+    });
+
+    assert.equal(first.status, "authenticated");
     assert.equal(second.status, "authenticated");
-    if (owner.status === "authenticated" && second.status === "authenticated") {
-      assert.notEqual(second.user.id, owner.user.id);
+    assert.equal(unverified.status, "forbidden");
+    assert.equal(missingEmail.status, "unauthenticated");
+    assert.equal(invalid.status, "unauthenticated");
+    if (first.status === "authenticated" && second.status === "authenticated") {
+      assert.equal(first.user.id, "firebase-user-1");
+      assert.equal(first.user.email, "first@example.com");
+      assert.notEqual(first.user.id, second.user.id);
     }
-
-    assert.equal(
-      authenticateRequest(new Request("https://wesolo.example/api/state", {
-        headers: { "oai-authenticated-user-email": "third@example.com" },
-      })).status,
-      "authenticated",
-    );
   } finally {
     if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
     else process.env.NODE_ENV = previousNodeEnv;
-    if (previousOwnerEmail === undefined) delete process.env.OWNER_EMAIL;
-    else process.env.OWNER_EMAIL = previousOwnerEmail;
-    if (previousOwnerEmails === undefined) delete process.env.OWNER_EMAILS;
-    else process.env.OWNER_EMAILS = previousOwnerEmails;
+    if (previousProjectId === undefined) delete process.env.FIREBASE_PROJECT_ID;
+    else process.env.FIREBASE_PROJECT_ID = previousProjectId;
   }
 });
