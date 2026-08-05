@@ -172,6 +172,7 @@ Kada internet ili cloud nisu dostupni:
 - Kompanija: WeSystemLabs
 - Trajni Android application ID: `com.wesystemlabs.weascend`
 - Login: Google kao glavni, email/password kao fallback i reviewer pristup.
+- Login i registracija imaju odvojene, stalno vidljive tabove. Email registracija prikazuje minimalno pravilo lozinke i konkretne Firebase greške umesto jedne opšte poruke.
 - Play reviewer nalog mora biti trajan, bez OTP-a, sa engleskim uputstvom i primerima podataka.
 - Privacy Policy i spoljni account-deletion URL moraju biti uneti u Play Console.
 - Lagan TWA wrapper config je pripremljen u `android-twa/twa-manifest.json`; notifikacije su namerno isključene za prvu test verziju.

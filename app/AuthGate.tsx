@@ -14,22 +14,32 @@ const copy = {
     registerTitle: "Create your account",
     signinText: "Your progress stays private and follows you across your devices.",
     registerText: "Start with an empty system: Level 1 and 0 XP.",
-    google: "Continue with Google",
+    signinTab: "Log in",
+    registerTab: "Create account",
+    googleSignin: "Log in with Google",
+    googleRegister: "Create account with Google",
     divider: "or use email",
     email: "Email",
     password: "Password",
+    emailPlaceholder: "you@example.com",
+    passwordRequirement: "At least 6 characters",
+    verificationNotice: "Email registration requires verification before the first login.",
     signin: "Sign in",
     register: "Create account",
-    needAccount: "New to WeAscend?",
-    haveAccount: "Already have an account?",
-    switchRegister: "Create one",
-    switchSignin: "Sign in",
     forgot: "Forgot password?",
     resetSent: "If that account exists, password-reset instructions were sent.",
     verifySent: "Account created. Verify your email. If you open the link in this browser, WeAscend will enter automatically.",
     verifyRequired: "Verify your email. A new link was sent; this browser will continue automatically after confirmation.",
     setup: "Authentication is not configured yet.",
     genericError: "Sign-in could not be completed. Check your details and try again.",
+    invalidEmail: "Enter a valid email address.",
+    shortPassword: "Password must contain at least 6 characters.",
+    emailInUse: "An account with this email already exists. Choose Log in instead.",
+    invalidCredentials: "Email or password is incorrect.",
+    tooManyRequests: "Too many attempts. Wait a moment and try again.",
+    popupClosed: "Google sign-in was closed before it finished.",
+    networkError: "Connection failed. Check your internet and try again.",
+    accountDisabled: "This account has been disabled.",
     privacy: "Privacy",
     terms: "Terms",
   },
@@ -39,22 +49,32 @@ const copy = {
     registerTitle: "Napravi nalog",
     signinText: "Tvoj napredak ostaje privatan i prati te na svim uređajima.",
     registerText: "Počni sa praznim sistemom: Level 1 i 0 XP.",
-    google: "Nastavi preko Google-a",
+    signinTab: "Prijava",
+    registerTab: "Napravi nalog",
+    googleSignin: "Prijavi se preko Google-a",
+    googleRegister: "Napravi nalog preko Google-a",
     divider: "ili koristi email",
     email: "Email",
     password: "Lozinka",
+    emailPlaceholder: "ti@primer.com",
+    passwordRequirement: "Najmanje 6 karaktera",
+    verificationNotice: "Registracija emailom zahteva potvrdu pre prve prijave.",
     signin: "Prijavi se",
     register: "Napravi nalog",
-    needAccount: "Nemaš WeAscend nalog?",
-    haveAccount: "Već imaš nalog?",
-    switchRegister: "Napravi ga",
-    switchSignin: "Prijavi se",
     forgot: "Zaboravljena lozinka?",
     resetSent: "Ako nalog postoji, poslata su uputstva za novu lozinku.",
     verifySent: "Nalog je napravljen. Potvrdi email. Ako link otvoriš u ovom browseru, WeAscend će te automatski uvesti.",
     verifyRequired: "Potvrdi email. Poslat je novi link; ovaj browser će automatski nastaviti nakon potvrde.",
     setup: "Prijavljivanje još nije podešeno.",
     genericError: "Prijava nije uspela. Proveri podatke i pokušaj ponovo.",
+    invalidEmail: "Unesi ispravnu email adresu.",
+    shortPassword: "Lozinka mora imati najmanje 6 karaktera.",
+    emailInUse: "Nalog sa ovim emailom već postoji. Izaberi Prijava.",
+    invalidCredentials: "Email ili lozinka nisu ispravni.",
+    tooManyRequests: "Previše pokušaja. Sačekaj malo i pokušaj ponovo.",
+    popupClosed: "Google prijava je zatvorena pre završetka.",
+    networkError: "Veza nije uspela. Proveri internet i pokušaj ponovo.",
+    accountDisabled: "Ovaj nalog je onemogućen.",
     privacy: "Privatnost",
     terms: "Uslovi",
   },
@@ -69,6 +89,27 @@ export default function AuthGate({ language, onAuthenticated }: { language: Lang
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
+  const selectMode = (nextMode: AuthMode) => {
+    setMode(nextMode);
+    setPassword("");
+    setError("");
+    setMessage("");
+  };
+
+  const errorMessage = (code: string) => {
+    if (code === "auth_not_configured") return t.setup;
+    if (code === "email_verification_required") return t.verifyRequired;
+    if (code === "auth/invalid-email") return t.invalidEmail;
+    if (code === "auth/weak-password") return t.shortPassword;
+    if (code === "auth/email-already-in-use") return t.emailInUse;
+    if (code === "auth/invalid-credential" || code === "auth/wrong-password" || code === "auth/user-not-found") return t.invalidCredentials;
+    if (code === "auth/too-many-requests") return t.tooManyRequests;
+    if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") return t.popupClosed;
+    if (code === "auth/network-request-failed") return t.networkError;
+    if (code === "auth/user-disabled") return t.accountDisabled;
+    return t.genericError;
+  };
+
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
     setError("");
@@ -77,7 +118,7 @@ export default function AuthGate({ language, onAuthenticated }: { language: Lang
       await action();
     } catch (reason) {
       const code = reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "";
-      setError(code === "auth_not_configured" ? t.setup : code === "email_verification_required" ? t.verifyRequired : t.genericError);
+      setError(errorMessage(code));
     } finally {
       setBusy(false);
     }
@@ -85,6 +126,14 @@ export default function AuthGate({ language, onAuthenticated }: { language: Lang
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
+    if (!email.trim() || !/^\S+@\S+\.\S+$/.test(email.trim())) {
+      setError(t.invalidEmail);
+      return;
+    }
+    if (password.length < 6) {
+      setError(t.shortPassword);
+      return;
+    }
     void run(async () => {
       if (mode === "register") {
         await registerWithPassword(email, password, language);
@@ -105,24 +154,30 @@ export default function AuthGate({ language, onAuthenticated }: { language: Lang
       <h1>{mode === "signin" ? t.signinTitle : t.registerTitle}</h1>
       <p className="auth-intro">{mode === "signin" ? t.signinText : t.registerText}</p>
 
+      <div className="auth-mode-switch" role="tablist" aria-label={t.eyebrow}>
+        <button aria-selected={mode === "signin"} className={mode === "signin" ? "active" : ""} onClick={() => selectMode("signin")} role="tab" type="button">{t.signinTab}</button>
+        <button aria-selected={mode === "register"} className={mode === "register" ? "active" : ""} onClick={() => selectMode("register")} role="tab" type="button">{t.registerTab}</button>
+      </div>
+
       <button className="auth-google" disabled={busy} onClick={() => void run(async () => {
         const identity = await signInWithGoogle();
         if (identity) onAuthenticated();
-      })}><span>G</span>{t.google}</button>
+      })}><span>G</span>{mode === "signin" ? t.googleSignin : t.googleRegister}</button>
 
       <div className="auth-divider"><span>{t.divider}</span></div>
-      <form onSubmit={submit}>
-        <label><span>{t.email}</span><input required autoComplete="email" type="email" value={email} onChange={event => setEmail(event.target.value)} /></label>
-        <label><span>{t.password}</span><input required minLength={6} autoComplete={mode === "signin" ? "current-password" : "new-password"} type="password" value={password} onChange={event => setPassword(event.target.value)} /></label>
+      <form onSubmit={submit} noValidate>
+        <label><span>{t.email}</span><input aria-invalid={Boolean(error) && !/^\S+@\S+\.\S+$/.test(email.trim())} required autoComplete="email" inputMode="email" placeholder={t.emailPlaceholder} type="email" value={email} onChange={event => { setEmail(event.target.value); setError(""); }} /></label>
+        <label><span>{t.password}</span><input aria-describedby={mode === "register" ? "password-requirement" : undefined} aria-invalid={Boolean(error) && password.length < 6} required minLength={6} autoComplete={mode === "signin" ? "current-password" : "new-password"} type="password" value={password} onChange={event => { setPassword(event.target.value); setError(""); }} /></label>
+        {mode === "register" && <div className="auth-requirements" id="password-requirement"><span className={password.length >= 6 ? "valid" : ""}>✓</span>{t.passwordRequirement}</div>}
         {mode === "signin" && <button className="auth-link" type="button" disabled={busy || !email.trim()} onClick={() => void run(async () => {
           await requestPasswordReset(email, language);
           setMessage(t.resetSent);
         })}>{t.forgot}</button>}
         <button className="primary auth-submit" disabled={busy} type="submit">{mode === "signin" ? t.signin : t.register}</button>
       </form>
+      {mode === "register" && <p className="auth-verification-note">{t.verificationNotice}</p>}
       {message && <p className="auth-message success">{message}</p>}
-      {error && <p className="auth-message error">{error}</p>}
-      <p className="auth-switch">{mode === "signin" ? t.needAccount : t.haveAccount} <button onClick={() => { setMode(mode === "signin" ? "register" : "signin"); setError(""); setMessage(""); }}>{mode === "signin" ? t.switchRegister : t.switchSignin}</button></p>
+      {error && <p aria-live="polite" className="auth-message error" role="alert">{error}</p>}
       <nav className="auth-legal" aria-label="Legal"><Link href="/privacy">{t.privacy}</Link><Link href="/terms">{t.terms}</Link></nav>
     </section>
   </main>;
