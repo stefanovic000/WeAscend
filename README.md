@@ -96,7 +96,7 @@ Važno:
 
 Klijent šalje Firebase ID token serveru preko HTTPS-a. Server proverava potpis, issuer, audience/projekat, vreme važenja, `auth_time`, stabilni UID i potvrđen email. Browser nikada ne bira `userId`.
 
-Kod prilagođenih poruka Firebase i dalje pravi jednokratni action code, dok Resend šalje WeAscend HTML i plain-text email. Verification endpoint prihvata i bezbedno proverava token još nepotvrđenog korisnika; ostali privatni API endpointi i dalje zahtevaju potvrđen email. Password-reset odgovor je isti bez obzira na to da li nalog postoji, a slanje je ograničeno cooldown-om i dnevnim limitom. API ključ, Firebase private key i sadržaj emaila ne ulaze u browser niti MongoDB.
+Kod prilagođenih poruka Firebase i dalje pravi jednokratni action code, dok Resend šalje WeAscend HTML i plain-text email. Verification endpoint prihvata i bezbedno proverava token još nepotvrđenog korisnika; ostali privatni API endpointi i dalje zahtevaju potvrđen email. Nepotvrđena Firebase sesija ostaje samo na uređaju na kojem je započeta registracija i nema pristup privatnim API-jima. Ako se verifikacioni link otvori u istom browseru i pripada istoj email adresi, aplikacija osvežava potvrđeni token i automatski ulazi; drugi browser ili drugi nalog i dalje zahtevaju prijavu. Password-reset odgovor je isti bez obzira na to da li nalog postoji, a slanje je ograničeno cooldown-om i dnevnim limitom. API ključ, Firebase private key i sadržaj emaila ne ulaze u browser niti MongoDB.
 
 ## MongoDB Atlas
 

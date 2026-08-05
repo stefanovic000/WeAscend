@@ -20,6 +20,7 @@ const copy = {
     workingText: "WeAscend is securely validating this link with Firebase.",
     verifyTitle: "Email verified",
     verifyText: "Registration is complete. Your WeAscend system is ready—sign in to begin ascending.",
+    verifyEnteringText: "Registration is complete. This device is already trusted—entering your WeAscend system…",
     resetTitle: "Set a new password",
     resetText: "Choose a new password for {email}.",
     password: "New password",
@@ -43,6 +44,7 @@ const copy = {
     workingText: "WeAscend bezbedno proverava ovaj link preko Firebase-a.",
     verifyTitle: "Email je potvrđen",
     verifyText: "Registracija je završena. Tvoj WeAscend sistem je spreman — prijavi se i započni uspon.",
+    verifyEnteringText: "Registracija je završena. Ovaj uređaj je već potvrđen — ulazim u tvoj WeAscend sistem…",
     resetTitle: "Postavi novu lozinku",
     resetText: "Izaberi novu lozinku za {email}.",
     password: "Nova lozinka",
@@ -79,6 +81,7 @@ export default function AuthActionPage() {
   const [confirmation, setConfirmation] = useState("");
   const [formError, setFormError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [autoEntering, setAutoEntering] = useState(false);
 
   useEffect(() => {
     if (started.current) return;
@@ -107,7 +110,8 @@ export default function AuthActionPage() {
 
       try {
         if (actionMode === "verifyEmail") {
-          await applyEmailVerificationCode(actionCode);
+          const verifiedIdentity = await applyEmailVerificationCode(actionCode);
+          setAutoEntering(Boolean(verifiedIdentity));
           setState("success");
         } else if (actionMode === "resetPassword") {
           setEmail(await inspectPasswordResetCode(actionCode));
@@ -123,11 +127,17 @@ export default function AuthActionPage() {
     void run();
   }, []);
 
+  useEffect(() => {
+    if (state !== "success" || mode !== "verifyEmail" || !autoEntering) return;
+    const timer = window.setTimeout(() => window.location.replace("/"), 900);
+    return () => window.clearTimeout(timer);
+  }, [autoEntering, mode, state]);
+
   const t = copy[language];
   const isVerification = mode === "verifyEmail";
   const isRecovery = mode === "recoverEmail";
   const successTitle = isVerification ? t.verifyTitle : isRecovery ? t.recoverTitle : t.resetDoneTitle;
-  const successText = isVerification ? t.verifyText : isRecovery ? t.recoverText : t.resetDoneText;
+  const successText = isVerification ? (autoEntering ? t.verifyEnteringText : t.verifyText) : isRecovery ? t.recoverText : t.resetDoneText;
 
   const resetPassword = async (event: React.FormEvent) => {
     event.preventDefault();

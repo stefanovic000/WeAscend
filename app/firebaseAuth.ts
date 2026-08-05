@@ -90,6 +90,15 @@ function errorCode(reason: unknown) {
   return reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "";
 }
 
+async function deliverVerification(auth: Auth, user: User, language: AuthLanguage) {
+  try {
+    await requestCustomAuthEmail("verification", language, { token: await user.getIdToken() });
+  } catch (reason) {
+    if (errorCode(reason) !== "custom_email_not_configured") throw reason;
+    await sendEmailVerification(user, prepareEmailAction(auth, language, "verify"));
+  }
+}
+
 function identityFromUser(user: User): WeAscendIdentity {
   return {
     id: user.uid,
@@ -98,6 +107,20 @@ function identityFromUser(user: User): WeAscendIdentity {
     emailVerified: user.emailVerified,
     developmentBypass: false,
   };
+}
+
+function normalizedEmail(value: string | null | undefined) {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+async function refreshCurrentVerifiedIdentity(auth: Auth, expectedEmail: string) {
+  await auth.authStateReady();
+  const user = auth.currentUser;
+  if (!user || !expectedEmail || normalizedEmail(user.email) !== normalizedEmail(expectedEmail)) return null;
+  await user.reload();
+  if (!user.emailVerified) return null;
+  await user.getIdToken(true);
+  return identityFromUser(user);
 }
 
 export async function waitForIdentity(): Promise<WeAscendIdentity | null> {
@@ -153,14 +176,10 @@ export async function signInWithPassword(email: string, password: string, langua
   const result = await signInWithEmailAndPassword(auth, email.trim(), password);
   if (!result.user.emailVerified) {
     try {
-      try {
-        await requestCustomAuthEmail("verification", language, { token: await result.user.getIdToken() });
-      } catch (reason) {
-        if (errorCode(reason) !== "custom_email_not_configured") throw reason;
-        await sendEmailVerification(result.user, prepareEmailAction(auth, language, "verify"));
-      }
-    } finally {
+      await deliverVerification(auth, result.user, language);
+    } catch (reason) {
       await signOut(auth);
+      throw reason;
     }
     const error = new Error("email_verification_required") as Error & { code: string };
     error.code = "email_verification_required";
@@ -174,14 +193,10 @@ export async function registerWithPassword(email: string, password: string, lang
   if (!auth) throw new Error("auth_not_configured");
   const result = await createUserWithEmailAndPassword(auth, email.trim(), password);
   try {
-    try {
-      await requestCustomAuthEmail("verification", language, { token: await result.user.getIdToken() });
-    } catch (reason) {
-      if (errorCode(reason) !== "custom_email_not_configured") throw reason;
-      await sendEmailVerification(result.user, prepareEmailAction(auth, language, "verify"));
-    }
-  } finally {
+    await deliverVerification(auth, result.user, language);
+  } catch (reason) {
     await signOut(auth);
+    throw reason;
   }
 }
 
@@ -210,7 +225,10 @@ export async function resendVerification(language: AuthLanguage = "en") {
 export async function applyEmailVerificationCode(code: string) {
   const { auth } = await configuredAuth();
   if (!auth) throw new Error("auth_not_configured");
+  const action = await checkActionCode(auth, code);
+  const verifiedEmail = action.data.email ?? "";
   await applyActionCode(auth, code);
+  return refreshCurrentVerifiedIdentity(auth, verifiedEmail);
 }
 
 export async function inspectPasswordResetCode(code: string) {
