@@ -4,6 +4,7 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalSt
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import AuthGate from "./AuthGate";
+import OnboardingTutorial from "./OnboardingTutorial";
 import { activeXp, addTemplateQuestForDate, allowedXpForCategory, canAwardQuest, deleteAttributeFromState, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, materializeRoutineInstances, nextRecurringInstance, progressFromXp, questTemplateFromQuest, rankForLevel, type AppState, type Quest, type QuestMutation, type QuestTemplate, type QuestType, type XpTransaction } from "./domain";
 import { toLocalDateTimeValue, toStoredDateTime } from "./dateTime";
 import { clearLegacyState, clearState, loadState, saveState } from "./db";
@@ -161,6 +162,7 @@ export default function SoloApp() {
   const [clock, setClock] = useState(() => Date.now());
   const [motionCue, setMotionCue] = useState<MotionCue | null>(null);
   const [ceremony, setCeremony] = useState<{ eyebrow: string; title: string; text: string } | null>(null);
+  const [tutorialStep, setTutorialStep] = useState<number | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ title: string; text: string; action: () => void } | null>(null);
   const [inputDialog, setInputDialog] = useState<{
     title: string;
@@ -450,6 +452,14 @@ export default function SoloApp() {
     if (!ensureWritable()) return false;
     setState(current => current ? recipe(current) : current);
     return true;
+  };
+
+  const finishTutorial = () => {
+    if (state.settings.tutorialCompleted !== true) {
+      const saved = updateState(current => ({ ...current, settings: { ...current.settings, tutorialCompleted: true } }));
+      if (!saved) return;
+    }
+    setTutorialStep(null);
   };
 
   const deleteCurrentAccount = async () => {
@@ -1648,6 +1658,7 @@ export default function SoloApp() {
     <header className="screen-header"><div><p>{t("settings.configuration")}</p><h1>{t("settings.title")}</h1><span>{t("settings.subtitle")}</span></div></header>
     <div className="settings-grid">
       <section className="settings-card language-card"><header><i>文</i><div><h2>{t("settings.language")}</h2><p>{t("settings.languageText")}</p></div></header><div className="language-switch" role="group" aria-label={t("settings.language")}><button className={language === "en" ? "active" : ""} onClick={() => chooseLanguage("en")}>{t("settings.english")}</button><button className={language === "sr" ? "active" : ""} onClick={() => chooseLanguage("sr")}>{t("settings.serbian")}</button></div></section>
+      <section className="settings-card tutorial-settings-card"><header><i>?</i><div><h2>{t("settings.tutorial")}</h2><p>{t("settings.tutorialText")}</p></div></header><button className="primary" onClick={() => setTutorialStep(0)}>{t("settings.tutorialAction")}</button></section>
       <section className="settings-card cloud-card"><header><i>↻</i><div><h2>{t("settings.cloud")}</h2><p>{t("settings.cloudText")}</p></div></header><div className="cloud-status-row"><span className={`sync-dot ${syncMode}`} /><div><strong>{syncMode === "online" ? t("settings.synced") : syncMode === "syncing" ? t("settings.saving") : syncMode === "offline" ? t("settings.disconnected") : t("settings.notConnected")}</strong><small>{cloudUser?.email ?? (syncMode === "local" ? t("settings.localMode") : "WeAscend Cloud")}</small></div>{cloudUser && <button onClick={() => void signOutOfWeAscend().then(() => {
         currentUserIdRef.current = "";
         hydratedRef.current = false;
@@ -1688,6 +1699,7 @@ export default function SoloApp() {
       {view === "settings" && SettingsView()}
     </main>
     <nav className="bottom-nav">{views.map(item => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><i>{item.icon}</i><span>{t(item.labelKey)}</span></button>)}</nav>
+    {(tutorialStep !== null || (syncMode === "online" && state.settings.tutorialCompleted !== true)) && <OnboardingTutorial language={language} step={tutorialStep ?? 0} onStepChange={setTutorialStep} onFinish={finishTutorial} />}
     {templateDraft && <div className="modal-backdrop" onMouseDown={event => event.target === event.currentTarget && setTemplateDraft(null)}>
       <section className="modal quest-modal template-modal" role="dialog" aria-modal="true" aria-label={t("template.editTitle")}>
         <header><div><p>{t("template.eyebrow")}</p><h2>{t("template.editTitle")}</h2><span>{t("template.futureOnly")}</span></div><button onClick={() => setTemplateDraft(null)} aria-label={t("common.close")}>×</button></header>

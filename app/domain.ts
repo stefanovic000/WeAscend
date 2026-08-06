@@ -21,6 +21,7 @@ export interface Settings {
   animations: boolean;
   notifications: boolean;
   manualXpOverride?: boolean;
+  tutorialCompleted?: boolean;
 }
 export interface Attribute { id: string; name: string; color: string; createdAt: string; updatedAt: string; deletedAt?: string }
 export interface Skill { id: string; attributeId: string; name: string; createdAt: string; updatedAt: string; deletedAt?: string }
@@ -156,6 +157,7 @@ export const defaultSettings: Settings = {
   animations: true,
   notifications: false,
   manualXpOverride: false,
+  tutorialCompleted: false,
 };
 
 export type QuestScoringInput = Pick<Quest, "type" | "xpCategory" | "focusMinutes" | "outputBonus" | "xpRuleValue">;
@@ -698,6 +700,7 @@ const NULLABLE_OPTIONAL_STATE_FIELDS = new Set([
   "bossAttempts",
   "questTemplates",
   "manualXpOverride",
+  "tutorialCompleted",
 ]);
 
 export function normalizeCloudState(value: unknown): AppState | null {
