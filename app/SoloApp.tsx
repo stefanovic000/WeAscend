@@ -3,6 +3,7 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { History as HistoryIcon, LayoutDashboard, ListChecks, Settings as SettingsIcon, Shield, TrendingUp, type LucideIcon } from "lucide-react";
 import AuthGate from "./AuthGate";
 import OnboardingTutorial from "./OnboardingTutorial";
 import { activeXp, addTemplateQuestForDate, allowedXpForCategory, canAwardQuest, deleteAttributeFromState, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, materializeRoutineInstances, nextRecurringInstance, progressFromXp, questTemplateFromQuest, rankForLevel, type AppState, type Quest, type QuestMutation, type QuestTemplate, type QuestType, type XpTransaction } from "./domain";
@@ -29,13 +30,13 @@ type MotionCue = {
   questId: string;
   xp?: number;
 };
-const views: { id: View; labelKey: TranslationKey; icon: string }[] = [
-  { id: "dashboard", labelKey: "nav.command", icon: "◇" },
-  { id: "quests", labelKey: "nav.quests", icon: "✦" },
-  { id: "growth", labelKey: "nav.growth", icon: "⌁" },
-  { id: "bosses", labelKey: "nav.bosses", icon: "⬡" },
-  { id: "history", labelKey: "nav.history", icon: "◫" },
-  { id: "settings", labelKey: "nav.settings", icon: "⚙" },
+const views: { id: View; labelKey: TranslationKey; icon: LucideIcon }[] = [
+  { id: "dashboard", labelKey: "nav.command", icon: LayoutDashboard },
+  { id: "quests", labelKey: "nav.quests", icon: ListChecks },
+  { id: "growth", labelKey: "nav.growth", icon: TrendingUp },
+  { id: "bosses", labelKey: "nav.bosses", icon: Shield },
+  { id: "history", labelKey: "nav.history", icon: HistoryIcon },
+  { id: "settings", labelKey: "nav.settings", icon: SettingsIcon },
 ];
 
 const blankQuest = (state: AppState): Quest => {
@@ -1685,7 +1686,11 @@ export default function SoloApp() {
     {syncMode === "syncing" && <div className="sync-banner syncing">{t("sync.saving")}</div>}
     <aside className="sidebar">
       <button className="brand" onClick={() => setView("dashboard")}><span>W</span><div><strong>WeAscend</strong><small>PERSONAL PROGRESS SYSTEM</small></div></button>
-      <nav>{views.map(item => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><i>{item.icon}</i><span>{t(item.labelKey)}</span>{item.id === "quests" && activeQuests.length > 0 && <b>{activeQuests.length}</b>}</button>)}</nav>
+      <nav>{views.map(item => {
+        const Icon = item.icon;
+        const label = t(item.labelKey);
+        return <button aria-current={view === item.id ? "page" : undefined} aria-label={label} data-label={label} key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><i aria-hidden="true"><Icon size={20} strokeWidth={1.9} /></i><span>{label}</span>{item.id === "quests" && activeQuests.length > 0 && <b>{activeQuests.length}</b>}</button>;
+      })}</nav>
       <div className="sidebar-profile"><div>{metrics.rank}</div><span><strong>{t("profile.hunter")}</strong><small>{t("profile.level")} {metrics.progress.level} · {metrics.xp} XP</small></span></div>
       <p className={`local-status ${syncMode}`}><i /> {syncMode === "online" ? t("sync.cloudSynced") : syncMode === "syncing" ? t("sync.cloudSyncing") : t("sync.cloudReadOnly")}</p>
     </aside>
@@ -1698,7 +1703,11 @@ export default function SoloApp() {
       {view === "history" && History()}
       {view === "settings" && SettingsView()}
     </main>
-    <nav className="bottom-nav">{views.map(item => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><i>{item.icon}</i><span>{t(item.labelKey)}</span></button>)}</nav>
+    <nav className="bottom-nav">{views.map(item => {
+      const Icon = item.icon;
+      const label = t(item.labelKey);
+      return <button aria-current={view === item.id ? "page" : undefined} aria-label={label} key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><i aria-hidden="true"><Icon size={19} strokeWidth={1.9} /></i><span>{label}</span></button>;
+    })}</nav>
     {(tutorialStep !== null || (syncMode === "online" && state.settings.tutorialCompleted !== true)) && <OnboardingTutorial language={language} step={tutorialStep ?? 0} onStepChange={setTutorialStep} onFinish={finishTutorial} />}
     {templateDraft && <div className="modal-backdrop" onMouseDown={event => event.target === event.currentTarget && setTemplateDraft(null)}>
       <section className="modal quest-modal template-modal" role="dialog" aria-modal="true" aria-label={t("template.editTitle")}>
