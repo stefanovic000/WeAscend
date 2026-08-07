@@ -140,6 +140,7 @@ export default function SoloApp() {
   const [authRequired, setAuthRequired] = useState(false);
   const [view, setView] = useState<View>("dashboard");
   const [questDraft, setQuestDraft] = useState<Quest | null>(null);
+  const [questSaving, setQuestSaving] = useState(false);
   const [templateDraft, setTemplateDraft] = useState<QuestTemplate | null>(null);
   const [templateSuggestion, setTemplateSuggestion] = useState<XpSuggestion | null>(null);
   const [templateEstimating, setTemplateEstimating] = useState(false);
@@ -708,6 +709,33 @@ export default function SoloApp() {
     } else setToast(t("quest.failedZero"));
   };
 
+  const retryQuest = async (quest: Quest) => {
+    if (!ensureWritable()) return;
+    const stamp = new Date().toISOString();
+    const previousStart = new Date(quest.date).getTime();
+    const previousDeadline = quest.deadline ? new Date(quest.deadline).getTime() : Number.NaN;
+    const windowMs = Number.isFinite(previousStart) && Number.isFinite(previousDeadline) && previousDeadline > previousStart
+      ? previousDeadline - previousStart
+      : 60 * 60 * 1_000;
+    const retry: Quest = {
+      ...quest,
+      id: crypto.randomUUID(),
+      seriesId: quest.seriesId ?? quest.id,
+      date: stamp,
+      deadline: new Date(new Date(stamp).getTime() + windowMs).toISOString(),
+      note: undefined,
+      status: "active",
+      archivedFromStatus: undefined,
+      completedAt: undefined,
+      createdAt: stamp,
+      updatedAt: stamp,
+    };
+    const saved = await runQuestMutation({ action: "create", quest: retry });
+    if (!saved) return;
+    if (shouldAnimate()) setMotionCue({ key: `retry:${retry.id}`, kind: "create", questId: retry.id });
+    setToast(t("quest.retryCreated"));
+  };
+
   const undoQuest = (quest: Quest) => {
     if (quest.type === "Boss") {
       void runQuestMutation({ action: "undo_boss_clear", bossQuestId: quest.id }).then(saved => {
@@ -728,6 +756,7 @@ export default function SoloApp() {
   const saveQuest = async () => {
     if (questDraft?.id === TUTORIAL_QUEST_ID) return;
     if (!ensureWritable()) return;
+    if (questSaving) return;
     if (!questDraft?.title.trim()) { setToast(t("quest.enterName")); return; }
     if (!questDraft.attributeId || !questDraft.skillId) { setToast(t("quest.choosePath")); return; }
     const storedDate = toStoredDateTime(questDraft.date);
@@ -744,13 +773,18 @@ export default function SoloApp() {
       xp: keepChosenXp ? Math.max(0, Number(questDraft.xp) || 0) : 0,
       xpSource: keepChosenXp ? questDraft.xpSource : undefined,
     };
-    const saved = await runQuestMutation({ action: exists ? "update" : "create", quest: updated });
-    if (!saved) return;
-    if (!exists && shouldAnimate()) {
-      setMotionCue({ key: `create:${updated.id}`, kind: "create", questId: updated.id });
+    setQuestSaving(true);
+    try {
+      const saved = await runQuestMutation({ action: exists ? "update" : "create", quest: updated });
+      if (!saved) return;
+      if (!exists && shouldAnimate()) {
+        setMotionCue({ key: `create:${updated.id}`, kind: "create", questId: updated.id });
+      }
+      setQuestDraft(null);
+      setToast(exists ? t("quest.updated") : t("quest.created"));
+    } finally {
+      setQuestSaving(false);
     }
-    setQuestDraft(null);
-    setToast(exists ? t("quest.updated") : t("quest.created"));
   };
 
   const updateQuestDraft = (next: Quest) => {
@@ -1445,6 +1479,7 @@ export default function SoloApp() {
           <button className="complete" onClick={() => completeQuest(quest)} aria-label={t("quest.completeLabel", { name: quest.title })}>✓</button>
           <button onClick={() => failQuest(quest)} aria-label={t("quest.failLabel", { name: quest.title })}>×</button>
         </>}
+        {quest.status === "failed" && <button className="retry-link" onClick={() => void retryQuest(quest)}>{t("quest.retry")}</button>}
         {quest.status === "completed" && <button onClick={() => undoQuest(quest)}>{t("common.undo")}</button>}
         <button className={quest.note ? "has-note" : ""} onClick={() => openQuestNote(quest)} aria-label={t("quest.noteEditLabel", { name: quest.title })} title={t("quest.note")}>{compact ? "✎" : t("quest.note")}</button>
         {!compact && <>
@@ -1711,6 +1746,7 @@ export default function SoloApp() {
   const currentXpFingerprint = questDraft ? estimateFingerprint(questDraft, language) : "";
   const estimateLocked = !!questDraft && lastEstimatedRevision === questDraftRevision && lastEstimatedFingerprint === currentXpFingerprint;
   const currentXpSuggestion = lastEstimatedFingerprint === currentXpFingerprint ? xpSuggestion : null;
+  const editingQuest = !!questDraft && state.quests.some(quest => quest.id === questDraft.id);
 
   return <div className={`app-shell ${state.settings.animations ? "" : "reduce-motion"} ${readOnly ? "read-only" : ""}`}>
     {readOnly && <div className={`sync-banner ${syncMode}`}><span>{t("sync.banner")} <strong>READ-ONLY</strong></span><button onClick={() => setBootstrapAttempt(attempt => attempt + 1)}>{t("sync.retry")}</button></div>}
@@ -1771,9 +1807,9 @@ export default function SoloApp() {
         <footer><button onClick={() => setTemplateDraft(null)}>{t("common.cancel")}</button><button className="primary" onClick={saveTemplateDraft}>{t("template.saveChanges")}</button></footer>
       </section>
     </div>}
-    {questDraft && <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && setQuestDraft(null)}>
-      <section className="modal quest-modal" role="dialog" aria-modal="true" aria-label={t("editor.label")}>
-        <header><div><p>{t("editor.mission")}</p><h2>{state.quests.some(q => q.id === questDraft.id) ? t("editor.edit") : t("editor.create")}</h2></div><button onClick={() => setQuestDraft(null)} aria-label={t("common.close")}>×</button></header>
+    {questDraft && <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && !questSaving && setQuestDraft(null)}>
+      <section aria-busy={questSaving} className={`modal quest-modal ${questSaving ? "is-saving" : ""}`} role="dialog" aria-modal="true" aria-label={t("editor.label")}>
+        <header><div><p>{t("editor.mission")}</p><h2>{editingQuest ? t("editor.edit") : t("editor.create")}</h2></div><button disabled={questSaving} onClick={() => setQuestDraft(null)} aria-label={t("common.close")}>×</button></header>
         {questDraft.id === TUTORIAL_QUEST_ID && <div className="tutorial-editor-banner"><strong>{t("tutorial.editorPreview")}</strong><span>{t("tutorial.editorPreviewText")}</span></div>}
         <div className="form-grid">
           <div className="quest-basics-group" data-tour="quest-basics">
@@ -1804,7 +1840,7 @@ export default function SoloApp() {
           <Field label={t("editor.condition")} tour="quest-completion" wide><input value={questDraft.completionConditions} onChange={e => updateQuestDraft({ ...questDraft, completionConditions: e.target.value })} placeholder={t("editor.conditionPlaceholder")} /></Field>
           {(questDraft.type === "Mandatory" || questDraft.type === "Correction") && <Field label={t("editor.consequence")} wide><textarea value={questDraft.failureConsequence} onChange={e => updateQuestDraft({ ...questDraft, failureConsequence: e.target.value })} placeholder={t("editor.consequencePlaceholder")} /></Field>}
         </div>
-        <footer><button onClick={() => setQuestDraft(null)}>{t("common.cancel")}</button><button className="primary" data-tour="quest-activate" onClick={() => void saveQuest()}>{t("editor.activate")}</button></footer>
+        <footer><button disabled={questSaving} onClick={() => setQuestDraft(null)}>{t("common.cancel")}</button><button className={`primary save-quest-button ${questSaving ? "saving" : ""}`} data-tour="quest-activate" disabled={questSaving} onClick={() => void saveQuest()}>{questSaving ? (editingQuest ? t("editor.savingChanges") : t("editor.activating")) : editingQuest ? t("editor.saveChanges") : t("editor.activate")}</button></footer>
       </section>
     </div>}
     {questDraft && xpSuggestion && xpArgument && <div className="modal-backdrop argument-backdrop" onMouseDown={e => e.target === e.currentTarget && setXpArgument(null)}>
