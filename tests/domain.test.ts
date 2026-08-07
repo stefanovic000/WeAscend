@@ -7,6 +7,27 @@ import { authenticateRequest, authenticateRequestAllowUnverified } from "../serv
 import { buildAuthEmail, buildCustomActionUrl } from "../server/authEmail.ts";
 import { toLocalDateTimeValue, toStoredDateTime } from "../app/dateTime.ts";
 import { detectBossStepLanguage, parseBossStepPlan } from "../app/bossStepPlanner.ts";
+import { PLAN_LIMITS, resolvePlan } from "../app/plan.ts";
+
+test("plans expose the agreed monthly AI allowances", () => {
+  assert.deepEqual(PLAN_LIMITS.free, { xpEstimates: 15, xpArguments: 15, bossPlans: 1 });
+  assert.deepEqual(PLAN_LIMITS.premium, { xpEstimates: 150, xpArguments: 100, bossPlans: 10 });
+});
+
+test("closed beta grants Premium without trusting client state", () => {
+  const plan = resolvePlan(null, { betaPremium: true, limitsEnforced: false });
+  assert.equal(plan.name, "premium");
+  assert.equal(plan.source, "beta_grant");
+  assert.equal(plan.complimentary, true);
+  assert.equal(plan.limitsEnforced, false);
+});
+
+test("free access remains a complete, named plan outside beta", () => {
+  const plan = resolvePlan(null, { betaPremium: false, limitsEnforced: false });
+  assert.equal(plan.name, "free");
+  assert.equal(plan.source, "free");
+  assert.deepEqual(plan.limits, PLAN_LIMITS.free);
+});
 
 test("initial state is completely empty at level 1 with zero XP", () => {
   const state = makeInitialState();

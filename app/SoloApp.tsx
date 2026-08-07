@@ -13,6 +13,7 @@ import { getAccountAuthMethod, getFirebaseIdToken, reauthenticateForAccountDelet
 import { translate, type Language, type TranslationKey } from "./i18n";
 import type { XpSuggestion } from "./xpAdvisor";
 import type { BossStepSuggestion } from "./bossStepPlanner";
+import { FREE_PLAN, type PlanOverview } from "./plan";
 
 type View = "dashboard" | "quests" | "growth" | "bosses" | "history" | "settings";
 type SyncMode = "starting" | "online" | "syncing" | "offline" | "local";
@@ -21,6 +22,7 @@ type CloudStateResponse = {
   revision: number;
   updatedAt?: string | null;
   user?: { id: string; email: string; name: string; emailVerified: boolean };
+  plan?: PlanOverview;
   code?: string;
 };
 type GeneratedBossStep = BossStepSuggestion & { id: string; selected: boolean };
@@ -137,6 +139,7 @@ export default function SoloApp() {
   const [syncMode, setSyncMode] = useState<SyncMode>("starting");
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
   const [cloudUser, setCloudUser] = useState<{ id: string; email: string; name: string; emailVerified: boolean } | null>(null);
+  const [planOverview, setPlanOverview] = useState<PlanOverview>(FREE_PLAN);
   const [authRequired, setAuthRequired] = useState(false);
   const [view, setView] = useState<View>("dashboard");
   const [questDraft, setQuestDraft] = useState<Quest | null>(null);
@@ -251,6 +254,7 @@ export default function SoloApp() {
         if (response.status === 503 && cloud.code === "cloud_not_configured") {
           hydratedRef.current = true;
           setCloudUser(cloud.user ?? null);
+          setPlanOverview(cloud.plan ?? FREE_PLAN);
           setMode("local");
           setState(local);
           return;
@@ -259,6 +263,7 @@ export default function SoloApp() {
 
         setAuthRequired(false);
         setCloudUser(cloud.user ?? null);
+        setPlanOverview(cloud.plan ?? FREE_PLAN);
         revisionRef.current = cloud.revision;
         let selected = cloud.state && isValidCloudState(cloud.state) ? cloud.state : null;
 
@@ -508,6 +513,7 @@ export default function SoloApp() {
       await signOutOfWeAscend().catch(() => undefined);
       setConfirmAction(null);
       setCloudUser(null);
+      setPlanOverview(FREE_PLAN);
       setState(null);
       setSyncMode("offline");
       setAuthRequired(true);
@@ -1527,13 +1533,19 @@ export default function SoloApp() {
     return <div className="screen dashboard-screen">
       <section className="hero" data-tour="dashboard-next">
         <div className="hero-copy">
-          <p className="system-label"><span /> {syncMode === "online"
-            ? t("sync.online")
-            : syncMode === "syncing"
-              ? t("sync.syncing")
-              : syncMode === "offline"
-                ? t("sync.offline")
-                : t("sync.local")}</p>
+          <div className="hero-status-row">
+            <p className="system-label"><span /> {syncMode === "online"
+              ? t("sync.online")
+              : syncMode === "syncing"
+                ? t("sync.syncing")
+                : syncMode === "offline"
+                  ? t("sync.offline")
+                  : t("sync.local")}</p>
+            <button className={`plan-badge ${planOverview.name}`} onClick={() => setView("settings")} title={t("plan.openDetails")}>
+              <i aria-hidden="true">{planOverview.name === "premium" ? "✦" : "◇"}</i>
+              {planOverview.name === "premium" ? t("plan.premium") : t("plan.free")}
+            </button>
+          </div>
           <p className="kicker">{t("dashboard.directive")}</p>
           <h1>{t("dashboard.question1")}<br /><em>{t("dashboard.question2")}</em></h1>
           <p>{t("dashboard.subtitle")}</p>
@@ -1761,9 +1773,23 @@ export default function SoloApp() {
         hydratedRef.current = false;
         setState(null);
         setCloudUser(null);
+        setPlanOverview(FREE_PLAN);
         setAuthRequired(true);
         setSyncMode("offline");
       })}>{t("settings.signOut")}</button>}</div></section>
+      <section className={`settings-card plan-card ${planOverview.name}`}>
+        <header><i>✦</i><div><h2>{t("plan.title")}</h2><p>{t("plan.subtitle")}</p></div></header>
+        <div className="plan-summary">
+          <div><span>{t("plan.current")}</span><strong>{planOverview.name === "premium" ? t("plan.premium") : t("plan.free")}</strong></div>
+          {planOverview.complimentary && <b>{t("plan.complimentary")}</b>}
+        </div>
+        <div className="plan-allowances">
+          <div><strong>{planOverview.limits.xpEstimates}</strong><span>{t("plan.xpEstimates")}</span><small>{t("plan.perMonth")}</small></div>
+          <div><strong>{planOverview.limits.xpArguments}</strong><span>{t("plan.arguments")}</span><small>{t("plan.perMonth")}</small></div>
+          <div><strong>{planOverview.limits.bossPlans}</strong><span>{t("plan.bossPlans")}</span><small>{t("plan.perMonth")}</small></div>
+        </div>
+        {!planOverview.limitsEnforced && <p className="plan-beta-note"><span>●</span>{t("plan.betaNote")}</p>}
+      </section>
       <section className="settings-card"><header><i>ƒ</i><div><h2>{t("settings.formula")}</h2><p>{t("settings.formulaText")}</p></div></header><div className="settings-row"><Field label={t("settings.baseXp")}><input type="number" min="1" value={state.settings.baseXp} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, baseXp: Math.max(1, Number(e.target.value)) } }))} /></Field><Field label={t("settings.growth")}><input type="number" min="0" value={state.settings.levelGrowth} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, levelGrowth: Math.max(0, Number(e.target.value)) } }))} /></Field></div></section>
       <section className="settings-card"><header><i>R</i><div><h2>{t("settings.ranks")}</h2><p>{t("settings.ranksText")}</p></div></header><div className="rank-settings">{state.settings.ranks.map((rank, index) => <Field label={`${rank.name}-Rank`} key={rank.name}><input type="number" min="1" value={rank.minLevel} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, ranks: s.settings.ranks.map((r, i) => i === index ? { ...r, minLevel: Math.max(1, Number(e.target.value)) } : r) } }))} /></Field>)}</div></section>
       <section className="settings-card"><header><i>◈</i><div><h2>{t("settings.rules")}</h2><p>{t("settings.rulesText")}</p></div></header><label className="toggle-row"><div><strong>{t("settings.manualXp")}</strong><span>{t("settings.manualXpText")}</span></div><input type="checkbox" checked={state.settings.manualXpOverride === true} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, manualXpOverride: e.target.checked } }))} /></label><label className="toggle-row"><div><strong>{t("settings.animations")}</strong><span>{t("settings.animationsText")}</span></div><input type="checkbox" checked={state.settings.animations} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, animations: e.target.checked } }))} /></label><label className="toggle-row"><div><strong>{t("settings.spellcheck")}</strong><span>{t("settings.spellcheckText")}</span></div><input type="checkbox" checked={state.settings.spellcheck !== false} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, spellcheck: e.target.checked } }))} /></label></section>

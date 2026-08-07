@@ -1,5 +1,6 @@
 import type { Collection, Db, MongoClient } from "mongodb";
 import type { AppState } from "../app/domain";
+import type { PlanName, PlanSource } from "../app/plan";
 
 export interface StateDocument {
   userId: string;
@@ -16,6 +17,9 @@ export interface UserDocument {
   language: "en" | "sr";
   role: "user" | "reviewer" | "admin";
   status: "active" | "deleting";
+  plan?: PlanName;
+  planSource?: PlanSource;
+  planExpiresAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }

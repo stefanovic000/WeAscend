@@ -70,6 +70,7 @@ AI_LIMITS_ENABLED=false
 AI_XP_DAILY_LIMIT=20
 AI_BOSS_STEPS_DAILY_LIMIT=5
 AI_COOLDOWN_SECONDS=10
+PREMIUM_BETA_ACCESS=true
 ```
 
 Važno:
@@ -115,8 +116,6 @@ Collections: user_states_v2
 
 Kolekcije korisničkog stanja su indeksirane stabilnim Firebase `userId`-em. `auth_email_usage_v2` čuva samo hashovan rate-limit ključ, vrstu poruke, brojač i vreme; ne čuva adresu, action link ni sadržaj emaila i automatski ističe nakon 48 sati. Stara owner-only kolekcija `user_states` je trajno obrisana 5. avgusta 2026. Nova verzija ne pokušava migraciju starih podataka i svaki Firebase nalog dobija zasebno, prazno stanje.
 
-Dok nova verzija nije objavljena, trenutni live build je i dalje legacy build. Nemoj unositi nove podatke na live adresi pre multi-user objave: stari build bi mogao ponovo napraviti `user_states`. Neposredno pre buduće objave proveri i po potrebi ponovo obriši samo tu legacy kolekciju.
-
 ## Sync i privatnost između korisnika
 
 - Svaki server-side upit koristi UID iz verifikovanog tokena.
@@ -148,6 +147,15 @@ AI_LIMITS_ENABLED=false
 ```
 
 Kada se uključi, sistem podržava odvojeni dnevni limit za XP procene i Boss korake, kao i cooldown između zahteva. Autentifikacija, veličina zahteva i server-side zaštita API ključa ostaju aktivni bez obzira na ovaj flag.
+
+## Planovi tokom zatvorene bete
+
+- **WeAscend Free** je kompletan osnovni plan i uključuje 15 XP procena, 15 XP žalbi i 1 AI Boss plan mesečno.
+- **Premium** uključuje 150 XP procena, 100 XP žalbi i 10 AI Boss planova mesečno.
+- `PREMIUM_BETA_ACCESS=true` daje svim prijavljenim testerima besplatan Premium pristup bez naplate.
+- `AI_LIMITS_ENABLED=false` znači da su kvote tokom testiranja prikazane radi transparentnosti, ali se još ne primenjuju.
+- Plan se određuje na serveru i ne ulazi u lokalni AppState ili JSON backup, pa ga klijent ne može sam promeniti.
+- Billing, upgrade dugmad i paywall još nisu aktivni. Personal AI Memory, Smart Daily Plan i Weekly Ascension Report ostaju za kasnije faze.
 
 ## Offline režim
 

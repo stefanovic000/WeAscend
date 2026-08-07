@@ -1,6 +1,7 @@
 import { normalizeCloudState } from "../../domain";
 import { authenticateRequest, type AuthenticatedUser } from "../../../server/auth";
 import { withCollections } from "../../../server/mongo";
+import { publicPlanForUser } from "../../../server/planAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -46,12 +47,14 @@ export async function GET(request: Request) {
         },
         { upsert: true },
       );
+      const profile = await users.findOne({ userId: user.id });
       const document = await states.findOne({ userId: user.id });
       return json({
         state: normalizeCloudState(document?.state),
         revision: document?.revision ?? 0,
         updatedAt: document?.updatedAt?.toISOString() ?? null,
         user: publicUser(user),
+        plan: publicPlanForUser(profile),
       });
     });
   } catch (error) {
