@@ -165,7 +165,7 @@ Kada internet ili cloud nisu dostupni:
 - Brisanje questa uklanja njegov sadržaj i belešku, ali već legitimno zarađena transakcija ostaje kao anoniman istorijski zapis.
 - Skill ili atribut bez istorije briše se potpuno; onaj sa istorijskim XP-em radi soft-delete da bi ledger ostao tačan.
 - Archive sklanja quest iz podrazumevanog prikaza bez brisanja sadržaja ili XP-a.
-- Recurring quest i template rutina prave zasebnu instancu po datumu.
+- Quest Templates prave zasebnu instancu po datumu; obično ponavljanje se podešava samo kroz Templates da ne bi postojala dva konkurentna sistema.
 - Boss priprema zarađuje sopstveni XP; Boss Clear nagrada ostaje odvojena.
 
 ## Play Store priprema
@@ -214,7 +214,7 @@ Uradi hard refresh, potpuno zatvori instaliranu PWA i ponovo je pokreni. Brisanj
 
 ## Testovi
 
-Automatski testovi proveravaju prazno početno stanje, XP formulu, rank pragove, dupli XP, undo, recurring/template logiku, Boss pokušaje, cloud validaciju i Firebase granicu između neprijavljenog, nepotvrđenog i dva različita potvrđena korisnika.
+Automatski testovi proveravaju prazno početno stanje, XP formulu, rank pragove, dupli XP, undo, template logiku, Boss pokušaje, cloud validaciju i Firebase granicu između neprijavljenog, nepotvrđenog i dva različita potvrđena korisnika.
 
 Pre produkcije obavezno pokreni:
 

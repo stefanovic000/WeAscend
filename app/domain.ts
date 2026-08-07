@@ -621,30 +621,6 @@ export function canAwardQuest(questId: string, transactions: XpTransaction[]) {
   return !transactions.some(tx => tx.questId === questId && !tx.reversedAt);
 }
 
-export function nextRecurringInstance(quest: Quest, now = new Date()): Quest | null {
-  if (quest.recurrence === "none") return null;
-  const previous = new Date(quest.date);
-  const next = new Date(previous);
-  next.setDate(next.getDate() + (quest.recurrence === "daily" ? 1 : 7));
-  const delta = next.getTime() - previous.getTime();
-  const deadline = quest.deadline ? new Date(new Date(quest.deadline).getTime() + delta).toISOString() : "";
-  const stamp = now.toISOString();
-  return {
-    ...quest,
-    id: crypto.randomUUID(),
-    seriesId: quest.seriesId ?? quest.id,
-    date: next.toISOString(),
-    deadline,
-    note: undefined,
-    xpArgumentReason: undefined,
-    status: "active",
-    archivedFromStatus: undefined,
-    completedAt: undefined,
-    createdAt: stamp,
-    updatedAt: stamp,
-  };
-}
-
 export function isValidBackup(value: unknown): value is AppState {
   if (!value || typeof value !== "object") return false;
   const x = value as Partial<AppState>;

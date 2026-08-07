@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { History as HistoryIcon, LayoutDashboard, ListChecks, Settings as SettingsIcon, Shield, TrendingUp, type LucideIcon } from "lucide-react";
 import AuthGate from "./AuthGate";
 import OnboardingTutorial from "./OnboardingTutorial";
-import { activeXp, addTemplateQuestForDate, allowedXpForCategory, canAwardQuest, deleteAttributeFromState, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, materializeRoutineInstances, nextRecurringInstance, progressFromXp, questTemplateFromQuest, rankForLevel, type AppState, type Quest, type QuestMutation, type QuestTemplate, type QuestType, type XpTransaction } from "./domain";
+import { activeXp, addTemplateQuestForDate, allowedXpForCategory, canAwardQuest, deleteAttributeFromState, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, materializeRoutineInstances, progressFromXp, questTemplateFromQuest, rankForLevel, type AppState, type Quest, type QuestMutation, type QuestTemplate, type QuestType, type XpTransaction } from "./domain";
 import { toLocalDateTimeValue, toStoredDateTime } from "./dateTime";
 import { clearLegacyState, clearState, loadState, saveState } from "./db";
 import { getFirebaseIdToken, signOutOfWeAscend, waitForIdentity } from "./firebaseAuth";
@@ -669,7 +669,6 @@ export default function SoloApp() {
       id: crypto.randomUUID(), questId: quest.id, amount: quest.xp, kind: "quest" as const,
       attributeId: quest.attributeId, skillId: quest.skillId, createdAt: stamp,
     } : null;
-    const next = nextRecurringInstance(quest);
     const nextTransactions = transaction ? [...state.transactions, transaction] : state.transactions;
     const after = progressFromXp(activeXp(nextTransactions), state.settings);
     const newRank = rankForLevel(after.level, state.settings.ranks);
@@ -683,7 +682,7 @@ export default function SoloApp() {
     }
     updateState(s => ({
       ...s,
-      quests: [...s.quests.map(q => q.id === quest.id ? { ...q, status: "completed" as const, completedAt: stamp, updatedAt: stamp } : q), ...(next ? [next] : [])],
+      quests: s.quests.map(q => q.id === quest.id ? { ...q, status: "completed" as const, completedAt: stamp, updatedAt: stamp } : q),
       transactions: nextTransactions,
       levelEvents: [
         ...s.levelEvents,
@@ -1793,7 +1792,6 @@ export default function SoloApp() {
               ? <input type="number" min="0" value={questDraft.xp} onChange={e => { setQuestDraft({ ...questDraft, xp: Math.max(0, Number(e.target.value) || 0), xpSource: "manual", xpArgumentReason: undefined }); setXpSuggestion(null); setXpArgument(null); setXpAiOffline(false); }} />
               : <div className="xp-score-display"><strong>{questDraft.xp} XP</strong><span>{questDraft.xpSource === "ai" ? "AI" : questDraft.xpSource === "argument" ? "AI APPEAL" : questDraft.xpSource === "legacy" ? "EXISTING" : "AI PENDING"}</span></div>}
           </Field>
-          <Field label={t("editor.recurrence")}><select value={questDraft.recurrence} onChange={e => updateQuestDraft({ ...questDraft, recurrence: e.target.value as Quest["recurrence"] })}><option value="none">{t("editor.none")}</option><option value="daily">{t("editor.daily")}</option><option value="weekly">{t("editor.weekly")}</option></select></Field>
           <div className="xp-advisor field wide" data-tour="quest-xp">
             <div><span>{t("ai.optional")}</span><strong>{t("ai.title")}</strong><p>{t("ai.text")}</p></div>
             {xpAiOffline

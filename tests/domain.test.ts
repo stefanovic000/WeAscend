@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activeXp, addTemplateQuestForDate, applyQuestMutation, calculateQuestXp, canAwardQuest, defaultSettings, deleteAttributeFromState, deleteQuestFromState, isValidCloudState, isValidQuest, makeInitialState, materializeRoutineInstances, nextRecurringInstance, normalizeCloudState, progressFromXp, questTemplateFromQuest, rankForLevel, type Quest, type QuestTemplate, type XpTransaction } from "../app/domain.ts";
+import { activeXp, addTemplateQuestForDate, applyQuestMutation, calculateQuestXp, canAwardQuest, defaultSettings, deleteAttributeFromState, deleteQuestFromState, isValidCloudState, isValidQuest, makeInitialState, materializeRoutineInstances, normalizeCloudState, progressFromXp, questTemplateFromQuest, rankForLevel, type Quest, type QuestTemplate, type XpTransaction } from "../app/domain.ts";
 import { translate } from "../app/i18n.ts";
 import { applyBossPreparationFloor, parseXpSuggestion } from "../app/xpAdvisor.ts";
 import { authenticateRequest, authenticateRequestAllowUnverified } from "../server/auth.ts";
@@ -94,20 +94,6 @@ test("deleting an unused attribute removes it and its unused skills completely",
 
   assert.deepEqual(next.attributes, []);
   assert.deepEqual(next.skills, []);
-});
-
-test("recurring quest preserves its AI reward without copying its note or appeal reason", () => {
-  const quest: Quest = { id: "q1", title: "Daily", description: "", note: "Review chapter 3", type: "Daily", attributeId: "a", skillId: "s", xp: 30, xpCategory: "growth", focusMinutes: 30, outputBonus: 0, xpSource: "argument", xpArgumentReason: "This was unusually demanding.", date: "2026-07-23T10:00:00.000Z", deadline: "2026-07-23T12:00:00.000Z", recurrence: "daily", difficulty: "Normal", completionConditions: "", failureConsequence: "", status: "completed", createdAt: "2026-07-23", updatedAt: "2026-07-23" };
-  const next = nextRecurringInstance(quest, new Date("2026-07-23T13:00:00.000Z"));
-  assert.ok(next);
-  assert.notEqual(next.id, quest.id);
-  assert.equal(next.seriesId, quest.id);
-  assert.equal(next.date, "2026-07-24T10:00:00.000Z");
-  assert.equal(next.status, "active");
-  assert.equal(next.note, undefined);
-  assert.equal(next.xp, 30);
-  assert.equal(next.xpSource, "argument");
-  assert.equal(next.xpArgumentReason, undefined);
 });
 
 test("quest templates omit private notes and create at most one independent instance per day", () => {
