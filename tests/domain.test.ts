@@ -225,21 +225,24 @@ test("server quest mutations change only the targeted quest and preserve XP hist
   assert.equal(deleted.state.transactions.length, 1);
 });
 
-test("retrying a failed quest preserves the failed record and creates a separate active attempt", () => {
+test("retrying a failed quest restores the same quest without creating a copy", () => {
   const state = makeInitialState();
   state.attributes = [{ id: "a", name: "Strength", color: "#866bff", createdAt: "now", updatedAt: "now" }];
   state.skills = [{ id: "s", attributeId: "a", name: "Gym", createdAt: "now", updatedAt: "now" }];
   const failed: Quest = { id: "failed", title: "Training", description: "", type: "Side", attributeId: "a", skillId: "s", xp: 20, date: "2026-08-01T10:00:00.000Z", deadline: "2026-08-01T11:00:00.000Z", recurrence: "none", difficulty: "Normal", completionConditions: "Finish", failureConsequence: "", status: "failed", createdAt: "old", updatedAt: "old" };
   state.quests = [failed];
-  const retry: Quest = { ...failed, id: "retry", seriesId: failed.id, status: "active", date: "2026-08-02T10:00:00.000Z", deadline: "2026-08-02T11:00:00.000Z", createdAt: "new", updatedAt: "new" };
+  const retry: Quest = { ...failed, status: "active", updatedAt: "new" };
 
-  const result = applyQuestMutation(state, { action: "create", quest: retry }, "server-time");
+  const result = applyQuestMutation(state, { action: "update", quest: retry }, "server-time");
 
   assert.equal(result.ok, true);
   if (!result.ok) return;
-  assert.equal(result.state.quests.find(quest => quest.id === "failed")?.status, "failed");
-  assert.equal(result.state.quests.find(quest => quest.id === "retry")?.status, "active");
-  assert.equal(result.state.quests.find(quest => quest.id === "retry")?.seriesId, "failed");
+  assert.equal(result.state.quests.length, 1);
+  assert.equal(result.state.quests[0]?.id, "failed");
+  assert.equal(result.state.quests[0]?.status, "active");
+  assert.equal(result.state.quests[0]?.date, failed.date);
+  assert.equal(result.state.quests[0]?.deadline, failed.deadline);
+  assert.equal(result.state.quests[0]?.createdAt, failed.createdAt);
 });
 
 test("generated Boss preparation steps are created atomically and reject duplicates", () => {

@@ -750,25 +750,14 @@ export default function SoloApp() {
   const retryQuest = async (quest: Quest) => {
     if (!ensureWritable()) return;
     const stamp = new Date().toISOString();
-    const previousStart = new Date(quest.date).getTime();
-    const previousDeadline = quest.deadline ? new Date(quest.deadline).getTime() : Number.NaN;
-    const windowMs = Number.isFinite(previousStart) && Number.isFinite(previousDeadline) && previousDeadline > previousStart
-      ? previousDeadline - previousStart
-      : 60 * 60 * 1_000;
     const retry: Quest = {
       ...quest,
-      id: crypto.randomUUID(),
-      seriesId: quest.seriesId ?? quest.id,
-      date: stamp,
-      deadline: new Date(new Date(stamp).getTime() + windowMs).toISOString(),
-      note: undefined,
       status: "active",
       archivedFromStatus: undefined,
       completedAt: undefined,
-      createdAt: stamp,
       updatedAt: stamp,
     };
-    const saved = await runQuestMutation({ action: "create", quest: retry });
+    const saved = await runQuestMutation({ action: "update", quest: retry });
     if (!saved) return;
     if (shouldAnimate()) setMotionCue({ key: `retry:${retry.id}`, kind: "create", questId: retry.id });
     setToast(t("quest.retryCreated"));
