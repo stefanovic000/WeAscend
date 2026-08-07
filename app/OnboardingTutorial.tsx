@@ -1,13 +1,25 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { translate, type Language, type TranslationKey } from "./i18n";
 
-const steps: { icon: string; title: TranslationKey; text: TranslationKey }[] = [
-  { icon: "W", title: "tutorial.welcomeTitle", text: "tutorial.welcomeText" },
-  { icon: "⌁", title: "tutorial.structureTitle", text: "tutorial.structureText" },
-  { icon: "✦", title: "tutorial.questTitle", text: "tutorial.questText" },
-  { icon: "+XP", title: "tutorial.progressTitle", text: "tutorial.progressText" },
-  { icon: "⬡", title: "tutorial.bossTitle", text: "tutorial.bossText" },
+type TourStep = { title: TranslationKey; text: TranslationKey; target: string };
+type TargetRect = { top: number; left: number; width: number; height: number };
+
+const steps: TourStep[] = [
+  { title: "tutorial.welcomeTitle", text: "tutorial.welcomeText", target: "[data-tour='dashboard-next']" },
+  { title: "tutorial.attributeTitle", text: "tutorial.attributeText", target: "[data-tour='growth-add-attribute']" },
+  { title: "tutorial.skillTitle", text: "tutorial.skillText", target: "[data-tour='growth-grid']" },
+  { title: "tutorial.plannerTitle", text: "tutorial.plannerText", target: "[data-tour='quest-planner']" },
+  { title: "tutorial.addQuestTitle", text: "tutorial.addQuestText", target: "[data-tour='quest-add']" },
+  { title: "tutorial.questBasicsTitle", text: "tutorial.questBasicsText", target: "[data-tour='quest-basics']" },
+  { title: "tutorial.questPathTitle", text: "tutorial.questPathText", target: "[data-tour='quest-path']" },
+  { title: "tutorial.xpTitle", text: "tutorial.xpText", target: "[data-tour='quest-xp']" },
+  { title: "tutorial.completionTitle", text: "tutorial.completionText", target: "[data-tour='quest-completion']" },
+  { title: "tutorial.activateTitle", text: "tutorial.activateText", target: "[data-tour='quest-activate']" },
+  { title: "tutorial.bossTitle", text: "tutorial.bossText", target: "[data-tour='bosses']" },
+  { title: "tutorial.historyTitle", text: "tutorial.historyText", target: "[data-tour='history']" },
+  { title: "tutorial.replayTitle", text: "tutorial.replayText", target: "[data-tour='tutorial-replay']" },
 ];
 
 export default function OnboardingTutorial({
@@ -22,29 +34,79 @@ export default function OnboardingTutorial({
   onFinish: () => void;
 }) {
   const t = (key: TranslationKey, variables?: Record<string, string | number>) => translate(language, key, variables);
-  const current = steps[Math.min(Math.max(step, 0), steps.length - 1)];
-  const isLast = step === steps.length - 1;
+  const safeStep = Math.min(Math.max(step, 0), steps.length - 1);
+  const current = steps[safeStep];
+  const isLast = safeStep === steps.length - 1;
+  const [targetRect, setTargetRect] = useState<TargetRect | null>(null);
 
-  return <div className="modal-backdrop tutorial-backdrop">
-    <section aria-labelledby="tutorial-title" aria-modal="true" className="modal tutorial-modal" role="dialog">
-      <header>
-        <p>{t("tutorial.eyebrow")}</p>
-        <button aria-label={t("common.close")} onClick={onFinish} type="button">×</button>
-      </header>
-      <div className="tutorial-track" aria-hidden="true">
-        {steps.map((_, index) => <i className={index <= step ? "active" : ""} key={index} />)}
-      </div>
-      <div className="tutorial-body">
-        <div className="tutorial-icon"><span>{current.icon}</span></div>
-        <small>{t("tutorial.step", { current: step + 1, total: steps.length })}</small>
-        <h2 id="tutorial-title">{t(current.title)}</h2>
-        <p>{t(current.text)}</p>
-      </div>
+  useEffect(() => {
+    let frame = 0;
+    let timer = 0;
+    let observer: ResizeObserver | null = null;
+    let target: HTMLElement | null = null;
+    const measure = () => {
+      if (!target?.isConnected) target = document.querySelector<HTMLElement>(current.target);
+      if (!target) {
+        setTargetRect(null);
+        return;
+      }
+      const rect = target.getBoundingClientRect();
+      setTargetRect({ top: rect.top, left: rect.left, width: rect.width, height: rect.height });
+    };
+    const scheduleMeasure = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(measure);
+    };
+    timer = window.setTimeout(() => {
+      target = document.querySelector<HTMLElement>(current.target);
+      target?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+      scheduleMeasure();
+      if (target) {
+        observer = new ResizeObserver(scheduleMeasure);
+        observer.observe(target);
+      }
+    }, 100);
+    window.addEventListener("resize", scheduleMeasure);
+    window.addEventListener("scroll", scheduleMeasure, true);
+    return () => {
+      window.clearTimeout(timer);
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", scheduleMeasure);
+      window.removeEventListener("scroll", scheduleMeasure, true);
+      observer?.disconnect();
+    };
+  }, [current.target]);
+
+  const viewportWidth = typeof window === "undefined" ? 1024 : window.innerWidth;
+  const viewportHeight = typeof window === "undefined" ? 768 : window.innerHeight;
+  const padding = 7;
+  const spotlight = targetRect ? {
+    top: Math.max(6, targetRect.top - padding),
+    left: Math.max(6, targetRect.left - padding),
+    width: Math.min(viewportWidth - 12, targetRect.width + padding * 2),
+    height: Math.min(viewportHeight - 12, targetRect.height + padding * 2),
+  } : null;
+  const coachWidth = Math.min(370, viewportWidth - 24);
+  const coachLeft = targetRect
+    ? Math.min(Math.max(targetRect.left, 12), viewportWidth - coachWidth - 12)
+    : Math.max(12, (viewportWidth - coachWidth) / 2);
+  const placeAbove = !!targetRect && targetRect.top > viewportHeight * .55;
+  const coachStyle = targetRect
+    ? { left: coachLeft, top: placeAbove ? Math.max(12, targetRect.top - 14) : Math.min(viewportHeight - 12, targetRect.top + targetRect.height + 14), transform: placeAbove ? "translateY(-100%)" : undefined, width: coachWidth }
+    : { left: coachLeft, top: "50%", transform: "translateY(-50%)", width: coachWidth };
+
+  return <div className={`tour-layer ${spotlight ? "has-target" : ""}`}>
+    <div className="tour-blocker" />
+    {spotlight && <div aria-hidden="true" className="tour-spotlight" style={spotlight} />}
+    <section aria-labelledby="tutorial-title" aria-live="polite" className="tour-coachmark" role="dialog" style={coachStyle}>
+      <div className="tour-progress"><span>{t("tutorial.step", { current: safeStep + 1, total: steps.length })}</span><i><b style={{ width: `${(safeStep + 1) / steps.length * 100}%` }} /></i></div>
+      <h2 id="tutorial-title">{t(current.title)}</h2>
+      <p>{t(current.text)}</p>
       <footer>
-        <button className="tutorial-skip" onClick={onFinish} type="button">{t("tutorial.skip")}</button>
+        <button className="tour-skip" onClick={onFinish} type="button">{t("tutorial.skip")}</button>
         <div>
-          {step > 0 && <button onClick={() => onStepChange(step - 1)} type="button">{t("tutorial.back")}</button>}
-          <button autoFocus className="primary" onClick={() => isLast ? onFinish() : onStepChange(step + 1)} type="button">{isLast ? t("tutorial.finish") : t("tutorial.next")}</button>
+          {safeStep > 0 && <button onClick={() => onStepChange(safeStep - 1)} type="button">{t("tutorial.back")}</button>}
+          <button autoFocus className="primary" onClick={() => isLast ? onFinish() : onStepChange(safeStep + 1)} type="button">{isLast ? t("tutorial.finish") : t("tutorial.next")}</button>
         </div>
       </footer>
     </section>

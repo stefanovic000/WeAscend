@@ -7,7 +7,7 @@ Produkcija: [WeAscend](https://weascend.wesystemlabs.com)
 ## Osnovno ponašanje
 
 - Novi nalog počinje potpuno prazan: Level 1, 0 XP, bez atributa, skillova i questova.
-- Kratak vodič se automatski prikazuje jednom po nalogu, sinhronizuje završetak i može ponovo da se pokrene iz Settings.
+- Vođeni spotlight tutorijal se automatski prikazuje jednom po nalogu: prelazi kroz Dashboard, Attributes & Skills, kalendar, pravljenje questa, AI XP, Bosses i History, dok jasno ističe kontrolu o kojoj govori. Probni quest se nikada ne čuva, a tutorijal može ponovo da se pokrene iz Settings.
 - Firebase Authentication podržava Google i email/password prijavu.
 - Email/password nalog mora potvrditi email pre pristupa podacima.
 - MongoDB je jedini cloud izvor istine; IndexedDB je cache odvojen po Firebase UID-u.

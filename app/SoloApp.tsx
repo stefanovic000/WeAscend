@@ -93,6 +93,7 @@ const templateEstimateFingerprint = (template: QuestTemplate) => JSON.stringify(
 const dayKey = (value: string | Date) => new Date(value).toLocaleDateString("sv-SE");
 const today = dayKey(new Date());
 const LANGUAGE_EVENT = "wesolo-language-change";
+const TUTORIAL_QUEST_ID = "weascend-tutorial-preview-quest";
 const subscribeLanguage = (onStoreChange: () => void) => {
   window.addEventListener("storage", onStoreChange);
   window.addEventListener(LANGUAGE_EVENT, onStoreChange);
@@ -104,8 +105,8 @@ const subscribeLanguage = (onStoreChange: () => void) => {
 const getLanguageSnapshot = (): Language => localStorage.getItem("wesolo-language") === "sr" ? "sr" : "en";
 const getServerLanguageSnapshot = (): Language => "en";
 
-function Field({ label, children, wide = false }: { label: string; children: React.ReactNode; wide?: boolean }) {
-  return <label className={`field ${wide ? "wide" : ""}`}><span>{label}</span>{children}</label>;
+function Field({ label, children, wide = false, tour }: { label: string; children: React.ReactNode; wide?: boolean; tour?: string }) {
+  return <label className={`field ${wide ? "wide" : ""}`} data-tour={tour}><span>{label}</span>{children}</label>;
 }
 
 function Empty({ title, text }: { title: string; text: string }) {
@@ -455,11 +456,41 @@ export default function SoloApp() {
     return true;
   };
 
+  const openTutorialQuest = () => {
+    const draft = blankQuest(state);
+    openQuestEditor({
+      ...draft,
+      id: TUTORIAL_QUEST_ID,
+      title: t("tutorial.exampleQuestTitle"),
+      description: t("tutorial.exampleQuestDescription"),
+      completionConditions: t("tutorial.exampleQuestCondition"),
+    });
+  };
+
+  const goToTutorialStep = (nextStep: number) => {
+    const next = Math.max(0, Math.min(12, nextStep));
+    const editorStep = next >= 5 && next <= 9;
+    setTutorialStep(next);
+    setTemplateDraft(null);
+    setStepPlanner(null);
+    if (!editorStep && questDraft?.id === TUTORIAL_QUEST_ID) setQuestDraft(null);
+    if (next === 0) setView("dashboard");
+    else if (next <= 2) setView("growth");
+    else if (next <= 4) setView("quests");
+    else if (editorStep) {
+      setView("quests");
+      if (questDraft?.id !== TUTORIAL_QUEST_ID) openTutorialQuest();
+    } else if (next === 10) setView("bosses");
+    else if (next === 11) setView("history");
+    else setView("settings");
+  };
+
   const finishTutorial = () => {
     if (state.settings.tutorialCompleted !== true) {
       const saved = updateState(current => ({ ...current, settings: { ...current.settings, tutorialCompleted: true } }));
       if (!saved) return;
     }
+    if (questDraft?.id === TUTORIAL_QUEST_ID) setQuestDraft(null);
     setTutorialStep(null);
   };
 
@@ -696,6 +727,7 @@ export default function SoloApp() {
   };
 
   const saveQuest = async () => {
+    if (questDraft?.id === TUTORIAL_QUEST_ID) return;
     if (!ensureWritable()) return;
     if (!questDraft?.title.trim()) { setToast(t("quest.enterName")); return; }
     if (!questDraft.attributeId || !questDraft.skillId) { setToast(t("quest.choosePath")); return; }
@@ -1431,7 +1463,7 @@ export default function SoloApp() {
   const Dashboard = () => {
     const recent = [...state.transactions].filter(tx => !tx.reversedAt).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 4);
     return <div className="screen dashboard-screen">
-      <section className="hero">
+      <section className="hero" data-tour="dashboard-next">
         <div className="hero-copy">
           <p className="system-label"><span /> {syncMode === "online"
             ? t("sync.online")
@@ -1494,8 +1526,8 @@ export default function SoloApp() {
     const selectedLabel = new Intl.DateTimeFormat(locale, { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date(`${selectedDate}T12:00:00`));
     const monthLabel = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(monthDate);
     return <div className="screen">
-    <header className="screen-header"><div><p>{t("planner.control")}</p><h1>{t("planner.title")}</h1><span>{t("planner.summary", { active: activeQuests.length, cleared: state.quests.filter(q => q.status === "completed").length })}</span></div><button className="primary" onClick={() => beginQuestOnDate(selectedDate)}>{t("planner.planQuest")}</button></header>
-    <section className="planner">
+    <header className="screen-header"><div><p>{t("planner.control")}</p><h1>{t("planner.title")}</h1><span>{t("planner.summary", { active: activeQuests.length, cleared: state.quests.filter(q => q.status === "completed").length })}</span></div><button className="primary" data-tour="quest-add" onClick={() => beginQuestOnDate(selectedDate)}>{t("planner.planQuest")}</button></header>
+    <section className="planner" data-tour="quest-planner">
       <header className="planner-header">
         <div><p>{t("planner.calendar")}</p><h2>{monthLabel}</h2></div>
         <div className="calendar-controls"><button onClick={() => shiftCalendarMonth(-1)} aria-label={t("planner.previousMonth")}>←</button><button onClick={() => { setSelectedDate(today); setCalendarMonth(`${today.slice(0, 7)}-01`); setShowAllDates(false); }}>{t("planner.today")}</button><button onClick={() => shiftCalendarMonth(1)} aria-label={t("planner.nextMonth")}>→</button></div>
@@ -1565,8 +1597,8 @@ export default function SoloApp() {
   };
 
   const Growth = () => <div className="screen">
-    <header className="screen-header"><div><p>{t("growth.matrix")}</p><h1>{t("growth.title")}</h1><span>{t("growth.subtitle")}</span></div><button className="primary" onClick={addAttribute}>{t("growth.addAttribute")}</button></header>
-    <div className="attribute-grid">{availableAttributes.length === 0 && <Empty title={t("growth.empty")} text={t("growth.emptyText")} />}{availableAttributes.map(attr => {
+    <header className="screen-header"><div><p>{t("growth.matrix")}</p><h1>{t("growth.title")}</h1><span>{t("growth.subtitle")}</span></div><button className="primary" data-tour="growth-add-attribute" onClick={addAttribute}>{t("growth.addAttribute")}</button></header>
+    <div className="attribute-grid" data-tour="growth-grid">{availableAttributes.length === 0 && <Empty title={t("growth.empty")} text={t("growth.emptyText")} />}{availableAttributes.map(attr => {
       const skills = state.skills.filter(s => s.attributeId === attr.id && !s.deletedAt);
       const txs = state.transactions.filter(tx => tx.attributeId === attr.id && !tx.reversedAt);
       const xp = activeXp(txs);
@@ -1592,7 +1624,7 @@ export default function SoloApp() {
       openQuestEditor(quest);
     };
     return <div className="screen">
-      <header className="screen-header"><div><p>{t("boss.gate")}</p><h1>{t("boss.title")}</h1><span>{t("boss.subtitle")}</span></div><button className="primary" onClick={beginBossQuest}>{t("boss.add")}</button></header>
+      <header className="screen-header" data-tour="bosses"><div><p>{t("boss.gate")}</p><h1>{t("boss.title")}</h1><span>{t("boss.subtitle")}</span></div><button className="primary" onClick={beginBossQuest}>{t("boss.add")}</button></header>
       <div className="boss-grid">{bossQuests.length === 0 && <Empty title={t("boss.empty")} text={t("boss.emptyText")} />}{bossQuests.map(boss => {
         const steps = state.quests
           .filter(quest => quest.parentQuestId === boss.id)
@@ -1644,7 +1676,7 @@ export default function SoloApp() {
     const byAttribute = state.attributes.map(attr => ({ ...attr, xp: activeXp(state.transactions.filter(tx => tx.attributeId === attr.id)) }));
     return <div className="screen">
       <header className="screen-header"><div><p>{t("history.chronicle")}</p><h1>{t("history.title")}</h1><span>{t("history.subtitle")}</span></div></header>
-      <div className="stats-top"><div><span>{t("history.totalXp")}</span><strong>{metrics.xp}</strong></div><div><span>{t("history.thisWeek")}</span><strong>{activeXp(state.transactions.filter(tx => Date.now() - new Date(tx.createdAt).getTime() < 7 * 86400000))}</strong></div><div><span>{t("history.clearRate")}</span><strong>{state.quests.length ? Math.round(state.quests.filter(q => q.status === "completed").length / state.quests.length * 100) : 0}%</strong></div><div><span>{t("history.currentRank")}</span><strong>{metrics.rank}</strong></div></div>
+      <div className="stats-top" data-tour="history"><div><span>{t("history.totalXp")}</span><strong>{metrics.xp}</strong></div><div><span>{t("history.thisWeek")}</span><strong>{activeXp(state.transactions.filter(tx => Date.now() - new Date(tx.createdAt).getTime() < 7 * 86400000))}</strong></div><div><span>{t("history.clearRate")}</span><strong>{state.quests.length ? Math.round(state.quests.filter(q => q.status === "completed").length / state.quests.length * 100) : 0}%</strong></div><div><span>{t("history.currentRank")}</span><strong>{metrics.rank}</strong></div></div>
       <div className="history-grid">
         <section className="panel chart-panel"><div className="section-title"><div><p>{t("history.last14")}</p><h2>{t("history.activity")}</h2></div></div><div className="bar-chart">{dayValues.map((value, i) => <div key={dayKey(days[i])}><i style={{ height: `${Math.max(4, value / maxDay * 100)}%` }} title={`${value} XP`} /><span>{i % 2 ? "" : days[i].getDate()}</span></div>)}</div></section>
         <section className="panel distribution"><div className="section-title"><div><p>{t("history.allocation")}</p><h2>{t("history.byAttribute")}</h2></div></div>{byAttribute.map(attr => <div className="dist-row" key={attr.id}><div><span><i style={{ background: attr.color }} />{attr.name}</span><strong>{attr.xp} XP</strong></div><div><i style={{ width: `${metrics.xp ? attr.xp / metrics.xp * 100 : 0}%`, background: attr.color }} /></div></div>)}</section>
@@ -1659,7 +1691,7 @@ export default function SoloApp() {
     <header className="screen-header"><div><p>{t("settings.configuration")}</p><h1>{t("settings.title")}</h1><span>{t("settings.subtitle")}</span></div></header>
     <div className="settings-grid">
       <section className="settings-card language-card"><header><i>文</i><div><h2>{t("settings.language")}</h2><p>{t("settings.languageText")}</p></div></header><div className="language-switch" role="group" aria-label={t("settings.language")}><button className={language === "en" ? "active" : ""} onClick={() => chooseLanguage("en")}>{t("settings.english")}</button><button className={language === "sr" ? "active" : ""} onClick={() => chooseLanguage("sr")}>{t("settings.serbian")}</button></div></section>
-      <section className="settings-card tutorial-settings-card"><header><i>?</i><div><h2>{t("settings.tutorial")}</h2><p>{t("settings.tutorialText")}</p></div></header><button className="primary" onClick={() => setTutorialStep(0)}>{t("settings.tutorialAction")}</button></section>
+      <section className="settings-card tutorial-settings-card" data-tour="tutorial-replay"><header><i>?</i><div><h2>{t("settings.tutorial")}</h2><p>{t("settings.tutorialText")}</p></div></header><button className="primary" onClick={() => goToTutorialStep(0)}>{t("settings.tutorialAction")}</button></section>
       <section className="settings-card cloud-card"><header><i>↻</i><div><h2>{t("settings.cloud")}</h2><p>{t("settings.cloudText")}</p></div></header><div className="cloud-status-row"><span className={`sync-dot ${syncMode}`} /><div><strong>{syncMode === "online" ? t("settings.synced") : syncMode === "syncing" ? t("settings.saving") : syncMode === "offline" ? t("settings.disconnected") : t("settings.notConnected")}</strong><small>{cloudUser?.email ?? (syncMode === "local" ? t("settings.localMode") : "WeAscend Cloud")}</small></div>{cloudUser && <button onClick={() => void signOutOfWeAscend().then(() => {
         currentUserIdRef.current = "";
         hydratedRef.current = false;
@@ -1708,7 +1740,7 @@ export default function SoloApp() {
       const label = t(item.labelKey);
       return <button aria-current={view === item.id ? "page" : undefined} aria-label={label} key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><i aria-hidden="true"><Icon size={19} strokeWidth={1.9} /></i><span>{label}</span></button>;
     })}</nav>
-    {(tutorialStep !== null || (syncMode === "online" && state.settings.tutorialCompleted !== true)) && <OnboardingTutorial language={language} step={tutorialStep ?? 0} onStepChange={setTutorialStep} onFinish={finishTutorial} />}
+    {(tutorialStep !== null || (syncMode === "online" && state.settings.tutorialCompleted !== true)) && <OnboardingTutorial language={language} step={tutorialStep ?? 0} onStepChange={goToTutorialStep} onFinish={finishTutorial} />}
     {templateDraft && <div className="modal-backdrop" onMouseDown={event => event.target === event.currentTarget && setTemplateDraft(null)}>
       <section className="modal quest-modal template-modal" role="dialog" aria-modal="true" aria-label={t("template.editTitle")}>
         <header><div><p>{t("template.eyebrow")}</p><h2>{t("template.editTitle")}</h2><span>{t("template.futureOnly")}</span></div><button onClick={() => setTemplateDraft(null)} aria-label={t("common.close")}>×</button></header>
@@ -1744,11 +1776,11 @@ export default function SoloApp() {
       <section className="modal quest-modal" role="dialog" aria-modal="true" aria-label={t("editor.label")}>
         <header><div><p>{t("editor.mission")}</p><h2>{state.quests.some(q => q.id === questDraft.id) ? t("editor.edit") : t("editor.create")}</h2></div><button onClick={() => setQuestDraft(null)} aria-label={t("common.close")}>×</button></header>
         <div className="form-grid">
-          <Field label={t("editor.name")} wide><input autoFocus value={questDraft.title} onChange={e => updateQuestDraft({ ...questDraft, title: e.target.value })} placeholder={t("editor.namePlaceholder")} /></Field>
+          <Field label={t("editor.name")} tour="quest-basics" wide><input autoFocus value={questDraft.title} onChange={e => updateQuestDraft({ ...questDraft, title: e.target.value })} placeholder={t("editor.namePlaceholder")} /></Field>
           <Field label={t("editor.description")} wide><textarea value={questDraft.description} onChange={e => updateQuestDraft({ ...questDraft, description: e.target.value })} placeholder={t("editor.descriptionPlaceholder")} /></Field>
           <Field label={t("editor.type")}><select value={questDraft.type} onChange={e => changeQuestType(e.target.value as QuestType)}>{state.settings.questTypes.map(type => <option key={type} value={type}>{t(`type.${type}` as TranslationKey)}</option>)}</select></Field>
           <Field label={t("editor.difficulty")}><select value={questDraft.difficulty} onChange={e => updateQuestDraft({ ...questDraft, difficulty: e.target.value as Quest["difficulty"] })}>{(["Easy", "Normal", "Hard", "Extreme"] as const).map(difficulty => <option key={difficulty} value={difficulty}>{t(`difficulty.${difficulty}` as TranslationKey)}</option>)}</select></Field>
-          <Field label={t("editor.attribute")}><select value={questDraft.attributeId} onChange={e => { const id = e.target.value; updateQuestDraft({ ...questDraft, attributeId: id, skillId: state.skills.find(s => s.attributeId === id && !s.deletedAt)?.id ?? "" }); }}>{availableAttributes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}{questDraft.attributeId && !availableAttributes.some(a => a.id === questDraft.attributeId) && <option value={questDraft.attributeId}>{attrName(questDraft.attributeId)} ({t("status.archived")})</option>}</select></Field>
+          <Field label={t("editor.attribute")} tour="quest-path"><select value={questDraft.attributeId} onChange={e => { const id = e.target.value; updateQuestDraft({ ...questDraft, attributeId: id, skillId: state.skills.find(s => s.attributeId === id && !s.deletedAt)?.id ?? "" }); }}>{availableAttributes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}{questDraft.attributeId && !availableAttributes.some(a => a.id === questDraft.attributeId) && <option value={questDraft.attributeId}>{attrName(questDraft.attributeId)} ({t("status.archived")})</option>}</select></Field>
           <Field label={t("editor.skill")}><select value={questDraft.skillId} onChange={e => updateQuestDraft({ ...questDraft, skillId: e.target.value })}>{state.skills.filter(s => s.attributeId === questDraft.attributeId && (!s.deletedAt || s.id === questDraft.skillId)).map(s => <option key={s.id} value={s.id}>{s.name}{s.deletedAt ? ` (${t("quest.deletedSkill")})` : ""}</option>)}</select></Field>
           {questDraft.type !== "Boss" && openBossQuests.length > 0 && <Field label={t("editor.preparationFor")} wide><select value={questDraft.parentQuestId ?? ""} onChange={e => updateQuestDraft({ ...questDraft, parentQuestId: e.target.value || undefined, stepOrder: e.target.value ? (questDraft.stepOrder ?? state.quests.filter(quest => quest.parentQuestId === e.target.value).length) : undefined })}><option value="">{t("editor.independentQuest")}</option>{openBossQuests.map(boss => <option key={boss.id} value={boss.id}>{boss.title}</option>)}</select><small>{t("editor.preparationForText")}</small></Field>}
           <Field label={state.settings.manualXpOverride ? t("editor.manualReward") : t("editor.calculatedReward")}>
@@ -1757,7 +1789,7 @@ export default function SoloApp() {
               : <div className="xp-score-display"><strong>{questDraft.xp} XP</strong><span>{questDraft.xpSource === "ai" ? "AI" : questDraft.xpSource === "argument" ? "AI APPEAL" : questDraft.xpSource === "legacy" ? "EXISTING" : "AI PENDING"}</span></div>}
           </Field>
           <Field label={t("editor.recurrence")}><select value={questDraft.recurrence} onChange={e => updateQuestDraft({ ...questDraft, recurrence: e.target.value as Quest["recurrence"] })}><option value="none">{t("editor.none")}</option><option value="daily">{t("editor.daily")}</option><option value="weekly">{t("editor.weekly")}</option></select></Field>
-          <div className="xp-advisor field wide">
+          <div className="xp-advisor field wide" data-tour="quest-xp">
             <div><span>{t("ai.optional")}</span><strong>{t("ai.title")}</strong><p>{t("ai.text")}</p></div>
             {xpAiOffline
               ? <div className="ai-offline"><strong>{t("ai.offline")}</strong><span>{t("ai.offlineText")}</span></div>
@@ -1766,10 +1798,10 @@ export default function SoloApp() {
           </div>
           <Field label={t("editor.date")}><input type="datetime-local" required value={questDraft.date} onChange={e => updateQuestDraft({ ...questDraft, date: e.target.value })} /></Field>
           <Field label={t("editor.deadline")}><input type="datetime-local" value={questDraft.deadline} onChange={e => updateQuestDraft({ ...questDraft, deadline: e.target.value })} /></Field>
-          <Field label={t("editor.condition")} wide><input value={questDraft.completionConditions} onChange={e => updateQuestDraft({ ...questDraft, completionConditions: e.target.value })} placeholder={t("editor.conditionPlaceholder")} /></Field>
+          <Field label={t("editor.condition")} tour="quest-completion" wide><input value={questDraft.completionConditions} onChange={e => updateQuestDraft({ ...questDraft, completionConditions: e.target.value })} placeholder={t("editor.conditionPlaceholder")} /></Field>
           {(questDraft.type === "Mandatory" || questDraft.type === "Correction") && <Field label={t("editor.consequence")} wide><textarea value={questDraft.failureConsequence} onChange={e => updateQuestDraft({ ...questDraft, failureConsequence: e.target.value })} placeholder={t("editor.consequencePlaceholder")} /></Field>}
         </div>
-        <footer><button onClick={() => setQuestDraft(null)}>{t("common.cancel")}</button><button className="primary" onClick={() => void saveQuest()}>{t("editor.activate")}</button></footer>
+        <footer><button onClick={() => setQuestDraft(null)}>{t("common.cancel")}</button><button className="primary" data-tour="quest-activate" onClick={() => void saveQuest()}>{t("editor.activate")}</button></footer>
       </section>
     </div>}
     {questDraft && xpSuggestion && xpArgument && <div className="modal-backdrop argument-backdrop" onMouseDown={e => e.target === e.currentTarget && setXpArgument(null)}>

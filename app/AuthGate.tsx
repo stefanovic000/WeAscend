@@ -131,7 +131,6 @@ export default function AuthGate({ language, onAuthenticated }: { language: Lang
     let lostFocus = false;
     let leftPage = document.visibilityState === "hidden";
     let releaseTimer: number | undefined;
-    let fallbackTimer: number | undefined;
 
     const release = () => {
       if (googleAttemptRef.current === attempt) setGoogleBusy(false);
@@ -160,7 +159,7 @@ export default function AuthGate({ language, onAuthenticated }: { language: Lang
     window.addEventListener("blur", onBlur);
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibilityChange);
-    fallbackTimer = window.setTimeout(() => {
+    const fallbackTimer = window.setTimeout(() => {
       release();
       cleanup();
     }, 5_000);
