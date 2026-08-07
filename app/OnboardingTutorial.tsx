@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { translate, type Language, type TranslationKey } from "./i18n";
 
-type TourStep = { title: TranslationKey; text: TranslationKey; target: string };
+type TourStep = { title: TranslationKey; text: TranslationKey; target: string; interactive?: boolean };
 type TargetRect = { top: number; left: number; width: number; height: number };
 
 const steps: TourStep[] = [
@@ -12,10 +12,10 @@ const steps: TourStep[] = [
   { title: "tutorial.skillTitle", text: "tutorial.skillText", target: "[data-tour='growth-grid']" },
   { title: "tutorial.plannerTitle", text: "tutorial.plannerText", target: "[data-tour='quest-planner']" },
   { title: "tutorial.addQuestTitle", text: "tutorial.addQuestText", target: "[data-tour='quest-add']" },
-  { title: "tutorial.questBasicsTitle", text: "tutorial.questBasicsText", target: "[data-tour='quest-basics']" },
-  { title: "tutorial.questPathTitle", text: "tutorial.questPathText", target: "[data-tour='quest-path']" },
-  { title: "tutorial.xpTitle", text: "tutorial.xpText", target: "[data-tour='quest-xp']" },
-  { title: "tutorial.completionTitle", text: "tutorial.completionText", target: "[data-tour='quest-completion']" },
+  { title: "tutorial.questBasicsTitle", text: "tutorial.questBasicsText", target: "[data-tour='quest-basics']", interactive: true },
+  { title: "tutorial.questPathTitle", text: "tutorial.questPathText", target: "[data-tour='quest-path']", interactive: true },
+  { title: "tutorial.xpTitle", text: "tutorial.xpText", target: "[data-tour='quest-xp']", interactive: true },
+  { title: "tutorial.completionTitle", text: "tutorial.completionText", target: "[data-tour='quest-completion']", interactive: true },
   { title: "tutorial.activateTitle", text: "tutorial.activateText", target: "[data-tour='quest-activate']" },
   { title: "tutorial.bossTitle", text: "tutorial.bossText", target: "[data-tour='bosses']" },
   { title: "tutorial.historyTitle", text: "tutorial.historyText", target: "[data-tour='history']" },
@@ -95,13 +95,21 @@ export default function OnboardingTutorial({
     ? { left: coachLeft, top: placeAbove ? Math.max(12, targetRect.top - 14) : Math.min(viewportHeight - 12, targetRect.top + targetRect.height + 14), transform: placeAbove ? "translateY(-100%)" : undefined, width: coachWidth }
     : { left: coachLeft, top: "50%", transform: "translateY(-50%)", width: coachWidth };
 
-  return <div className={`tour-layer ${spotlight ? "has-target" : ""}`}>
-    <div className="tour-blocker" />
+  return <div className={`tour-layer ${spotlight ? "has-target" : ""} ${current.interactive ? "interactive" : ""}`}>
+    {spotlight && current.interactive
+      ? <>
+        <div className="tour-shade" style={{ inset: `0 0 auto 0`, height: spotlight.top }} />
+        <div className="tour-shade" style={{ top: spotlight.top, left: 0, width: spotlight.left, height: spotlight.height }} />
+        <div className="tour-shade" style={{ top: spotlight.top, left: spotlight.left + spotlight.width, right: 0, height: spotlight.height }} />
+        <div className="tour-shade" style={{ top: spotlight.top + spotlight.height, right: 0, bottom: 0, left: 0 }} />
+      </>
+      : <div className="tour-blocker" />}
     {spotlight && <div aria-hidden="true" className="tour-spotlight" style={spotlight} />}
     <section aria-labelledby="tutorial-title" aria-live="polite" className="tour-coachmark" role="dialog" style={coachStyle}>
       <div className="tour-progress"><span>{t("tutorial.step", { current: safeStep + 1, total: steps.length })}</span><i><b style={{ width: `${(safeStep + 1) / steps.length * 100}%` }} /></i></div>
       <h2 id="tutorial-title">{t(current.title)}</h2>
       <p>{t(current.text)}</p>
+      {current.interactive && <small className="tour-try">{t("tutorial.tryIt")}</small>}
       <footer>
         <button className="tour-skip" onClick={onFinish} type="button">{t("tutorial.skip")}</button>
         <div>
