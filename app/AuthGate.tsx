@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import type { Language } from "./i18n";
 import { registerWithPassword, requestPasswordReset, signInWithGoogle, signInWithPassword } from "./firebaseAuth";
@@ -86,8 +86,10 @@ export default function AuthGate({ language, onAuthenticated }: { language: Lang
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const googleAttemptRef = useRef(0);
 
   const selectMode = (nextMode: AuthMode) => {
     setMode(nextMode);
@@ -122,6 +124,60 @@ export default function AuthGate({ language, onAuthenticated }: { language: Lang
     } finally {
       setBusy(false);
     }
+  };
+
+  const runGoogle = () => {
+    const attempt = ++googleAttemptRef.current;
+    let lostFocus = false;
+    let leftPage = document.visibilityState === "hidden";
+    let releaseTimer: number | undefined;
+    let fallbackTimer: number | undefined;
+
+    const release = () => {
+      if (googleAttemptRef.current === attempt) setGoogleBusy(false);
+    };
+    const scheduleRelease = () => {
+      if (releaseTimer) window.clearTimeout(releaseTimer);
+      releaseTimer = window.setTimeout(release, 300);
+    };
+    const onBlur = () => { lostFocus = true; };
+    const onFocus = () => { if (lostFocus) scheduleRelease(); };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") leftPage = true;
+      else if (leftPage) scheduleRelease();
+    };
+    const cleanup = () => {
+      if (releaseTimer) window.clearTimeout(releaseTimer);
+      if (fallbackTimer) window.clearTimeout(fallbackTimer);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+
+    setGoogleBusy(true);
+    setError("");
+    setMessage("");
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    fallbackTimer = window.setTimeout(() => {
+      release();
+      cleanup();
+    }, 5_000);
+
+    void (async () => {
+      try {
+        const identity = await signInWithGoogle();
+        if (googleAttemptRef.current === attempt && identity) onAuthenticated();
+      } catch (reason) {
+        if (googleAttemptRef.current !== attempt) return;
+        const code = reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "";
+        setError(errorMessage(code));
+      } finally {
+        cleanup();
+        release();
+      }
+    })();
   };
 
   const submit = (event: React.FormEvent) => {
@@ -159,21 +215,18 @@ export default function AuthGate({ language, onAuthenticated }: { language: Lang
         <button aria-selected={mode === "register"} className={mode === "register" ? "active" : ""} onClick={() => selectMode("register")} role="tab" type="button">{t.registerTab}</button>
       </div>
 
-      <button className="auth-google" disabled={busy} onClick={() => void run(async () => {
-        const identity = await signInWithGoogle();
-        if (identity) onAuthenticated();
-      })}><span>G</span>{mode === "signin" ? t.googleSignin : t.googleRegister}</button>
+      <button className="auth-google" disabled={busy || googleBusy} onClick={runGoogle}><span>G</span>{mode === "signin" ? t.googleSignin : t.googleRegister}</button>
 
       <div className="auth-divider"><span>{t.divider}</span></div>
       <form onSubmit={submit} noValidate>
         <label><span>{t.email}</span><input aria-invalid={Boolean(error) && !/^\S+@\S+\.\S+$/.test(email.trim())} required autoComplete="email" inputMode="email" placeholder={t.emailPlaceholder} type="email" value={email} onChange={event => { setEmail(event.target.value); setError(""); }} /></label>
         <label><span>{t.password}</span><input aria-describedby={mode === "register" ? "password-requirement" : undefined} aria-invalid={Boolean(error) && password.length < 6} required minLength={6} autoComplete={mode === "signin" ? "current-password" : "new-password"} type="password" value={password} onChange={event => { setPassword(event.target.value); setError(""); }} /></label>
         {mode === "register" && <div className="auth-requirements" id="password-requirement"><span className={password.length >= 6 ? "valid" : ""}>✓</span>{t.passwordRequirement}</div>}
-        {mode === "signin" && <button className="auth-link" type="button" disabled={busy || !email.trim()} onClick={() => void run(async () => {
+        {mode === "signin" && <button className="auth-link" type="button" disabled={busy || googleBusy || !email.trim()} onClick={() => void run(async () => {
           await requestPasswordReset(email, language);
           setMessage(t.resetSent);
         })}>{t.forgot}</button>}
-        <button className="primary auth-submit" disabled={busy} type="submit">{mode === "signin" ? t.signin : t.register}</button>
+        <button className="primary auth-submit" disabled={busy || googleBusy} type="submit">{mode === "signin" ? t.signin : t.register}</button>
       </form>
       {mode === "register" && <p className="auth-verification-note">{t.verificationNotice}</p>}
       {message && <p className="auth-message success">{message}</p>}

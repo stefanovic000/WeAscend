@@ -188,6 +188,10 @@ Kada internet ili cloud nisu dostupni:
 
 Proveri svih pet `FIREBASE_*` environment vrednosti i napravi novi deployment. Zatim proveri da li je domen dodat u Firebase Authorized domains.
 
+### Google dugme ostane zaključano posle zatvaranja popup-a
+
+Login ekran otključava Google dugme čim se browser vrati iz popup-a, uz rezervno otključavanje posle pet sekundi. Svaki novi pokušaj poništava zakašnjeli UI rezultat prethodnog pokušaja, pa korisnik može bezbedno pokušati ponovo.
+
 ### Email/password korisnik ne može da uđe
 
 Korisnik mora kliknuti verification link. Nova poruka za potvrdu se šalje pri sledećem pokušaju prijave.
