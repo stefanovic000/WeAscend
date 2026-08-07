@@ -1,6 +1,7 @@
 import { authenticateRequest } from "../../../server/auth";
 import { registerAiRequest } from "../../../server/aiProtection";
 import { detectBossStepLanguage, parseBossStepPlan } from "../../bossStepPlanner";
+import { CONTENT_LIMITS } from "../../domain";
 
 export const dynamic = "force-dynamic";
 
@@ -31,13 +32,13 @@ const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 function normalizeRequest(payload: StepPlanRequest) {
   if (!payload.boss || typeof payload.boss !== "object") return null;
   const boss = payload.boss as Record<string, unknown>;
-  const instruction = clean(payload.instruction, 1_000);
-  const title = clean(boss.title, 180);
+  const instruction = clean(payload.instruction, CONTENT_LIMITS.bossPlannerInstruction);
+  const title = clean(boss.title, CONTENT_LIMITS.questTitle);
   const today = clean(payload.today, 10);
   if (instruction.length < 3 || !title || !DATE_ONLY.test(today)) return null;
 
   const existingTitles = Array.isArray(payload.existingTitles)
-    ? payload.existingTitles.slice(0, 40).map(value => clean(value, 180)).filter(Boolean)
+    ? payload.existingTitles.slice(0, 40).map(value => clean(value, CONTENT_LIMITS.questTitle)).filter(Boolean)
     : [];
   const interfaceLanguage = payload.language === "sr" ? "sr" as const : "en" as const;
 
@@ -48,11 +49,11 @@ function normalizeRequest(payload: StepPlanRequest) {
     existingTitles,
     boss: {
       title,
-      description: clean(boss.description, 1_500),
-      completionConditions: clean(boss.completionConditions, 500),
+      description: clean(boss.description, CONTENT_LIMITS.questDescription),
+      completionConditions: clean(boss.completionConditions, CONTENT_LIMITS.completionConditions),
       deadline: clean(boss.deadline, 100),
-      attribute: clean(boss.attribute, 100),
-      skill: clean(boss.skill, 100),
+      attribute: clean(boss.attribute, CONTENT_LIMITS.attributeName),
+      skill: clean(boss.skill, CONTENT_LIMITS.skillName),
     },
   };
 }

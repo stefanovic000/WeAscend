@@ -1,12 +1,12 @@
 import { authenticateRequest } from "../../../server/auth";
 import { registerAiRequest } from "../../../server/aiProtection";
-import { allowedXpForCategory, type XpCategory } from "../../domain";
+import { allowedXpForCategory, CONTENT_LIMITS, type XpCategory } from "../../domain";
 import { applyBossPreparationFloor, parseXpSuggestion, type XpActivityAssessment } from "../../xpAdvisor";
 
 export const dynamic = "force-dynamic";
 
 const MAX_REQUEST_BYTES = 12_000;
-const MAX_TEXT_LENGTH = 1_500;
+const MAX_TEXT_LENGTH = CONTENT_LIMITS.questDescription;
 const DEFAULT_MODEL = "deepseek-v4-flash";
 const CATEGORIES: XpCategory[] = ["growth", "maintenance", "result", "boss"];
 
@@ -42,7 +42,7 @@ function cleanText(value: unknown, maxLength = MAX_TEXT_LENGTH) {
 }
 
 function normalizeRequest(payload: EstimateRequest) {
-  const title = cleanText(payload.title, 180);
+  const title = cleanText(payload.title, CONTENT_LIMITS.questTitle);
   const xpCategory = CATEGORIES.includes(payload.xpCategory as XpCategory) ? payload.xpCategory as XpCategory : null;
   const mode = payload.mode === "argue" ? "argue" : "estimate";
   if (!title || (mode === "argue" && !xpCategory)) return null;
@@ -60,10 +60,10 @@ function normalizeRequest(payload: EstimateRequest) {
     description: cleanText(payload.description),
     type: cleanText(payload.type, 40),
     difficulty: cleanText(payload.difficulty, 40),
-    attribute: cleanText(payload.attribute, 100),
-    skill: cleanText(payload.skill, 100),
-    parentBoss: cleanText(payload.parentBoss, 180),
-    completionConditions: cleanText(payload.completionConditions, 500),
+    attribute: cleanText(payload.attribute, CONTENT_LIMITS.attributeName),
+    skill: cleanText(payload.skill, CONTENT_LIMITS.skillName),
+    parentBoss: cleanText(payload.parentBoss, CONTENT_LIMITS.questTitle),
+    completionConditions: cleanText(payload.completionConditions, CONTENT_LIMITS.completionConditions),
     language: payload.language === "sr" ? "sr" : "en",
     xpCategory,
     mode,

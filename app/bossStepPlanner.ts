@@ -1,3 +1,5 @@
+import { CONTENT_LIMITS } from "./domain.ts";
+
 const STEP_XP_VALUES = [10, 15, 20, 25, 30] as const;
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const SERBIAN_MARKERS = new Set([
@@ -57,7 +59,7 @@ export function parseBossStepPlan(value: unknown, existingTitles: string[] = [])
   for (const raw of rawSteps) {
     if (!raw || typeof raw !== "object") return null;
     const item = raw as Record<string, unknown>;
-    const title = text(item.title, 180, true);
+    const title = text(item.title, CONTENT_LIMITS.questTitle, true);
     const description = text(item.description, 1_500);
     const completionConditions = text(item.completionConditions, 500, true);
     const date = text(item.date, 10, true);

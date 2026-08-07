@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activeXp, addTemplateQuestForDate, applyQuestMutation, calculateQuestXp, canAwardQuest, defaultSettings, deleteAttributeFromState, deleteQuestFromState, isValidCloudState, isValidQuest, makeInitialState, materializeRoutineInstances, normalizeCloudState, progressFromXp, questTemplateFromQuest, rankForLevel, type Quest, type QuestTemplate, type XpTransaction } from "../app/domain.ts";
+import { activeXp, addTemplateQuestForDate, applyQuestMutation, calculateQuestXp, canAwardQuest, CONTENT_LIMITS, defaultSettings, deleteAttributeFromState, deleteQuestFromState, hasContentLimitViolation, isQuestContentWithinLimits, isValidCloudState, isValidQuest, makeInitialState, materializeRoutineInstances, normalizeCloudState, progressFromXp, questTemplateFromQuest, rankForLevel, type Quest, type QuestTemplate, type XpTransaction } from "../app/domain.ts";
 import { translate } from "../app/i18n.ts";
 import { applyBossPreparationFloor, parseXpSuggestion } from "../app/xpAdvisor.ts";
 import { authenticateRequest, authenticateRequestAllowUnverified } from "../server/auth.ts";
@@ -34,6 +34,31 @@ test("quest storage blocks growth above the plan limit but still allows cleanup"
   assert.equal(exceedsQuestStorage(500, 501, 500), true);
   assert.equal(exceedsQuestStorage(600, 600, 500), false);
   assert.equal(exceedsQuestStorage(600, 550, 500), false);
+});
+
+test("content limits are consistent and preserve unchanged legacy text", () => {
+  assert.deepEqual(CONTENT_LIMITS, {
+    attributeName: 80,
+    skillName: 80,
+    questTitle: 150,
+    questDescription: 3_000,
+    completionConditions: 500,
+    failureConsequence: 1_000,
+    note: 500,
+    xpArgumentReason: 800,
+    bossPlannerInstruction: 1_000,
+  });
+  const quest: Quest = { id: "q", title: "Q", description: "x".repeat(3_000), type: "Side", attributeId: "a", skillId: "s", xp: 0, date: "2026-08-08", deadline: "", recurrence: "none", difficulty: "Normal", completionConditions: "", failureConsequence: "", status: "active", createdAt: "now", updatedAt: "now" };
+  assert.equal(isQuestContentWithinLimits(quest), true);
+  assert.equal(isQuestContentWithinLimits({ ...quest, description: `${quest.description}x` }), false);
+
+  const legacy = makeInitialState();
+  legacy.attributes = [{ id: "a", name: "A", color: "#fff", createdAt: "now", updatedAt: "now" }];
+  legacy.skills = [{ id: "s", attributeId: "a", name: "S", createdAt: "now", updatedAt: "now" }];
+  legacy.quests = [{ ...quest, description: "x".repeat(3_001) }];
+  assert.equal(hasContentLimitViolation(legacy, structuredClone(legacy)), false);
+  assert.equal(hasContentLimitViolation(legacy, { ...legacy, quests: [{ ...legacy.quests[0], description: "y".repeat(3_001) }] }), true);
+  assert.equal(hasContentLimitViolation(legacy, { ...legacy, quests: [{ ...legacy.quests[0], description: "y".repeat(3_000) }] }), false);
 });
 
 test("initial state is completely empty at level 1 with zero XP", () => {

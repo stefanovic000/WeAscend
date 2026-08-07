@@ -26,6 +26,18 @@ export interface Settings {
 }
 export interface Attribute { id: string; name: string; color: string; createdAt: string; updatedAt: string; deletedAt?: string }
 export interface Skill { id: string; attributeId: string; name: string; createdAt: string; updatedAt: string; deletedAt?: string }
+
+export const CONTENT_LIMITS = {
+  attributeName: 80,
+  skillName: 80,
+  questTitle: 150,
+  questDescription: 3_000,
+  completionConditions: 500,
+  failureConsequence: 1_000,
+  note: 500,
+  xpArgumentReason: 800,
+  bossPlannerInstruction: 1_000,
+} as const;
 export interface Quest {
   id: string;
   title: string;
@@ -273,6 +285,46 @@ function boundedString(value: unknown, maxLength: number, required = false) {
   return typeof value === "string" && value.length <= maxLength && (!required || value.trim().length > 0);
 }
 
+export function isQuestContentWithinLimits(quest: Pick<Quest, "title" | "description" | "completionConditions" | "failureConsequence" | "note" | "xpArgumentReason">) {
+  return boundedString(quest.title, CONTENT_LIMITS.questTitle, true) &&
+    boundedString(quest.description, CONTENT_LIMITS.questDescription) &&
+    boundedString(quest.completionConditions, CONTENT_LIMITS.completionConditions) &&
+    boundedString(quest.failureConsequence, CONTENT_LIMITS.failureConsequence) &&
+    (quest.note === undefined || boundedString(quest.note, CONTENT_LIMITS.note)) &&
+    (quest.xpArgumentReason === undefined || boundedString(quest.xpArgumentReason, CONTENT_LIMITS.xpArgumentReason));
+}
+
+function changedBeyondLimit(previous: unknown, next: unknown, limit: number, required = false) {
+  if (boundedString(next, limit, required)) return false;
+  return previous !== next;
+}
+
+export function hasContentLimitViolation(previous: AppState | null, next: AppState) {
+  const previousAttributes = new Map(previous?.attributes.map(item => [item.id, item]));
+  const previousSkills = new Map(previous?.skills.map(item => [item.id, item]));
+  const previousQuests = new Map(previous?.quests.map(item => [item.id, item]));
+  const previousTemplates = new Map((previous?.questTemplates ?? []).map(item => [item.id, item]));
+
+  if (next.attributes.some(item => changedBeyondLimit(previousAttributes.get(item.id)?.name, item.name, CONTENT_LIMITS.attributeName, true))) return true;
+  if (next.skills.some(item => changedBeyondLimit(previousSkills.get(item.id)?.name, item.name, CONTENT_LIMITS.skillName, true))) return true;
+  if (next.quests.some(item => {
+    const old = previousQuests.get(item.id);
+    return changedBeyondLimit(old?.title, item.title, CONTENT_LIMITS.questTitle, true) ||
+      changedBeyondLimit(old?.description, item.description, CONTENT_LIMITS.questDescription) ||
+      changedBeyondLimit(old?.completionConditions, item.completionConditions, CONTENT_LIMITS.completionConditions) ||
+      changedBeyondLimit(old?.failureConsequence, item.failureConsequence, CONTENT_LIMITS.failureConsequence) ||
+      changedBeyondLimit(old?.note, item.note, CONTENT_LIMITS.note) ||
+      changedBeyondLimit(old?.xpArgumentReason, item.xpArgumentReason, CONTENT_LIMITS.xpArgumentReason);
+  })) return true;
+  return (next.questTemplates ?? []).some(item => {
+    const old = previousTemplates.get(item.id);
+    return changedBeyondLimit(old?.title, item.title, CONTENT_LIMITS.questTitle, true) ||
+      changedBeyondLimit(old?.description, item.description, CONTENT_LIMITS.questDescription) ||
+      changedBeyondLimit(old?.completionConditions, item.completionConditions, CONTENT_LIMITS.completionConditions) ||
+      changedBeyondLimit(old?.failureConsequence, item.failureConsequence, CONTENT_LIMITS.failureConsequence);
+  });
+}
+
 export function isValidQuest(value: unknown): value is Quest {
   if (!value || typeof value !== "object") return false;
   const quest = value as Partial<Quest>;
@@ -450,7 +502,7 @@ export function materializeRoutineInstances(state: AppState, date = new Date(), 
 
 export function applyQuestMutation(state: AppState, mutation: QuestMutation, stamp = new Date().toISOString()): QuestMutationResult {
   if (mutation.action === "create_many") {
-    if (mutation.quests.length < 1 || mutation.quests.length > 12 || mutation.quests.some(quest => !isValidQuest(quest))) {
+    if (mutation.quests.length < 1 || mutation.quests.length > 12 || mutation.quests.some(quest => !isValidQuest(quest) || !isQuestContentWithinLimits(quest))) {
       return { ok: false, code: "invalid_quest" };
     }
 
@@ -577,7 +629,7 @@ export function applyQuestMutation(state: AppState, mutation: QuestMutation, sta
     };
   }
 
-  if (!isValidQuest(mutation.quest)) return { ok: false, code: "invalid_quest" };
+  if (!isValidQuest(mutation.quest) || !isQuestContentWithinLimits(mutation.quest)) return { ok: false, code: "invalid_quest" };
   const skill = state.skills.find(item => item.id === mutation.quest.skillId);
   if (!state.attributes.some(item => item.id === mutation.quest.attributeId) || skill?.attributeId !== mutation.quest.attributeId) {
     return { ok: false, code: "invalid_quest" };

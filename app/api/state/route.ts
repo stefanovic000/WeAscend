@@ -1,4 +1,4 @@
-import { normalizeCloudState } from "../../domain";
+import { hasContentLimitViolation, normalizeCloudState } from "../../domain";
 import { authenticateRequest, type AuthenticatedUser } from "../../../server/auth";
 import { withCollections } from "../../../server/mongo";
 import { publicPlanForUser } from "../../../server/planAccess";
@@ -100,7 +100,11 @@ export async function PUT(request: Request) {
       if (current && current.revision !== revision) {
         return json({ code: "revision_conflict", state: normalizeCloudState(current.state), revision: current.revision }, 409);
       }
-      const currentQuestCount = normalizeCloudState(current?.state)?.quests.length ?? 0;
+      const currentState = normalizeCloudState(current?.state);
+      if (hasContentLimitViolation(currentState, normalizedState)) {
+        return json({ code: "content_limit_reached" }, 422);
+      }
+      const currentQuestCount = currentState?.quests.length ?? 0;
       const questLimit = publicPlanForUser(profile).limits.questStorage;
       if (exceedsQuestStorage(currentQuestCount, normalizedState.quests.length, questLimit)) {
         return json({ code: "quest_limit_reached", limit: questLimit }, 422);

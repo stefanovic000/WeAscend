@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Archive, ArchiveRestore, CheckCircle2, CircleX, Clock3, CopyPlus, History as HistoryIcon, LayoutDashboard, ListChecks, NotebookPen, Pencil, Plus, RefreshCcw, RotateCcw, Settings as SettingsIcon, Shield, Trash2, TrendingUp, type LucideIcon } from "lucide-react";
 import AuthGate from "./AuthGate";
 import OnboardingTutorial from "./OnboardingTutorial";
-import { activeXp, addTemplateQuestForDate, allowedXpForCategory, canAwardQuest, deleteAttributeFromState, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, materializeRoutineInstances, progressFromXp, questTemplateFromQuest, rankForLevel, type AppState, type Quest, type QuestMutation, type QuestTemplate, type QuestType, type XpTransaction } from "./domain";
+import { activeXp, addTemplateQuestForDate, allowedXpForCategory, canAwardQuest, CONTENT_LIMITS, deleteAttributeFromState, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, materializeRoutineInstances, progressFromXp, questTemplateFromQuest, rankForLevel, type AppState, type Quest, type QuestMutation, type QuestTemplate, type QuestType, type XpTransaction } from "./domain";
 import { toLocalDateTimeValue, toStoredDateTime } from "./dateTime";
 import { clearLegacyState, clearState, loadState, saveState } from "./db";
 import { getAccountAuthMethod, getFirebaseIdToken, reauthenticateForAccountDeletion, signOutOfWeAscend, waitForIdentity } from "./firebaseAuth";
@@ -379,7 +379,7 @@ export default function SoloApp() {
         setSyncMode("offline");
         return;
       }
-      if (response.status === 422 && result.code === "quest_limit_reached") {
+      if (response.status === 422 && (result.code === "quest_limit_reached" || result.code === "content_limit_reached")) {
         const confirmed = lastSyncedRef.current;
         if (confirmed) {
           const restored: unknown = JSON.parse(confirmed);
@@ -389,7 +389,9 @@ export default function SoloApp() {
             if (currentUserIdRef.current) void saveState(currentUserIdRef.current, restored);
           }
         }
-        setToast(t("quest.limitReached", { limit: result.limit ?? planOverview.limits.questStorage }));
+        setToast(result.code === "content_limit_reached"
+          ? t("content.limitReached")
+          : t("quest.limitReached", { limit: result.limit ?? planOverview.limits.questStorage }));
         syncModeRef.current = "online";
         setSyncMode("online");
         return;
@@ -1108,7 +1110,7 @@ export default function SoloApp() {
       placeholder: t("quest.notePlaceholder"),
       submitLabel: t("quest.noteSave"),
       multiline: true,
-      maxLength: 500,
+      maxLength: CONTENT_LIMITS.note,
       compact: true,
       clearLabel: quest.note ? t("quest.noteClear") : undefined,
       clearAction: quest.note ? () => saveQuestNote(quest.id, "") : undefined,
@@ -1120,7 +1122,7 @@ export default function SoloApp() {
     if (!ensureWritable()) return;
     setInputDialog({
       title: t("attribute.newTitle"), label: t("attribute.name"), value: "", placeholder: t("attribute.placeholder"),
-      submitLabel: t("attribute.create"), required: true,
+      submitLabel: t("attribute.create"), required: true, maxLength: CONTENT_LIMITS.attributeName,
       action: name => {
         const stamp = new Date().toISOString();
         updateState(s => ({ ...s, attributes: [...s.attributes, { id: crypto.randomUUID(), name: name.trim(), color: ["#866bff", "#32d6c5", "#4ea5ff", "#ff6da8"][s.attributes.length % 4], createdAt: stamp, updatedAt: stamp }] }));
@@ -1132,7 +1134,7 @@ export default function SoloApp() {
     if (!ensureWritable()) return;
     setInputDialog({
       title: t("skill.newTitle"), label: t("skill.name"), value: "", placeholder: t("skill.placeholder"),
-      submitLabel: t("skill.create"), required: true,
+      submitLabel: t("skill.create"), required: true, maxLength: CONTENT_LIMITS.skillName,
       action: name => {
         const stamp = new Date().toISOString();
         updateState(s => ({ ...s, skills: [...s.skills, { id: crypto.randomUUID(), attributeId, name: name.trim(), createdAt: stamp, updatedAt: stamp }] }));
@@ -1920,8 +1922,8 @@ export default function SoloApp() {
       <section className="modal quest-modal template-modal" role="dialog" aria-modal="true" aria-label={t("template.editTitle")}>
         <header><div><p>{t("template.eyebrow")}</p><h2>{t("template.editTitle")}</h2><span>{t("template.futureOnly")}</span></div><button onClick={() => setTemplateDraft(null)} aria-label={t("common.close")}>×</button></header>
         <div className="form-grid">
-          <Field label={t("editor.name")} wide><input autoFocus maxLength={500} value={templateDraft.title} onChange={event => updateTemplateDraft({ ...templateDraft, title: event.target.value })} /></Field>
-          <Field label={t("editor.description")} wide><textarea maxLength={10_000} value={templateDraft.description} onChange={event => updateTemplateDraft({ ...templateDraft, description: event.target.value })} /></Field>
+          <Field label={t("editor.name")} wide><input autoFocus maxLength={CONTENT_LIMITS.questTitle} value={templateDraft.title} onChange={event => updateTemplateDraft({ ...templateDraft, title: event.target.value })} /></Field>
+          <Field label={t("editor.description")} wide><textarea maxLength={CONTENT_LIMITS.questDescription} value={templateDraft.description} onChange={event => updateTemplateDraft({ ...templateDraft, description: event.target.value })} /></Field>
           <Field label={t("editor.type")}><select value={templateDraft.type} onChange={event => updateTemplateDraft({ ...templateDraft, type: event.target.value as QuestTemplate["type"] })}>{state.settings.questTypes.filter(type => type !== "Boss").map(type => <option key={type} value={type}>{t(`type.${type}` as TranslationKey)}</option>)}</select></Field>
           <Field label={t("editor.difficulty")}><select value={templateDraft.difficulty} onChange={event => updateTemplateDraft({ ...templateDraft, difficulty: event.target.value as Quest["difficulty"] })}>{(["Easy", "Normal", "Hard", "Extreme"] as const).map(difficulty => <option key={difficulty} value={difficulty}>{t(`difficulty.${difficulty}` as TranslationKey)}</option>)}</select></Field>
           <Field label={t("editor.attribute")}><select value={templateDraft.attributeId} onChange={event => { const attributeId = event.target.value; updateTemplateDraft({ ...templateDraft, attributeId, skillId: availableSkills.find(skill => skill.attributeId === attributeId)?.id ?? "" }); }}>{availableAttributes.map(attribute => <option key={attribute.id} value={attribute.id}>{attribute.name}</option>)}</select></Field>
@@ -1941,8 +1943,8 @@ export default function SoloApp() {
             {templateAiOffline ? <div className="ai-offline"><strong>{t("ai.offline")}</strong><span>{t("ai.offlineText")}</span></div> : <button type="button" onClick={() => void estimateTemplateXp()} disabled={templateEstimating}>{templateEstimating ? t("ai.estimating") : t("template.estimateXp")}</button>}
             {templateSuggestion && <div className="xp-suggestion"><span><b>{templateSuggestion.xp} XP</b><small>{t(`ai.confidence.${templateSuggestion.confidence}` as TranslationKey)}</small></span><p>{templateSuggestion.rationale}</p><button type="button" onClick={applyTemplateSuggestion}>{t("ai.apply")}</button></div>}
           </div>
-          <Field label={t("editor.condition")} wide><input maxLength={10_000} value={templateDraft.completionConditions} onChange={event => updateTemplateDraft({ ...templateDraft, completionConditions: event.target.value })} /></Field>
-          {(templateDraft.type === "Mandatory" || templateDraft.type === "Correction") && <Field label={t("editor.consequence")} wide><textarea maxLength={10_000} value={templateDraft.failureConsequence} onChange={event => updateTemplateDraft({ ...templateDraft, failureConsequence: event.target.value })} /></Field>}
+          <Field label={t("editor.condition")} wide><input maxLength={CONTENT_LIMITS.completionConditions} value={templateDraft.completionConditions} onChange={event => updateTemplateDraft({ ...templateDraft, completionConditions: event.target.value })} /></Field>
+          {(templateDraft.type === "Mandatory" || templateDraft.type === "Correction") && <Field label={t("editor.consequence")} wide><textarea maxLength={CONTENT_LIMITS.failureConsequence} value={templateDraft.failureConsequence} onChange={event => updateTemplateDraft({ ...templateDraft, failureConsequence: event.target.value })} /></Field>}
         </div>
         <footer><button onClick={() => setTemplateDraft(null)}>{t("common.cancel")}</button><button className="primary" onClick={saveTemplateDraft}>{t("template.saveChanges")}</button></footer>
       </section>
@@ -1953,8 +1955,8 @@ export default function SoloApp() {
         {questDraft.id === TUTORIAL_QUEST_ID && <div className="tutorial-editor-banner"><strong>{t("tutorial.editorPreview")}</strong><span>{t("tutorial.editorPreviewText")}</span></div>}
         <div className="form-grid">
           <div className="quest-basics-group" data-tour="quest-basics">
-            <Field label={t("editor.name")} wide><input autoFocus maxLength={500} value={questDraft.title} onChange={e => updateQuestDraft({ ...questDraft, title: e.target.value })} placeholder={t("editor.namePlaceholder")} /></Field>
-            <Field label={t("editor.description")} wide><textarea className="quest-description-input" rows={5} maxLength={10_000} value={questDraft.description} onChange={e => updateQuestDraft({ ...questDraft, description: e.target.value })} placeholder={t("editor.descriptionPlaceholder")} /></Field>
+            <Field label={t("editor.name")} wide><input autoFocus maxLength={CONTENT_LIMITS.questTitle} value={questDraft.title} onChange={e => updateQuestDraft({ ...questDraft, title: e.target.value })} placeholder={t("editor.namePlaceholder")} /></Field>
+            <Field label={t("editor.description")} wide><textarea className="quest-description-input" rows={5} maxLength={CONTENT_LIMITS.questDescription} value={questDraft.description} onChange={e => updateQuestDraft({ ...questDraft, description: e.target.value })} placeholder={t("editor.descriptionPlaceholder")} /></Field>
           </div>
           <Field label={t("editor.type")}><select value={questDraft.type} onChange={e => changeQuestType(e.target.value as QuestType)}>{state.settings.questTypes.map(type => <option key={type} value={type}>{t(`type.${type}` as TranslationKey)}</option>)}</select></Field>
           <Field label={t("editor.difficulty")}><select value={questDraft.difficulty} onChange={e => updateQuestDraft({ ...questDraft, difficulty: e.target.value as Quest["difficulty"] })}>{(["Easy", "Normal", "Hard", "Extreme"] as const).map(difficulty => <option key={difficulty} value={difficulty}>{t(`difficulty.${difficulty}` as TranslationKey)}</option>)}</select></Field>
@@ -1977,8 +1979,8 @@ export default function SoloApp() {
           </div>
           <Field label={t("editor.date")}><input type="datetime-local" required value={questDraft.date} onChange={e => updateQuestDraft({ ...questDraft, date: e.target.value })} /></Field>
           <Field label={t("editor.deadline")}><input type="datetime-local" value={questDraft.deadline} onChange={e => updateQuestDraft({ ...questDraft, deadline: e.target.value })} /></Field>
-          <Field label={t("editor.condition")} tour="quest-completion" wide><input maxLength={10_000} value={questDraft.completionConditions} onChange={e => updateQuestDraft({ ...questDraft, completionConditions: e.target.value })} placeholder={t("editor.conditionPlaceholder")} /></Field>
-          {(questDraft.type === "Mandatory" || questDraft.type === "Correction") && <Field label={t("editor.consequence")} wide><textarea maxLength={10_000} value={questDraft.failureConsequence} onChange={e => updateQuestDraft({ ...questDraft, failureConsequence: e.target.value })} placeholder={t("editor.consequencePlaceholder")} /></Field>}
+          <Field label={t("editor.condition")} tour="quest-completion" wide><input maxLength={CONTENT_LIMITS.completionConditions} value={questDraft.completionConditions} onChange={e => updateQuestDraft({ ...questDraft, completionConditions: e.target.value })} placeholder={t("editor.conditionPlaceholder")} /></Field>
+          {(questDraft.type === "Mandatory" || questDraft.type === "Correction") && <Field label={t("editor.consequence")} wide><textarea maxLength={CONTENT_LIMITS.failureConsequence} value={questDraft.failureConsequence} onChange={e => updateQuestDraft({ ...questDraft, failureConsequence: e.target.value })} placeholder={t("editor.consequencePlaceholder")} /></Field>}
         </div>
         <footer><button disabled={questSaving} onClick={() => setQuestDraft(null)}>{t("common.cancel")}</button><button className={`primary save-quest-button ${questSaving ? "saving" : ""}`} data-tour="quest-activate" disabled={questSaving} onClick={() => void saveQuest()}>{questSaving ? (editingQuest ? t("editor.savingChanges") : t("editor.activating")) : editingQuest ? t("editor.saveChanges") : t("editor.activate")}</button></footer>
       </section>
@@ -1988,7 +1990,7 @@ export default function SoloApp() {
         <header><div><p>{t("ai.optional")}</p><h2>{t("ai.argumentTitle")}</h2></div><button type="button" onClick={() => setXpArgument(null)} aria-label={t("common.close")}>×</button></header>
         <div className="input-modal-body argument-body">
           <Field label={t("ai.argumentRequested")}><select value={xpArgument.requestedXp} onChange={e => setXpArgument({ ...xpArgument, requestedXp: Number(e.target.value) })}>{allowedXpForCategory(xpSuggestion.category).filter(value => value !== xpSuggestion.xp).map(value => <option key={value} value={value}>{value} XP</option>)}</select></Field>
-          <Field label={t("ai.argumentReason")}><textarea autoFocus minLength={10} maxLength={800} value={xpArgument.reason} onChange={e => setXpArgument({ ...xpArgument, reason: e.target.value })} placeholder={t("ai.argumentPlaceholder")} /></Field>
+          <Field label={t("ai.argumentReason")}><textarea autoFocus minLength={10} maxLength={CONTENT_LIMITS.xpArgumentReason} value={xpArgument.reason} onChange={e => setXpArgument({ ...xpArgument, reason: e.target.value })} placeholder={t("ai.argumentPlaceholder")} /></Field>
         </div>
         <footer><button type="button" onClick={() => setXpArgument(null)}>{t("common.cancel")}</button><button className="primary" type="submit" disabled={xpEstimating || xpArgument.reason.trim().length < 10}>{xpEstimating ? t("ai.estimating") : t("ai.submitArgument")}</button></footer>
       </form>
@@ -2007,7 +2009,7 @@ export default function SoloApp() {
           <div className="step-planner-body">
             {stepPlanner.steps.length === 0
               ? <>
-                <Field label={t("boss.generatorInstruction")}><textarea autoFocus rows={5} maxLength={1_000} value={stepPlanner.instruction} onChange={e => setStepPlanner({ ...stepPlanner, instruction: e.target.value, offline: false })} placeholder={t("boss.generatorPlaceholder")} /></Field>
+                <Field label={t("boss.generatorInstruction")}><textarea autoFocus rows={5} maxLength={CONTENT_LIMITS.bossPlannerInstruction} value={stepPlanner.instruction} onChange={e => setStepPlanner({ ...stepPlanner, instruction: e.target.value, offline: false })} placeholder={t("boss.generatorPlaceholder")} /></Field>
                 <p className="step-planner-note">{t("boss.generatorPrivacy")}</p>
                 {stepPlanner.offline && <div className="ai-offline"><strong>{t("ai.offline")}</strong><span>{t("boss.generatorOffline")}</span></div>}
               </>
@@ -2016,9 +2018,9 @@ export default function SoloApp() {
                 <div className="generated-step-list">{stepPlanner.steps.map((step, index) => <article key={step.id} className={step.selected ? "" : "excluded"}>
                   <label className="generated-step-select"><input type="checkbox" checked={step.selected} onChange={e => updateGeneratedBossStep(step.id, { selected: e.target.checked })} /><span>{String(index + 1).padStart(2, "0")}</span></label>
                   <div className="generated-step-fields">
-                    <input aria-label={t("boss.generatedTitle")} maxLength={180} value={step.title} onChange={e => updateGeneratedBossStep(step.id, { title: e.target.value })} />
+                    <input aria-label={t("boss.generatedTitle")} maxLength={CONTENT_LIMITS.questTitle} value={step.title} onChange={e => updateGeneratedBossStep(step.id, { title: e.target.value })} />
                     <textarea aria-label={t("boss.generatedDescription")} rows={2} maxLength={1_500} value={step.description} onChange={e => updateGeneratedBossStep(step.id, { description: e.target.value })} />
-                    <div><input aria-label={t("boss.generatedDate")} type="date" value={step.date} onChange={e => updateGeneratedBossStep(step.id, { date: e.target.value })} /><input aria-label={t("boss.generatedCondition")} maxLength={500} value={step.completionConditions} onChange={e => updateGeneratedBossStep(step.id, { completionConditions: e.target.value })} /></div>
+                    <div><input aria-label={t("boss.generatedDate")} type="date" value={step.date} onChange={e => updateGeneratedBossStep(step.id, { date: e.target.value })} /><input aria-label={t("boss.generatedCondition")} maxLength={CONTENT_LIMITS.completionConditions} value={step.completionConditions} onChange={e => updateGeneratedBossStep(step.id, { completionConditions: e.target.value })} /></div>
                     <small>{step.rationale}</small>
                   </div>
                   <strong>{step.xp} XP</strong>

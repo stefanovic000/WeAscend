@@ -1,4 +1,4 @@
-import { applyQuestMutation, normalizeCloudState, isValidQuest, type QuestMutation } from "../../domain";
+import { applyQuestMutation, normalizeCloudState, isQuestContentWithinLimits, isValidQuest, type QuestMutation } from "../../domain";
 import { authenticateRequest, type AuthenticatedUser } from "../../../server/auth";
 import { withCollections } from "../../../server/mongo";
 import { publicPlanForUser } from "../../../server/planAccess";
@@ -40,7 +40,7 @@ function normalizeCommand(value: unknown): { revision: number; mutation: QuestMu
   if (payload.action === "delete" && typeof payload.questId === "string") {
     return { revision, mutation: { action: "delete", questId: payload.questId } };
   }
-  if ((payload.action === "create" || payload.action === "update") && isValidQuest(payload.quest)) {
+  if ((payload.action === "create" || payload.action === "update") && isValidQuest(payload.quest) && isQuestContentWithinLimits(payload.quest)) {
     return { revision, mutation: { action: payload.action, quest: payload.quest } };
   }
   if (
@@ -48,7 +48,7 @@ function normalizeCommand(value: unknown): { revision: number; mutation: QuestMu
     Array.isArray(payload.quests) &&
     payload.quests.length > 0 &&
     payload.quests.length <= 12 &&
-    payload.quests.every(isValidQuest)
+    payload.quests.every(item => isValidQuest(item) && isQuestContentWithinLimits(item))
   ) {
     return { revision, mutation: { action: "create_many", quests: payload.quests } };
   }
