@@ -3,7 +3,7 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Archive, ArchiveRestore, CheckCircle2, CircleX, Clock3, CopyPlus, History as HistoryIcon, LayoutDashboard, ListChecks, NotebookPen, Pencil, RefreshCcw, RotateCcw, Settings as SettingsIcon, Shield, Trash2, TrendingUp, type LucideIcon } from "lucide-react";
+import { Archive, ArchiveRestore, CheckCircle2, CircleX, Clock3, CopyPlus, History as HistoryIcon, LayoutDashboard, ListChecks, NotebookPen, Pencil, Plus, RefreshCcw, RotateCcw, Settings as SettingsIcon, Shield, Trash2, TrendingUp, type LucideIcon } from "lucide-react";
 import AuthGate from "./AuthGate";
 import OnboardingTutorial from "./OnboardingTutorial";
 import { activeXp, addTemplateQuestForDate, allowedXpForCategory, canAwardQuest, deleteAttributeFromState, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, materializeRoutineInstances, progressFromXp, questTemplateFromQuest, rankForLevel, type AppState, type Quest, type QuestMutation, type QuestTemplate, type QuestType, type XpTransaction } from "./domain";
@@ -1537,17 +1537,19 @@ export default function SoloApp() {
           <p className="kicker">{t("dashboard.directive")}</p>
           <h1>{t("dashboard.question1")}<br /><em>{t("dashboard.question2")}</em></h1>
           <p>{t("dashboard.subtitle")}</p>
-          <button className="primary" onClick={beginNewQuest}>{t("dashboard.addQuest")}</button>
+          <button className="primary hero-primary" onClick={beginNewQuest}><Plus aria-hidden="true" size={17} /><span>{t("dashboard.addQuest")}</span></button>
         </div>
-        <div className="rank-orbit" aria-label={`${metrics.rank} rank, level ${metrics.progress.level}`}>
-          <div className="orbit-ring ring-one" /><div className="orbit-ring ring-two" />
-          <div className="rank-core"><span>RANK</span><strong>{metrics.rank}</strong><small>LEVEL {String(metrics.progress.level).padStart(2, "0")}</small></div>
+        <div className="orbit-stage">
+          <div className="rank-orbit" aria-label={`${metrics.rank} rank, level ${metrics.progress.level}`}>
+            <div className="orbit-ring ring-one" /><div className="orbit-ring ring-two" />
+            <div className="rank-core"><span>RANK</span><strong>{metrics.rank}</strong><small>LEVEL {String(metrics.progress.level).padStart(2, "0")}</small></div>
+          </div>
         </div>
-      </section>
-      <section className="xp-panel">
-        <div><span>{t("dashboard.globalExperience")}</span><strong>{metrics.xp.toLocaleString(locale)} XP</strong></div>
-        <div className="xp-track"><i style={{ width: `${metrics.progress.percent}%` }} /></div>
-        <p>{metrics.progress.current} / {metrics.progress.needed} XP <span>{t("dashboard.untilLevel", { xp: metrics.progress.needed - metrics.progress.current, level: metrics.progress.level + 1 })}</span></p>
+        <div className="xp-panel">
+          <div><span>{t("dashboard.globalExperience")}</span><strong>{metrics.xp.toLocaleString(locale)} XP</strong></div>
+          <div className="xp-track"><i style={{ width: `${metrics.progress.percent}%` }} /></div>
+          <p>{metrics.progress.current} / {metrics.progress.needed} XP <span>{t("dashboard.untilLevel", { xp: metrics.progress.needed - metrics.progress.current, level: metrics.progress.level + 1 })}</span></p>
+        </div>
       </section>
       <div className="dashboard-grid">
         <section className="panel main-mission">
