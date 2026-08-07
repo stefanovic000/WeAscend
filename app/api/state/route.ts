@@ -2,6 +2,7 @@ import { normalizeCloudState } from "../../domain";
 import { authenticateRequest, type AuthenticatedUser } from "../../../server/auth";
 import { withCollections } from "../../../server/mongo";
 import { publicPlanForUser } from "../../../server/planAccess";
+import { exceedsQuestStorage } from "../../plan";
 
 export const dynamic = "force-dynamic";
 
@@ -91,7 +92,19 @@ export async function PUT(request: Request) {
   const now = new Date();
 
   try {
-    return await withCollections(async ({ states }) => {
+    return await withCollections(async ({ states, users }) => {
+      const [current, profile] = await Promise.all([
+        states.findOne({ userId: user.id }),
+        users.findOne({ userId: user.id }),
+      ]);
+      if (current && current.revision !== revision) {
+        return json({ code: "revision_conflict", state: normalizeCloudState(current.state), revision: current.revision }, 409);
+      }
+      const currentQuestCount = normalizeCloudState(current?.state)?.quests.length ?? 0;
+      const questLimit = publicPlanForUser(profile).limits.questStorage;
+      if (exceedsQuestStorage(currentQuestCount, normalizedState.quests.length, questLimit)) {
+        return json({ code: "quest_limit_reached", limit: questLimit }, 422);
+      }
       const updated = await states.findOneAndUpdate(
         { userId: user.id, revision },
         {

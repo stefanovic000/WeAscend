@@ -432,9 +432,10 @@ export function addTemplateQuestForDate(state: AppState, templateId: string, dat
   return { ...state, quests: [questFromTemplate(template, dateKey, stamp), ...state.quests] };
 }
 
-export function materializeRoutineInstances(state: AppState, date = new Date(), stamp = new Date().toISOString()) {
+export function materializeRoutineInstances(state: AppState, date = new Date(), stamp = new Date().toISOString(), maxQuests = Number.POSITIVE_INFINITY) {
   const dateKey = localDateKey(date);
   return (state.questTemplates ?? []).reduce((current, template) => {
+    if (current.quests.length >= maxQuests) return current;
     const start = dateAtTemplateTime(template.startDate, "00:00");
     const currentDate = dateAtTemplateTime(dateKey, "00:00");
     const elapsedDays = Math.round((currentDate.getTime() - start.getTime()) / 86_400_000);

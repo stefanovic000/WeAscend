@@ -5,6 +5,7 @@ export type PlanLimits = {
   xpEstimates: number;
   xpArguments: number;
   bossPlans: number;
+  questStorage: number;
 };
 
 export type PlanOverview = {
@@ -17,8 +18,8 @@ export type PlanOverview = {
 };
 
 export const PLAN_LIMITS: Record<PlanName, PlanLimits> = {
-  free: { xpEstimates: 15, xpArguments: 15, bossPlans: 1 },
-  premium: { xpEstimates: 150, xpArguments: 100, bossPlans: 10 },
+  free: { xpEstimates: 15, xpArguments: 15, bossPlans: 1, questStorage: 500 },
+  premium: { xpEstimates: 150, xpArguments: 100, bossPlans: 10, questStorage: 1_000 },
 };
 
 export const FREE_PLAN: PlanOverview = {
@@ -58,4 +59,8 @@ export function resolvePlan(
     limits: PLAN_LIMITS[name],
     limitsEnforced: options.limitsEnforced,
   };
+}
+
+export function exceedsQuestStorage(currentCount: number, nextCount: number, limit: number) {
+  return nextCount > limit && nextCount > currentCount;
 }

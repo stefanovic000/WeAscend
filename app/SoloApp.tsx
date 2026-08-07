@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Children, isValidElement, useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Archive, ArchiveRestore, CheckCircle2, CircleX, Clock3, CopyPlus, History as HistoryIcon, LayoutDashboard, ListChecks, NotebookPen, Pencil, Plus, RefreshCcw, RotateCcw, Settings as SettingsIcon, Shield, Trash2, TrendingUp, type LucideIcon } from "lucide-react";
@@ -13,7 +13,7 @@ import { getAccountAuthMethod, getFirebaseIdToken, reauthenticateForAccountDelet
 import { translate, type Language, type TranslationKey } from "./i18n";
 import type { XpSuggestion } from "./xpAdvisor";
 import type { BossStepSuggestion } from "./bossStepPlanner";
-import { FREE_PLAN, type PlanOverview } from "./plan";
+import { exceedsQuestStorage, FREE_PLAN, PLAN_LIMITS, type PlanName, type PlanOverview } from "./plan";
 
 type View = "dashboard" | "quests" | "growth" | "bosses" | "history" | "settings";
 type SyncMode = "starting" | "online" | "syncing" | "offline" | "local";
@@ -23,6 +23,7 @@ type CloudStateResponse = {
   updatedAt?: string | null;
   user?: { id: string; email: string; name: string; emailVerified: boolean };
   plan?: PlanOverview;
+  limit?: number;
   code?: string;
 };
 type GeneratedBossStep = BossStepSuggestion & { id: string; selected: boolean };
@@ -108,7 +109,26 @@ const getLanguageSnapshot = (): Language => localStorage.getItem("wesolo-languag
 const getServerLanguageSnapshot = (): Language => "en";
 
 function Field({ label, children, wide = false, tour }: { label: string; children: React.ReactNode; wide?: boolean; tour?: string }) {
-  return <label className={`field ${wide ? "wide" : ""}`} data-tour={tour}><span>{label}</span>{children}</label>;
+  type CountedControlProps = { value?: unknown; maxLength?: number; type?: string };
+  const countedControl = Children.toArray(children).find(child =>
+    isValidElement<CountedControlProps>(child)
+    && typeof child.props.value === "string"
+    && typeof child.props.maxLength === "number"
+    && child.props.type !== "password"
+  );
+  const currentLength = countedControl && typeof countedControl.props.value === "string" ? countedControl.props.value.length : null;
+  const maxLength = countedControl?.props.maxLength;
+  const isMultiline = countedControl?.type === "textarea";
+
+  return <label className={`field ${wide ? "wide" : ""}`} data-tour={tour}>
+    <span>{label}</span>
+    {currentLength !== null && maxLength
+      ? <div className={`field-counted ${isMultiline ? "multiline" : ""}`}>
+          {children}
+          <small className="field-counter" aria-hidden="true">{currentLength.toLocaleString()} / {maxLength.toLocaleString()}</small>
+        </div>
+      : children}
+  </label>;
 }
 
 function Empty({ title, text }: { title: string; text: string }) {
@@ -353,6 +373,21 @@ export default function SoloApp() {
         setSyncMode("offline");
         return;
       }
+      if (response.status === 422 && result.code === "quest_limit_reached") {
+        const confirmed = lastSyncedRef.current;
+        if (confirmed) {
+          const restored: unknown = JSON.parse(confirmed);
+          if (isValidCloudState(restored)) {
+            pendingStateRef.current = restored;
+            setState(restored);
+            if (currentUserIdRef.current) void saveState(currentUserIdRef.current, restored);
+          }
+        }
+        setToast(t("quest.limitReached", { limit: result.limit ?? planOverview.limits.questStorage }));
+        syncModeRef.current = "online";
+        setSyncMode("online");
+        return;
+      }
       if (response.status === 409 && result.state && isValidCloudState(result.state)) {
         revisionRef.current = result.revision;
         lastSyncedRef.current = JSON.stringify(result.state);
@@ -421,11 +456,15 @@ export default function SoloApp() {
 
   useEffect(() => {
     if (syncMode !== "online") return;
-    const materialize = () => setState(current => current ? materializeRoutineInstances(current, new Date()) : current);
+    const materialize = () => setState(current => {
+      if (!current) return current;
+      const next = materializeRoutineInstances(current, new Date(), new Date().toISOString(), planOverview.limits.questStorage);
+      return exceedsQuestStorage(current.quests.length, next.quests.length, planOverview.limits.questStorage) ? current : next;
+    });
     materialize();
     const timer = window.setInterval(materialize, 60_000);
     return () => window.clearInterval(timer);
-  }, [syncMode]);
+  }, [syncMode, planOverview.limits.questStorage]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setClock(Date.now()), 60_000);
@@ -461,8 +500,18 @@ export default function SoloApp() {
   };
   const updateState = (recipe: (current: AppState) => AppState) => {
     if (!ensureWritable()) return false;
-    setState(current => current ? recipe(current) : current);
+    const next = recipe(state);
+    if (exceedsQuestStorage(state.quests.length, next.quests.length, planOverview.limits.questStorage)) {
+      setToast(t("quest.limitReached", { limit: planOverview.limits.questStorage }));
+      return false;
+    }
+    setState(next);
     return true;
+  };
+  const ensureQuestCapacity = (additional = 1) => {
+    if (state.quests.length + additional <= planOverview.limits.questStorage) return true;
+    setToast(t("quest.limitReached", { limit: planOverview.limits.questStorage }));
+    return false;
   };
 
   const openTutorialQuest = () => {
@@ -592,6 +641,13 @@ export default function SoloApp() {
           setAuthRequired(response.status === 401);
           syncModeRef.current = "offline";
           setSyncMode("offline");
+          return null;
+        }
+
+        if (response.status === 422 && result.code === "quest_limit_reached") {
+          setToast(t("quest.limitReached", { limit: result.limit ?? planOverview.limits.questStorage }));
+          syncModeRef.current = "online";
+          setSyncMode("online");
           return null;
         }
 
@@ -795,6 +851,7 @@ export default function SoloApp() {
     const storedDate = toStoredDateTime(questDraft.date);
     if (!storedDate) { setToast(t("quest.enterDate")); return; }
     const exists = state.quests.some(q => q.id === questDraft.id);
+    if (!exists && !ensureQuestCapacity()) return;
     const manualAllowed = state.settings.manualXpOverride === true;
     const keepChosenXp = questDraft.xpSource === "ai" || questDraft.xpSource === "argument" || (manualAllowed && questDraft.xpSource === "manual") || questDraft.xpSource === "legacy";
     const updated = {
@@ -1121,6 +1178,7 @@ export default function SoloApp() {
   };
   const beginQuestOnDate = (dateKey: string, type: QuestType = "Side") => {
     if (!ensureWritable()) return;
+    if (!ensureQuestCapacity()) return;
     if (availableAttributes.length === 0 || availableSkills.length === 0) {
       setView("growth");
       setToast(t("attribute.skillFirst"));
@@ -1146,6 +1204,7 @@ export default function SoloApp() {
   };
   const beginPreparationQuest = (boss: Quest) => {
     if (!ensureWritable()) return;
+    if (!ensureQuestCapacity()) return;
     const draft = blankQuest(state);
     const start = new Date();
     start.setHours(9, 0, 0, 0);
@@ -1235,6 +1294,7 @@ export default function SoloApp() {
       setToast(t("boss.noGeneratedSelection"));
       return;
     }
+    if (!ensureQuestCapacity(selected.length)) return;
     const usedTitles = new Set(existingTitles);
     const invalidSelection = selected.some(step => {
       const key = step.title.trim().toLocaleLowerCase().replace(/\s+/g, " ");
@@ -1306,7 +1366,7 @@ export default function SoloApp() {
       questTemplates: (current.questTemplates ?? []).map(template => template.id === templateId
         ? { ...template, ...patch, updatedAt: stamp }
         : template),
-    }, new Date(), stamp));
+    }, new Date(), stamp, planOverview.limits.questStorage));
   };
 
   const addTemplateToday = (templateId: string) => {
@@ -1316,7 +1376,7 @@ export default function SoloApp() {
       setToast(t("template.alreadyToday"));
       return;
     }
-    updateState(() => next);
+    if (!updateState(() => next)) return;
     setSelectedDate(today);
     setShowAllDates(false);
     setToast(t("template.todayAdded"));
@@ -1444,7 +1504,7 @@ export default function SoloApp() {
     updateState(current => materializeRoutineInstances({
       ...current,
       questTemplates: (current.questTemplates ?? []).map(template => template.id === savedTemplate.id ? savedTemplate : template),
-    }, new Date(), stamp));
+    }, new Date(), stamp, planOverview.limits.questStorage));
     setTemplateDraft(null);
     setTemplateSuggestion(null);
     setToast(t("template.updated"));
@@ -1467,7 +1527,11 @@ export default function SoloApp() {
       setConfirmAction({
         title: t("backup.replaceTitle"),
         text: t("backup.replaceText"),
-        action: () => { updateState(() => parsed); setConfirmAction(null); setToast(t("backup.restored")); },
+        action: () => {
+          const restored = updateState(() => parsed);
+          setConfirmAction(null);
+          if (restored) setToast(t("backup.restored"));
+        },
       });
     } catch { setToast(t("backup.invalid")); }
   };
@@ -1783,10 +1847,20 @@ export default function SoloApp() {
           <div><span>{t("plan.current")}</span><strong>{planOverview.name === "premium" ? t("plan.premium") : t("plan.free")}</strong></div>
           {planOverview.complimentary && <b>{t("plan.complimentary")}</b>}
         </div>
-        <div className="plan-allowances">
-          <div><strong>{planOverview.limits.xpEstimates}</strong><span>{t("plan.xpEstimates")}</span><small>{t("plan.perMonth")}</small></div>
-          <div><strong>{planOverview.limits.xpArguments}</strong><span>{t("plan.arguments")}</span><small>{t("plan.perMonth")}</small></div>
-          <div><strong>{planOverview.limits.bossPlans}</strong><span>{t("plan.bossPlans")}</span><small>{t("plan.perMonth")}</small></div>
+        <div className="plan-comparison" aria-label={t("plan.comparison")}>
+          {(["free", "premium"] as PlanName[]).map(planName => <article className={`${planName} ${planOverview.name === planName ? "current" : ""}`} key={planName}>
+            <header><strong>{planName === "premium" ? t("plan.premium") : t("plan.free")}</strong>{planOverview.name === planName && <span>{t("plan.currentBadge")}</span>}</header>
+            <dl>
+              <div><dt>{t("plan.xpEstimates")}</dt><dd>{PLAN_LIMITS[planName].xpEstimates} <small>{t("plan.perMonth")}</small></dd></div>
+              <div><dt>{t("plan.arguments")}</dt><dd>{PLAN_LIMITS[planName].xpArguments} <small>{t("plan.perMonth")}</small></dd></div>
+              <div><dt>{t("plan.bossPlans")}</dt><dd>{PLAN_LIMITS[planName].bossPlans} <small>{t("plan.perMonth")}</small></dd></div>
+              <div><dt>{t("plan.questCapacity")}</dt><dd>{PLAN_LIMITS[planName].questStorage.toLocaleString(locale)}</dd></div>
+            </dl>
+          </article>)}
+        </div>
+        <div className={`plan-storage ${questStorageCount >= questStorageLimit ? "full" : questStorageCount >= questStorageLimit * .9 ? "near" : ""}`}>
+          <div><span>{t("plan.storedQuests")}</span><strong>{t("plan.storageValue", { count: questStorageCount.toLocaleString(locale), limit: questStorageLimit.toLocaleString(locale) })}</strong></div>
+          <i><b style={{ width: `${Math.min(100, questStorageCount / questStorageLimit * 100)}%` }} /></i>
         </div>
         {!planOverview.limitsEnforced && <p className="plan-beta-note"><span>●</span>{t("plan.betaNote")}</p>}
       </section>
@@ -1803,6 +1877,10 @@ export default function SoloApp() {
   const estimateLocked = !!questDraft && lastEstimatedRevision === questDraftRevision && lastEstimatedFingerprint === currentXpFingerprint;
   const currentXpSuggestion = lastEstimatedFingerprint === currentXpFingerprint ? xpSuggestion : null;
   const editingQuest = !!questDraft && state.quests.some(quest => quest.id === questDraft.id);
+  const questStorageLimit = planOverview.limits.questStorage;
+  const questStorageCount = state.quests.length;
+  const projectedQuestStorage = questStorageCount + (questDraft && !editingQuest && questDraft.id !== TUTORIAL_QUEST_ID ? 1 : 0);
+  const questStorageTone = projectedQuestStorage >= questStorageLimit ? "full" : projectedQuestStorage >= questStorageLimit * .9 ? "near" : "";
 
   return <div className={`app-shell ${state.settings.animations ? "" : "reduce-motion"} ${readOnly ? "read-only" : ""}`} spellCheck={state.settings.spellcheck !== false}>
     {readOnly && <div className={`sync-banner ${syncMode}`}><span>{t("sync.banner")} <strong>READ-ONLY</strong></span><button onClick={() => setBootstrapAttempt(attempt => attempt + 1)}>{t("sync.retry")}</button></div>}
@@ -1865,12 +1943,12 @@ export default function SoloApp() {
     </div>}
     {questDraft && <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && !questSaving && setQuestDraft(null)}>
       <section aria-busy={questSaving} className={`modal quest-modal ${questSaving ? "is-saving" : ""}`} role="dialog" aria-modal="true" aria-label={t("editor.label")}>
-        <header><div><p>{t("editor.mission")}</p><h2>{editingQuest ? t("editor.edit") : t("editor.create")}</h2></div><button disabled={questSaving} onClick={() => setQuestDraft(null)} aria-label={t("common.close")}>×</button></header>
+        <header><div><p>{t("editor.mission")}</p><h2>{editingQuest ? t("editor.edit") : t("editor.create")}</h2></div><div className="quest-modal-controls"><div className={`quest-capacity ${questStorageTone}`} title={t("plan.questCapacity")}><span>{t("plan.questCapacity")}</span><strong>{projectedQuestStorage.toLocaleString(locale)} / {questStorageLimit.toLocaleString(locale)}</strong><i><b style={{ width: `${Math.min(100, projectedQuestStorage / questStorageLimit * 100)}%` }} /></i></div><button disabled={questSaving} onClick={() => setQuestDraft(null)} aria-label={t("common.close")}>×</button></div></header>
         {questDraft.id === TUTORIAL_QUEST_ID && <div className="tutorial-editor-banner"><strong>{t("tutorial.editorPreview")}</strong><span>{t("tutorial.editorPreviewText")}</span></div>}
         <div className="form-grid">
           <div className="quest-basics-group" data-tour="quest-basics">
-            <Field label={t("editor.name")} wide><input autoFocus value={questDraft.title} onChange={e => updateQuestDraft({ ...questDraft, title: e.target.value })} placeholder={t("editor.namePlaceholder")} /></Field>
-            <Field label={t("editor.description")} wide><textarea className="quest-description-input" rows={5} value={questDraft.description} onChange={e => updateQuestDraft({ ...questDraft, description: e.target.value })} placeholder={t("editor.descriptionPlaceholder")} /></Field>
+            <Field label={t("editor.name")} wide><input autoFocus maxLength={500} value={questDraft.title} onChange={e => updateQuestDraft({ ...questDraft, title: e.target.value })} placeholder={t("editor.namePlaceholder")} /></Field>
+            <Field label={t("editor.description")} wide><textarea className="quest-description-input" rows={5} maxLength={10_000} value={questDraft.description} onChange={e => updateQuestDraft({ ...questDraft, description: e.target.value })} placeholder={t("editor.descriptionPlaceholder")} /></Field>
           </div>
           <Field label={t("editor.type")}><select value={questDraft.type} onChange={e => changeQuestType(e.target.value as QuestType)}>{state.settings.questTypes.map(type => <option key={type} value={type}>{t(`type.${type}` as TranslationKey)}</option>)}</select></Field>
           <Field label={t("editor.difficulty")}><select value={questDraft.difficulty} onChange={e => updateQuestDraft({ ...questDraft, difficulty: e.target.value as Quest["difficulty"] })}>{(["Easy", "Normal", "Hard", "Extreme"] as const).map(difficulty => <option key={difficulty} value={difficulty}>{t(`difficulty.${difficulty}` as TranslationKey)}</option>)}</select></Field>
@@ -1893,8 +1971,8 @@ export default function SoloApp() {
           </div>
           <Field label={t("editor.date")}><input type="datetime-local" required value={questDraft.date} onChange={e => updateQuestDraft({ ...questDraft, date: e.target.value })} /></Field>
           <Field label={t("editor.deadline")}><input type="datetime-local" value={questDraft.deadline} onChange={e => updateQuestDraft({ ...questDraft, deadline: e.target.value })} /></Field>
-          <Field label={t("editor.condition")} tour="quest-completion" wide><input value={questDraft.completionConditions} onChange={e => updateQuestDraft({ ...questDraft, completionConditions: e.target.value })} placeholder={t("editor.conditionPlaceholder")} /></Field>
-          {(questDraft.type === "Mandatory" || questDraft.type === "Correction") && <Field label={t("editor.consequence")} wide><textarea value={questDraft.failureConsequence} onChange={e => updateQuestDraft({ ...questDraft, failureConsequence: e.target.value })} placeholder={t("editor.consequencePlaceholder")} /></Field>}
+          <Field label={t("editor.condition")} tour="quest-completion" wide><input maxLength={10_000} value={questDraft.completionConditions} onChange={e => updateQuestDraft({ ...questDraft, completionConditions: e.target.value })} placeholder={t("editor.conditionPlaceholder")} /></Field>
+          {(questDraft.type === "Mandatory" || questDraft.type === "Correction") && <Field label={t("editor.consequence")} wide><textarea maxLength={10_000} value={questDraft.failureConsequence} onChange={e => updateQuestDraft({ ...questDraft, failureConsequence: e.target.value })} placeholder={t("editor.consequencePlaceholder")} /></Field>}
         </div>
         <footer><button disabled={questSaving} onClick={() => setQuestDraft(null)}>{t("common.cancel")}</button><button className={`primary save-quest-button ${questSaving ? "saving" : ""}`} data-tour="quest-activate" disabled={questSaving} onClick={() => void saveQuest()}>{questSaving ? (editingQuest ? t("editor.savingChanges") : t("editor.activating")) : editingQuest ? t("editor.saveChanges") : t("editor.activate")}</button></footer>
       </section>

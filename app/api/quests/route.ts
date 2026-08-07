@@ -1,6 +1,8 @@
 import { applyQuestMutation, normalizeCloudState, isValidQuest, type QuestMutation } from "../../domain";
 import { authenticateRequest, type AuthenticatedUser } from "../../../server/auth";
-import { withStateCollection } from "../../../server/mongo";
+import { withCollections } from "../../../server/mongo";
+import { publicPlanForUser } from "../../../server/planAccess";
+import { exceedsQuestStorage } from "../../plan";
 
 export const dynamic = "force-dynamic";
 
@@ -91,8 +93,8 @@ export async function POST(request: Request) {
   if (!command) return json({ code: "invalid_command" }, 400);
 
   try {
-    return await withStateCollection(async collection => {
-      const current = await collection.findOne({ userId: auth.user.id });
+    return await withCollections(async ({ states, users }) => {
+      const current = await states.findOne({ userId: auth.user.id });
       const currentState = normalizeCloudState(current?.state);
       if (!current || !currentState) return json({ code: "state_not_initialized" }, 409);
       if (current.revision !== command.revision) {
@@ -103,8 +105,13 @@ export async function POST(request: Request) {
       if (!result.ok) return json({ code: result.code }, result.code === "quest_not_found" ? 404 : 400);
       const nextState = normalizeCloudState(result.state);
       if (!nextState) return json({ code: "invalid_state" }, 400);
+      const profile = await users.findOne({ userId: auth.user.id });
+      const questLimit = publicPlanForUser(profile).limits.questStorage;
+      if (exceedsQuestStorage(currentState.quests.length, nextState.quests.length, questLimit)) {
+        return json({ code: "quest_limit_reached", limit: questLimit }, 422);
+      }
 
-      const updated = await collection.findOneAndUpdate(
+      const updated = await states.findOneAndUpdate(
         { userId: auth.user.id, revision: current.revision },
         {
           $set: { state: nextState, updatedAt: new Date() },
@@ -113,7 +120,7 @@ export async function POST(request: Request) {
         { returnDocument: "after" },
       );
       if (!updated) {
-        const latest = await collection.findOne({ userId: auth.user.id });
+        const latest = await states.findOne({ userId: auth.user.id });
         return json({
           code: "revision_conflict",
           state: normalizeCloudState(latest?.state),

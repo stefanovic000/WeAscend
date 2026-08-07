@@ -7,11 +7,11 @@ import { authenticateRequest, authenticateRequestAllowUnverified } from "../serv
 import { buildAuthEmail, buildCustomActionUrl } from "../server/authEmail.ts";
 import { toLocalDateTimeValue, toStoredDateTime } from "../app/dateTime.ts";
 import { detectBossStepLanguage, parseBossStepPlan } from "../app/bossStepPlanner.ts";
-import { PLAN_LIMITS, resolvePlan } from "../app/plan.ts";
+import { exceedsQuestStorage, PLAN_LIMITS, resolvePlan } from "../app/plan.ts";
 
 test("plans expose the agreed monthly AI allowances", () => {
-  assert.deepEqual(PLAN_LIMITS.free, { xpEstimates: 15, xpArguments: 15, bossPlans: 1 });
-  assert.deepEqual(PLAN_LIMITS.premium, { xpEstimates: 150, xpArguments: 100, bossPlans: 10 });
+  assert.deepEqual(PLAN_LIMITS.free, { xpEstimates: 15, xpArguments: 15, bossPlans: 1, questStorage: 500 });
+  assert.deepEqual(PLAN_LIMITS.premium, { xpEstimates: 150, xpArguments: 100, bossPlans: 10, questStorage: 1_000 });
 });
 
 test("closed beta grants Premium without trusting client state", () => {
@@ -27,6 +27,13 @@ test("free access remains a complete, named plan outside beta", () => {
   assert.equal(plan.name, "free");
   assert.equal(plan.source, "free");
   assert.deepEqual(plan.limits, PLAN_LIMITS.free);
+});
+
+test("quest storage blocks growth above the plan limit but still allows cleanup", () => {
+  assert.equal(exceedsQuestStorage(499, 500, 500), false);
+  assert.equal(exceedsQuestStorage(500, 501, 500), true);
+  assert.equal(exceedsQuestStorage(600, 600, 500), false);
+  assert.equal(exceedsQuestStorage(600, 550, 500), false);
 });
 
 test("initial state is completely empty at level 1 with zero XP", () => {

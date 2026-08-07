@@ -150,10 +150,18 @@ Kada se uključi, sistem podržava odvojeni dnevni limit za XP procene i Boss ko
 
 ## Planovi tokom zatvorene bete
 
-- **WeAscend Free** je kompletan osnovni plan i uključuje 15 XP procena, 15 XP žalbi i 1 AI Boss plan mesečno.
-- **Premium** uključuje 150 XP procena, 100 XP žalbi i 10 AI Boss planova mesečno.
+Važne razlike moraju ostati definisane u centralnom `PLAN_LIMITS` katalogu i vidljive korisnicima u **Settings → Plan & Usage**.
+
+| Mogućnost | WeAscend Free | Premium |
+| --- | ---: | ---: |
+| XP procene | 15 mesečno | 150 mesečno |
+| XP žalbe | 15 mesečno | 100 mesečno |
+| AI Boss planovi | 1 mesečno | 10 mesečno |
+| Sačuvani questovi | 500 | 1.000 |
+
 - `PREMIUM_BETA_ACCESS=true` daje svim prijavljenim testerima besplatan Premium pristup bez naplate.
-- `AI_LIMITS_ENABLED=false` znači da su kvote tokom testiranja prikazane radi transparentnosti, ali se još ne primenjuju.
+- Quest kapacitet se proverava na klijentu radi jasnog UI-ja i na serveru radi stvarne zaštite. Smanjenje plana nikada ne briše stare questove; korisnik iznad limita može da ih menja ili briše, ali ne i da pravi nove.
+- `AI_LIMITS_ENABLED=false` znači da su AI kvote tokom testiranja prikazane radi transparentnosti, ali se još ne primenjuju.
 - Plan se određuje na serveru i ne ulazi u lokalni AppState ili JSON backup, pa ga klijent ne može sam promeniti.
 - Billing, upgrade dugmad i paywall još nisu aktivni. Personal AI Memory, Smart Daily Plan i Weekly Ascension Report ostaju za kasnije faze.
 
