@@ -109,6 +109,7 @@ const getLanguageSnapshot = (): Language => localStorage.getItem("wesolo-languag
 const getServerLanguageSnapshot = (): Language => "en";
 
 function Field({ label, children, wide = false, tour }: { label: string; children: React.ReactNode; wide?: boolean; tour?: string }) {
+  const fieldLanguage = useSyncExternalStore(subscribeLanguage, getLanguageSnapshot, getServerLanguageSnapshot);
   type CountedControlProps = { value?: unknown; maxLength?: number; type?: string };
   const countedControl = Children.toArray(children).find(child =>
     isValidElement<CountedControlProps>(child)
@@ -119,13 +120,18 @@ function Field({ label, children, wide = false, tour }: { label: string; childre
   const currentLength = countedControl && typeof countedControl.props.value === "string" ? countedControl.props.value.length : null;
   const maxLength = countedControl?.props.maxLength;
   const isMultiline = countedControl?.type === "textarea";
+  const remaining = currentLength !== null && maxLength ? Math.max(0, maxLength - currentLength) : null;
+  const usage = currentLength !== null && maxLength ? currentLength / maxLength : 0;
+  const counterTone = usage >= .95 ? "limit" : usage >= .8 ? "near" : "";
 
   return <label className={`field ${wide ? "wide" : ""}`} data-tour={tour}>
     <span>{label}</span>
     {currentLength !== null && maxLength
       ? <div className={`field-counted ${isMultiline ? "multiline" : ""}`}>
           {children}
-          <small className="field-counter" aria-hidden="true">{currentLength.toLocaleString()} / {maxLength.toLocaleString()}</small>
+          <small className={`field-counter ${counterTone}`} aria-hidden="true">
+            {translate(fieldLanguage, "field.charactersRemaining", { count: remaining!.toLocaleString(fieldLanguage === "sr" ? "sr-Latn-RS" : "en-US") })}
+          </small>
         </div>
       : children}
   </label>;
