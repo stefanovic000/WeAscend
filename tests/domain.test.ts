@@ -18,6 +18,7 @@ test("initial state is completely empty at level 1 with zero XP", () => {
   assert.deepEqual(state.bosses, []);
   assert.equal(state.settings.manualXpOverride, false);
   assert.equal(state.settings.tutorialCompleted, false);
+  assert.equal(state.settings.spellcheck, true);
 });
 
 test("quest date input preserves typed local values and stores a valid instant", () => {
