@@ -3,13 +3,13 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { History as HistoryIcon, LayoutDashboard, ListChecks, Settings as SettingsIcon, Shield, TrendingUp, type LucideIcon } from "lucide-react";
+import { Archive, ArchiveRestore, CheckCircle2, CircleX, Clock3, CopyPlus, History as HistoryIcon, LayoutDashboard, ListChecks, NotebookPen, Pencil, RefreshCcw, RotateCcw, Settings as SettingsIcon, Shield, Trash2, TrendingUp, type LucideIcon } from "lucide-react";
 import AuthGate from "./AuthGate";
 import OnboardingTutorial from "./OnboardingTutorial";
 import { activeXp, addTemplateQuestForDate, allowedXpForCategory, canAwardQuest, deleteAttributeFromState, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, materializeRoutineInstances, progressFromXp, questTemplateFromQuest, rankForLevel, type AppState, type Quest, type QuestMutation, type QuestTemplate, type QuestType, type XpTransaction } from "./domain";
 import { toLocalDateTimeValue, toStoredDateTime } from "./dateTime";
 import { clearLegacyState, clearState, loadState, saveState } from "./db";
-import { getFirebaseIdToken, signOutOfWeAscend, waitForIdentity } from "./firebaseAuth";
+import { getAccountAuthMethod, getFirebaseIdToken, reauthenticateForAccountDeletion, signOutOfWeAscend, waitForIdentity } from "./firebaseAuth";
 import { translate, type Language, type TranslationKey } from "./i18n";
 import type { XpSuggestion } from "./xpAdvisor";
 import type { BossStepSuggestion } from "./bossStepPlanner";
@@ -171,14 +171,17 @@ export default function SoloApp() {
     title: string;
     label: string;
     value: string;
+    description?: string;
     placeholder?: string;
     submitLabel: string;
     multiline?: boolean;
+    inputType?: "text" | "password";
     required?: boolean;
     maxLength?: number;
     compact?: boolean;
     clearLabel?: string;
     clearAction?: () => void;
+    danger?: boolean;
     action: (value: string) => void;
   } | null>(null);
   const [filters, setFilters] = useState({ search: "", type: "all", status: "all", attribute: "all" });
@@ -495,8 +498,9 @@ export default function SoloApp() {
     setTutorialStep(null);
   };
 
-  const deleteCurrentAccount = async () => {
+  const deleteCurrentAccount = async (password?: string) => {
     try {
+      await reauthenticateForAccountDeletion(password);
       const userId = cloudUser?.id ?? "";
       const response = await cloudFetch("/api/account", { method: "DELETE", credentials: "same-origin" }, 15_000);
       if (!response.ok) throw new Error("account_deletion_failed");
@@ -508,8 +512,42 @@ export default function SoloApp() {
       setSyncMode("offline");
       setAuthRequired(true);
       router.replace("/");
-    } catch {
+    } catch (reason) {
       setConfirmAction(null);
+      const code = reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "";
+      setToast(code === "auth/wrong-password" || code === "auth/invalid-credential"
+        ? t("settings.deleteAccountWrongPassword")
+        : code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request"
+          ? t("settings.deleteAccountCancelled")
+          : t("settings.deleteAccountFailed"));
+    }
+  };
+
+  const requestAccountDeletion = async () => {
+    try {
+      const method = await getAccountAuthMethod();
+      if (method === "password") {
+        setInputDialog({
+          title: t("settings.deleteAccountTitle"),
+          label: t("settings.deleteAccountPassword"),
+          value: "",
+          description: t("settings.deleteAccountConfirm"),
+          inputType: "password",
+          placeholder: t("settings.deleteAccountPasswordPlaceholder"),
+          submitLabel: t("settings.deleteAccount"),
+          required: true,
+          maxLength: 128,
+          danger: true,
+          action: value => { void deleteCurrentAccount(value); },
+        });
+        return;
+      }
+      setConfirmAction({
+        title: t("settings.deleteAccountTitle"),
+        text: t("settings.deleteAccountGoogleConfirm"),
+        action: () => void deleteCurrentAccount(),
+      });
+    } catch {
       setToast(t("settings.deleteAccountFailed"));
     }
   };
@@ -1462,33 +1500,34 @@ export default function SoloApp() {
           {quest.parentQuestId && <span className="prep-badge">{t("boss.preparationStep")}</span>}
           {quest.templateId && <span className="routine-badge">{t("template.instance")}</span>}
           {overdue && <span className="overdue-badge">{t("quest.overdue")}</span>}
+          {quest.status === "failed" && <span className="quest-status-badge failed"><CircleX aria-hidden="true" size={12} />{t("status.failed")}</span>}
           <span>{attrName(quest.attributeId)} / {skillName(quest.skillId)}</span>
         </div>
         <h3>{quest.title}</h3>
         {quest.parentQuestId && <p className="quest-parent">↳ {state.quests.find(item => item.id === quest.parentQuestId)?.title ?? t("common.deletedQuest")}</p>}
         {!compact && quest.description && <p>{quest.description}</p>}
-        {quest.note && <button className="quest-note-preview" onClick={() => openQuestNote(quest)} aria-label={t("quest.noteEditLabel", { name: quest.title })}><span>✎</span><em>{quest.note}</em></button>}
+        {quest.note && <button className="quest-note-preview" onClick={() => openQuestNote(quest)} aria-label={t("quest.noteEditLabel", { name: quest.title })}><span><NotebookPen aria-hidden="true" size={14} /></span><em>{quest.note}</em></button>}
         <div className="quest-footer">
-          <span>◷ {formatDate(quest.deadline)}</span>
+          <span><Clock3 aria-hidden="true" size={12} />{formatDate(quest.deadline)}</span>
           <span className="xp-reward">+{quest.xp} XP</span>
           <span className="difficulty">{t(`difficulty.${quest.difficulty}` as TranslationKey)}</span>
         </div>
       </div>
       <div className="quest-actions">
         {quest.status === "active" && <>
-          <button className="complete" onClick={() => completeQuest(quest)} aria-label={t("quest.completeLabel", { name: quest.title })}>✓</button>
-          <button onClick={() => failQuest(quest)} aria-label={t("quest.failLabel", { name: quest.title })}>×</button>
+          <button className="complete" onClick={() => completeQuest(quest)} aria-label={t("quest.completeLabel", { name: quest.title })} title={t("quest.clear")}><CheckCircle2 aria-hidden="true" size={19} /><span className="action-text">{t("quest.clear")}</span></button>
+          <button className="fail-action" onClick={() => failQuest(quest)} aria-label={t("quest.failLabel", { name: quest.title })} title={t("common.failed")}><CircleX aria-hidden="true" size={19} /><span className="action-text">{t("common.failed")}</span></button>
         </>}
-        {quest.status === "failed" && <button className="retry-link" onClick={() => void retryQuest(quest)}>{t("quest.retry")}</button>}
-        {quest.status === "completed" && <button onClick={() => undoQuest(quest)}>{t("common.undo")}</button>}
-        <button className={quest.note ? "has-note" : ""} onClick={() => openQuestNote(quest)} aria-label={t("quest.noteEditLabel", { name: quest.title })} title={t("quest.note")}>{compact ? "✎" : t("quest.note")}</button>
+        {quest.status === "failed" && <button className="retry-link" onClick={() => void retryQuest(quest)} title={t("quest.retry")}><RefreshCcw aria-hidden="true" size={18} /><span className="action-text">{t("quest.retry")}</span></button>}
+        {quest.status === "completed" && <button className="undo-action" onClick={() => undoQuest(quest)} title={t("common.undo")}><RotateCcw aria-hidden="true" size={18} /><span className="action-text">{t("common.undo")}</span></button>}
+        <button className={`note-action ${quest.note ? "has-note" : ""}`} onClick={() => openQuestNote(quest)} aria-label={t("quest.noteEditLabel", { name: quest.title })} title={t("quest.note")}><NotebookPen aria-hidden="true" size={18} /><span className="action-text">{t("quest.note")}</span></button>
         {!compact && <>
-          {quest.status !== "archived" && canAwardQuest(quest.id, state.transactions) && <button onClick={() => { if (ensureWritable()) openQuestEditor(quest); }}>{t("common.edit")}</button>}
-          {quest.status !== "archived" && quest.type !== "Boss" && !quest.parentQuestId && <button onClick={() => saveQuestAsTemplate(quest)}>{t("template.save")}</button>}
+          {quest.status !== "archived" && canAwardQuest(quest.id, state.transactions) && <button className="secondary-action" onClick={() => { if (ensureWritable()) openQuestEditor(quest); }} title={t("common.edit")}><Pencil aria-hidden="true" size={16} /><span className="action-text">{t("common.edit")}</span></button>}
+          {quest.status !== "archived" && quest.type !== "Boss" && !quest.parentQuestId && <button className="secondary-action" onClick={() => saveQuestAsTemplate(quest)} title={t("template.save")}><CopyPlus aria-hidden="true" size={16} /><span className="action-text">{t("template.save")}</span></button>}
           {canRestore
-            ? <button className="restore-link" onClick={() => restoreQuest(quest)}>{t("common.restore")}</button>
-            : quest.status !== "archived" && <button onClick={() => archiveQuest(quest)}>{t("common.archive")}</button>}
-          <button className="danger-link" onClick={() => deleteQuest(quest)}>{t("common.delete")}</button>
+            ? <button className="restore-link secondary-action" onClick={() => restoreQuest(quest)} title={t("common.restore")}><ArchiveRestore aria-hidden="true" size={16} /><span className="action-text">{t("common.restore")}</span></button>
+            : quest.status !== "archived" && <button className="secondary-action" onClick={() => archiveQuest(quest)} title={t("common.archive")}><Archive aria-hidden="true" size={16} /><span className="action-text">{t("common.archive")}</span></button>}
+          <button className="danger-link secondary-action" onClick={() => deleteQuest(quest)} title={t("common.delete")}><Trash2 aria-hidden="true" size={16} /><span className="action-text">{t("common.delete")}</span></button>
         </>}
       </div>
     </article>;
@@ -1738,7 +1777,7 @@ export default function SoloApp() {
       <section className="settings-card"><header><i>R</i><div><h2>{t("settings.ranks")}</h2><p>{t("settings.ranksText")}</p></div></header><div className="rank-settings">{state.settings.ranks.map((rank, index) => <Field label={`${rank.name}-Rank`} key={rank.name}><input type="number" min="1" value={rank.minLevel} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, ranks: s.settings.ranks.map((r, i) => i === index ? { ...r, minLevel: Math.max(1, Number(e.target.value)) } : r) } }))} /></Field>)}</div></section>
       <section className="settings-card"><header><i>◈</i><div><h2>{t("settings.rules")}</h2><p>{t("settings.rulesText")}</p></div></header><label className="toggle-row"><div><strong>{t("settings.manualXp")}</strong><span>{t("settings.manualXpText")}</span></div><input type="checkbox" checked={state.settings.manualXpOverride === true} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, manualXpOverride: e.target.checked } }))} /></label><label className="toggle-row"><div><strong>{t("settings.animations")}</strong><span>{t("settings.animationsText")}</span></div><input type="checkbox" checked={state.settings.animations} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, animations: e.target.checked } }))} /></label></section>
       <section className="settings-card"><header><i>⇅</i><div><h2>{t("settings.backup")}</h2><p>{t("settings.backupText")}</p></div></header><div className="button-row"><button className="primary" onClick={exportJson}>{t("settings.export")}</button><button onClick={() => importRef.current?.click()}>{t("settings.import")}</button><input ref={importRef} hidden type="file" accept="application/json" onChange={e => e.target.files?.[0] && importJson(e.target.files[0])} /></div></section>
-      <section className="settings-card account-card"><header><i>@</i><div><h2>{t("settings.account")}</h2><p>{t("settings.accountText")}</p></div></header><div className="account-summary"><div><strong>{cloudUser?.name}</strong><small>{cloudUser?.email}</small></div><div className="account-actions"><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link><button className="danger" onClick={() => setConfirmAction({ title: t("settings.deleteAccountTitle"), text: t("settings.deleteAccountConfirm"), action: () => void deleteCurrentAccount() })}>{t("settings.deleteAccount")}</button></div></div></section>
+      <section className="settings-card account-card"><header><i>@</i><div><h2>{t("settings.account")}</h2><p>{t("settings.accountText")}</p></div></header><div className="account-summary"><div><strong>{cloudUser?.name}</strong><small>{cloudUser?.email}</small></div><div className="account-actions"><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link><button className="danger" onClick={() => void requestAccountDeletion()}>{t("settings.deleteAccount")}</button></div></div></section>
       <section className="settings-card danger-zone"><header><i>!</i><div><h2>{t("settings.reset")}</h2><p>{t("settings.resetText")}</p></div></header><button onClick={() => ensureWritable() && setConfirmAction({ title: t("settings.resetTitle"), text: t("settings.resetConfirm"), action: () => { updateState(() => makeInitialState()); setConfirmAction(null); setToast(t("settings.resetDone")); } })}>{t("settings.resetAction")}</button></section>
     </div>
   </div>;
@@ -1908,11 +1947,11 @@ export default function SoloApp() {
         action(value);
       }}>
         <header><div><p>{t("editor.systemInput")}</p><h2>{inputDialog.title}</h2></div><button type="button" onClick={() => setInputDialog(null)} aria-label={t("common.close")}>×</button></header>
-        <div className="input-modal-body"><Field label={inputDialog.label}>{inputDialog.multiline
+        <div className="input-modal-body">{inputDialog.description && <p className="input-dialog-description">{inputDialog.description}</p>}<Field label={inputDialog.label}>{inputDialog.multiline
           ? <textarea autoFocus rows={5} maxLength={inputDialog.maxLength} value={inputDialog.value} onChange={e => setInputDialog({ ...inputDialog, value: e.target.value })} placeholder={inputDialog.placeholder} />
-          : <input autoFocus maxLength={inputDialog.maxLength} value={inputDialog.value} onChange={e => setInputDialog({ ...inputDialog, value: e.target.value })} placeholder={inputDialog.placeholder} />
+          : <input autoFocus autoComplete={inputDialog.inputType === "password" ? "current-password" : undefined} type={inputDialog.inputType ?? "text"} maxLength={inputDialog.maxLength} value={inputDialog.value} onChange={e => setInputDialog({ ...inputDialog, value: e.target.value })} placeholder={inputDialog.placeholder} />
         }</Field></div>
-        <footer>{inputDialog.clearAction && <button className="note-clear" type="button" onClick={() => { const clear = inputDialog.clearAction; setInputDialog(null); clear?.(); }}>{inputDialog.clearLabel}</button>}<button type="button" onClick={() => setInputDialog(null)}>{t("common.cancel")}</button><button className="primary" type="submit">{inputDialog.submitLabel}</button></footer>
+        <footer>{inputDialog.clearAction && <button className="note-clear" type="button" onClick={() => { const clear = inputDialog.clearAction; setInputDialog(null); clear?.(); }}>{inputDialog.clearLabel}</button>}<button type="button" onClick={() => setInputDialog(null)}>{t("common.cancel")}</button><button className={inputDialog.danger ? "danger" : "primary"} type="submit">{inputDialog.submitLabel}</button></footer>
       </form>
     </div>}
     {ceremony && <div className="modal-backdrop ceremony-backdrop"><section className="ceremony modal"><div className="ceremony-glyph">✦</div><p>{ceremony.eyebrow}</p><h2>{ceremony.title}</h2><span>{ceremony.text}</span><button className="primary" onClick={() => setCeremony(null)}>{t("common.continue")}</button></section></div>}

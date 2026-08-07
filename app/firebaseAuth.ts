@@ -5,12 +5,15 @@ import {
   applyActionCode,
   checkActionCode,
   confirmPasswordReset,
+  EmailAuthProvider,
   GoogleAuthProvider,
   browserLocalPersistence,
   createUserWithEmailAndPassword,
   deleteUser,
   getAuth,
   onAuthStateChanged,
+  reauthenticateWithCredential,
+  reauthenticateWithPopup,
   sendEmailVerification,
   sendPasswordResetEmail,
   setPersistence,
@@ -254,6 +257,27 @@ export async function applyEmailRecoveryCode(code: string) {
 export async function signOutOfWeAscend() {
   const { auth } = await configuredAuth();
   if (auth) await signOut(auth);
+}
+
+export async function getAccountAuthMethod(): Promise<"password" | "google"> {
+  const { auth } = await configuredAuth();
+  const user = auth?.currentUser;
+  if (!user) throw new Error("authentication_required");
+  return user.providerData.some(provider => provider.providerId === "password") ? "password" : "google";
+}
+
+export async function reauthenticateForAccountDeletion(password?: string) {
+  const { auth } = await configuredAuth();
+  const user = auth?.currentUser;
+  if (!user) throw new Error("authentication_required");
+  const method = await getAccountAuthMethod();
+  if (method === "password") {
+    if (!user.email || !password) throw new Error("password_required");
+    await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
+  } else {
+    await reauthenticateWithPopup(user, new GoogleAuthProvider());
+  }
+  await user.getIdToken(true);
 }
 
 export async function deleteFirebaseAccount() {
