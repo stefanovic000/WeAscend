@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { translate, type Language, type TranslationKey } from "./i18n";
 
-type TourStep = { title: TranslationKey; text: TranslationKey; target: string; interactive?: boolean };
+type TourStep = { title: TranslationKey; text: TranslationKey; target?: string; interactive?: boolean; overview?: boolean };
 type TargetRect = { top: number; left: number; width: number; height: number };
+type Viewport = { width: number; height: number };
 
 const steps: TourStep[] = [
-  { title: "tutorial.welcomeTitle", text: "tutorial.welcomeText", target: "[data-tour='dashboard-next']" },
+  { title: "tutorial.welcomeTitle", text: "tutorial.welcomeText", overview: true },
   { title: "tutorial.attributeTitle", text: "tutorial.attributeText", target: "[data-tour='growth-add-attribute']" },
   { title: "tutorial.skillTitle", text: "tutorial.skillText", target: "[data-tour='growth-grid']" },
   { title: "tutorial.plannerTitle", text: "tutorial.plannerText", target: "[data-tour='quest-planner']" },
@@ -38,6 +39,9 @@ export default function OnboardingTutorial({
   const current = steps[safeStep];
   const isLast = safeStep === steps.length - 1;
   const [targetRect, setTargetRect] = useState<TargetRect | null>(null);
+  const [coachHeight, setCoachHeight] = useState(0);
+  const [viewport, setViewport] = useState<Viewport>({ width: 1024, height: 768 });
+  const coachRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     let frame = 0;
@@ -45,6 +49,13 @@ export default function OnboardingTutorial({
     let observer: ResizeObserver | null = null;
     let target: HTMLElement | null = null;
     const measure = () => {
+      setViewport({ width: window.innerWidth, height: window.innerHeight });
+      const coach = coachRef.current;
+      if (coach) setCoachHeight(coach.getBoundingClientRect().height);
+      if (!current.target) {
+        setTargetRect(null);
+        return;
+      }
       if (!target?.isConnected) target = document.querySelector<HTMLElement>(current.target);
       if (!target) {
         setTargetRect(null);
@@ -58,13 +69,12 @@ export default function OnboardingTutorial({
       frame = window.requestAnimationFrame(measure);
     };
     timer = window.setTimeout(() => {
-      target = document.querySelector<HTMLElement>(current.target);
+      target = current.target ? document.querySelector<HTMLElement>(current.target) : null;
       target?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
       scheduleMeasure();
-      if (target) {
-        observer = new ResizeObserver(scheduleMeasure);
-        observer.observe(target);
-      }
+      observer = new ResizeObserver(scheduleMeasure);
+      if (target) observer.observe(target);
+      if (coachRef.current) observer.observe(coachRef.current);
     }, 100);
     window.addEventListener("resize", scheduleMeasure);
     window.addEventListener("scroll", scheduleMeasure, true);
@@ -77,23 +87,33 @@ export default function OnboardingTutorial({
     };
   }, [current.target]);
 
-  const viewportWidth = typeof window === "undefined" ? 1024 : window.innerWidth;
-  const viewportHeight = typeof window === "undefined" ? 768 : window.innerHeight;
+  const viewportWidth = viewport.width;
+  const viewportHeight = viewport.height;
   const padding = 7;
-  const spotlight = targetRect ? {
-    top: Math.max(6, targetRect.top - padding),
-    left: Math.max(6, targetRect.left - padding),
-    width: Math.min(viewportWidth - 12, targetRect.width + padding * 2),
-    height: Math.min(viewportHeight - 12, targetRect.height + padding * 2),
-  } : null;
+  const spotlight = targetRect ? (() => {
+    const top = Math.max(6, targetRect.top - padding);
+    const left = Math.max(6, targetRect.left - padding);
+    const right = Math.min(viewportWidth - 6, targetRect.left + targetRect.width + padding);
+    const bottom = Math.min(viewportHeight - 6, targetRect.top + targetRect.height + padding);
+    return { top, left, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
+  })() : null;
   const coachWidth = Math.min(370, viewportWidth - 24);
   const coachLeft = targetRect
     ? Math.min(Math.max(targetRect.left, 12), viewportWidth - coachWidth - 12)
     : Math.max(12, (viewportWidth - coachWidth) / 2);
-  const placeAbove = !!targetRect && targetRect.top > viewportHeight * .55;
-  const coachStyle = targetRect
-    ? { left: coachLeft, top: placeAbove ? Math.max(12, targetRect.top - 14) : Math.min(viewportHeight - 12, targetRect.top + targetRect.height + 14), transform: placeAbove ? "translateY(-100%)" : undefined, width: coachWidth }
-    : { left: coachLeft, top: "50%", transform: "translateY(-50%)", width: coachWidth };
+  const measuredCoachHeight = Math.min(coachHeight || 320, viewportHeight - 24);
+  const gap = 14;
+  const margin = 12;
+  const spaceAbove = targetRect ? targetRect.top - gap - margin : 0;
+  const spaceBelow = targetRect ? viewportHeight - (targetRect.top + targetRect.height) - gap - margin : 0;
+  const placeBelow = !!targetRect && (spaceBelow >= measuredCoachHeight || spaceBelow >= spaceAbove);
+  const desiredTop = targetRect
+    ? placeBelow
+      ? targetRect.top + targetRect.height + gap
+      : targetRect.top - gap - measuredCoachHeight
+    : (viewportHeight - measuredCoachHeight) / 2;
+  const coachTop = Math.min(Math.max(margin, desiredTop), Math.max(margin, viewportHeight - measuredCoachHeight - margin));
+  const coachStyle = { left: coachLeft, top: coachTop, width: coachWidth };
 
   return <div className={`tour-layer ${spotlight ? "has-target" : ""} ${current.interactive ? "interactive" : ""}`}>
     {spotlight && current.interactive
@@ -105,11 +125,19 @@ export default function OnboardingTutorial({
       </>
       : <div className="tour-blocker" />}
     {spotlight && <div aria-hidden="true" className="tour-spotlight" style={spotlight} />}
-    <section aria-labelledby="tutorial-title" aria-live="polite" className="tour-coachmark" role="dialog" style={coachStyle}>
+    <section aria-labelledby="tutorial-title" aria-live="polite" className="tour-coachmark" ref={coachRef} role="dialog" style={coachStyle}>
       <div className="tour-progress"><span>{t("tutorial.step", { current: safeStep + 1, total: steps.length })}</span><i><b style={{ width: `${(safeStep + 1) / steps.length * 100}%` }} /></i></div>
-      <h2 id="tutorial-title">{t(current.title)}</h2>
-      <p>{t(current.text)}</p>
-      {current.interactive && <small className="tour-try">{t("tutorial.tryIt")}</small>}
+      <div className="tour-coachmark-body">
+        <h2 id="tutorial-title">{t(current.title)}</h2>
+        <p>{t(current.text)}</p>
+        {current.overview && <div className="tutorial-loop" aria-label={t("tutorial.loopLabel")}>
+          <div><b>01</b><strong>{t("tutorial.loopPlan")}</strong><span>{t("tutorial.loopPlanText")}</span></div>
+          <div><b>02</b><strong>{t("tutorial.loopDo")}</strong><span>{t("tutorial.loopDoText")}</span></div>
+          <div><b>03</b><strong>{t("tutorial.loopEarn")}</strong><span>{t("tutorial.loopEarnText")}</span></div>
+          <div><b>04</b><strong>{t("tutorial.loopGrow")}</strong><span>{t("tutorial.loopGrowText")}</span></div>
+        </div>}
+        {current.interactive && <small className="tour-try">{t("tutorial.tryIt")}</small>}
+      </div>
       <footer>
         <button className="tour-skip" onClick={onFinish} type="button">{t("tutorial.skip")}</button>
         <div>
