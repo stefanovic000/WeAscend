@@ -557,6 +557,7 @@ export default function SoloApp() {
       if (!saved) return;
     }
     if (questDraft?.id === TUTORIAL_QUEST_ID) setQuestDraft(null);
+    setView("dashboard");
     setTutorialStep(null);
   };
 
