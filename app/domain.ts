@@ -23,6 +23,7 @@ export interface Settings {
   manualXpOverride?: boolean;
   tutorialCompleted?: boolean;
   spellcheck?: boolean;
+  hapticFeedback?: boolean;
 }
 export interface Attribute { id: string; name: string; color: string; createdAt: string; updatedAt: string; deletedAt?: string }
 export interface Skill { id: string; attributeId: string; name: string; createdAt: string; updatedAt: string; deletedAt?: string }
@@ -172,6 +173,7 @@ export const defaultSettings: Settings = {
   manualXpOverride: false,
   tutorialCompleted: false,
   spellcheck: true,
+  hapticFeedback: true,
 };
 
 export type QuestScoringInput = Pick<Quest, "type" | "xpCategory" | "focusMinutes" | "outputBonus" | "xpRuleValue">;
@@ -733,6 +735,7 @@ const NULLABLE_OPTIONAL_STATE_FIELDS = new Set([
   "manualXpOverride",
   "tutorialCompleted",
   "spellcheck",
+  "hapticFeedback",
 ]);
 
 export function normalizeCloudState(value: unknown): AppState | null {

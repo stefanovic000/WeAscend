@@ -3,7 +3,7 @@
 import { Children, isValidElement, useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Archive, ArchiveRestore, CheckCircle2, CircleX, Clock3, CopyPlus, History as HistoryIcon, LayoutDashboard, ListChecks, NotebookPen, Pencil, Plus, RefreshCcw, RotateCcw, Settings as SettingsIcon, Shield, Trash2, TrendingUp, type LucideIcon } from "lucide-react";
+import { Archive, ArchiveRestore, CheckCircle2, CircleX, Clock3, CopyPlus, History as HistoryIcon, LayoutDashboard, ListChecks, MoreHorizontal, NotebookPen, Pencil, Plus, RefreshCcw, RotateCcw, Settings as SettingsIcon, Shield, Trash2, TrendingUp, type LucideIcon } from "lucide-react";
 import AuthGate from "./AuthGate";
 import OnboardingTutorial from "./OnboardingTutorial";
 import { activeXp, addTemplateQuestForDate, allowedXpForCategory, canAwardQuest, CONTENT_LIMITS, deleteAttributeFromState, isUntouchedDemoState, isValidBackup, isValidCloudState, makeInitialState, materializeRoutineInstances, progressFromXp, questTemplateFromQuest, rankForLevel, type AppState, type Quest, type QuestMutation, type QuestTemplate, type QuestType, type XpTransaction } from "./domain";
@@ -141,6 +141,64 @@ function Empty({ title, text }: { title: string; text: string }) {
   return <div className="empty"><span>◇</span><strong>{title}</strong><p>{text}</p></div>;
 }
 
+function HoldButton({ className, title, onClick, onLongPress, children }: {
+  className: string;
+  title: string;
+  onClick: () => void;
+  onLongPress: () => void;
+  children: React.ReactNode;
+}) {
+  const timerRef = useRef<number | null>(null);
+  const originRef = useRef({ x: 0, y: 0 });
+  const suppressClickRef = useRef(false);
+  const [pressing, setPressing] = useState(false);
+  const cancel = () => {
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+    setPressing(false);
+  };
+  useEffect(() => () => {
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+  }, []);
+  return <button
+    className={`${className} ${pressing ? "pressing" : ""}`}
+    title={title}
+    onClick={event => {
+      if (suppressClickRef.current) {
+        suppressClickRef.current = false;
+        event.preventDefault();
+        return;
+      }
+      onClick();
+    }}
+    onPointerDown={event => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      cancel();
+      originRef.current = { x: event.clientX, y: event.clientY };
+      setPressing(true);
+      timerRef.current = window.setTimeout(() => {
+        timerRef.current = null;
+        suppressClickRef.current = true;
+        setPressing(false);
+        onLongPress();
+        window.setTimeout(() => { suppressClickRef.current = false; }, 1_000);
+      }, 450);
+    }}
+    onPointerMove={event => {
+      if (timerRef.current !== null && Math.hypot(event.clientX - originRef.current.x, event.clientY - originRef.current.y) > 10) cancel();
+    }}
+    onPointerUp={cancel}
+    onPointerCancel={cancel}
+    onPointerLeave={cancel}
+    onContextMenu={event => {
+      event.preventDefault();
+      const alreadyTriggered = suppressClickRef.current;
+      cancel();
+      if (!alreadyTriggered) onLongPress();
+    }}
+  >{children}</button>;
+}
+
 async function cloudFetch(input: RequestInfo | URL, init?: RequestInit, timeoutMs = 8_000) {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -217,6 +275,8 @@ export default function SoloApp() {
   const [selectedDate, setSelectedDate] = useState(today);
   const [calendarMonth, setCalendarMonth] = useState(`${today.slice(0, 7)}-01`);
   const [showAllDates, setShowAllDates] = useState(false);
+  const [questMenuId, setQuestMenuId] = useState<string | null>(null);
+  const [pressedSurface, setPressedSurface] = useState("");
   const importRef = useRef<HTMLInputElement>(null);
   const revisionRef = useRef(0);
   const hydratedRef = useRef(false);
@@ -227,6 +287,8 @@ export default function SoloApp() {
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncModeRef = useRef<SyncMode>("starting");
   const currentUserIdRef = useRef("");
+  const longPressRef = useRef<{ timer: number; key: string; x: number; y: number } | null>(null);
+  const overlayKeyRef = useRef("");
   const t = (key: TranslationKey, variables?: Record<string, string | number>) => translate(language, key, variables);
   const locale = language === "sr" ? "sr-Latn-RS" : "en-US";
   const formatDate = (value: string, time = true) => value
@@ -479,6 +541,52 @@ export default function SoloApp() {
     return () => window.clearInterval(timer);
   }, []);
 
+  const tutorialVisible = tutorialStep !== null || (syncMode === "online" && state?.settings.tutorialCompleted !== true);
+  const activeOverlayKey = tutorialVisible ? "" : confirmAction ? "confirm"
+    : ceremony ? "ceremony"
+      : inputDialog ? "input"
+        : stepPlanner ? "steps"
+          : xpArgument ? "argument"
+            : questMenuId ? "quest-menu"
+              : questDraft ? "quest-editor"
+                : templateDraft ? "template-editor"
+                  : "";
+  const closeTopOverlay = useEffectEvent(() => {
+    if (confirmAction) setConfirmAction(null);
+    else if (ceremony) setCeremony(null);
+    else if (inputDialog) setInputDialog(null);
+    else if (stepPlanner) setStepPlanner(null);
+    else if (xpArgument) setXpArgument(null);
+    else if (questMenuId) setQuestMenuId(null);
+    else if (questDraft && questSaving) {
+      const currentState = history.state && typeof history.state === "object" ? history.state : {};
+      history.pushState({ ...currentState, weascendOverlay: true }, "", window.location.href);
+    } else if (questDraft) setQuestDraft(null);
+    else if (templateDraft) setTemplateDraft(null);
+  });
+
+  useEffect(() => {
+    overlayKeyRef.current = activeOverlayKey;
+    if (activeOverlayKey && !history.state?.weascendOverlay) {
+      const currentState = history.state && typeof history.state === "object" ? history.state : {};
+      history.pushState({ ...currentState, weascendOverlay: true }, "", window.location.href);
+    } else if (!activeOverlayKey && history.state?.weascendOverlay) {
+      history.back();
+    }
+  }, [activeOverlayKey]);
+
+  useEffect(() => {
+    const handleBack = () => {
+      if (overlayKeyRef.current) closeTopOverlay();
+    };
+    window.addEventListener("popstate", handleBack);
+    return () => window.removeEventListener("popstate", handleBack);
+  }, []);
+
+  useEffect(() => () => {
+    if (longPressRef.current) window.clearTimeout(longPressRef.current.timer);
+  }, []);
+
   const metrics = useMemo(() => {
     if (!state) return null;
     const xp = activeXp(state.transactions);
@@ -495,6 +603,35 @@ export default function SoloApp() {
 
   const readOnly = syncMode === "offline" || syncMode === "local";
   const shouldAnimate = () => state.settings.animations && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const haptic = (pattern: number | number[] = 12) => {
+    if (state.settings.hapticFeedback === false || typeof navigator.vibrate !== "function") return;
+    navigator.vibrate(pattern);
+  };
+  const cancelLongPress = () => {
+    if (longPressRef.current) window.clearTimeout(longPressRef.current.timer);
+    longPressRef.current = null;
+    setPressedSurface("");
+  };
+  const startLongPress = (event: React.PointerEvent<HTMLElement>, key: string, action: () => void) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest("button,a,input,textarea,select,label") && target.closest("button,a,input,textarea,select,label") !== event.currentTarget) return;
+    cancelLongPress();
+    setPressedSurface(key);
+    const x = event.clientX;
+    const y = event.clientY;
+    const timer = window.setTimeout(() => {
+      longPressRef.current = null;
+      setPressedSurface("");
+      haptic(14);
+      action();
+    }, 450);
+    longPressRef.current = { timer, key, x, y };
+  };
+  const moveLongPress = (event: React.PointerEvent<HTMLElement>) => {
+    const press = longPressRef.current;
+    if (press && Math.hypot(event.clientX - press.x, event.clientY - press.y) > 10) cancelLongPress();
+  };
   const ensureWritable = () => {
     if (readOnly) {
       setToast(t("sync.readOnlyToast"));
@@ -772,6 +909,7 @@ export default function SoloApp() {
       setToast(t("quest.alreadyAwarded"));
       return;
     }
+    haptic(18);
     const before = metrics.progress;
     const oldRank = metrics.rank;
     const stamp = new Date().toISOString();
@@ -812,6 +950,7 @@ export default function SoloApp() {
       return;
     }
     if (!ensureWritable()) return;
+    haptic([10, 28, 10]);
     updateState(s => ({ ...s, quests: s.quests.map(q => q.id === quest.id ? { ...q, status: "failed", updatedAt: new Date().toISOString() } : q) }));
     if (quest.type === "Mandatory" && quest.failureConsequence) {
       setCeremony({ eyebrow: t("ceremony.mandatoryFailed"), title: t("ceremony.consequenceActive"), text: quest.failureConsequence });
@@ -820,6 +959,7 @@ export default function SoloApp() {
 
   const retryQuest = async (quest: Quest) => {
     if (!ensureWritable()) return;
+    haptic(12);
     const stamp = new Date().toISOString();
     const retry: Quest = {
       ...quest,
@@ -1068,6 +1208,7 @@ export default function SoloApp() {
 
   const archiveQuest = (quest: Quest) => {
     if (quest.status === "archived" || (motionCue?.questId === quest.id && motionCue.kind === "archive")) return;
+    haptic(10);
     const commitArchive = () => {
       void runQuestMutation({
         action: "update",
@@ -1086,6 +1227,7 @@ export default function SoloApp() {
 
   const restoreQuest = (quest: Quest) => {
     if (quest.status !== "archived" || (motionCue?.questId === quest.id && motionCue.kind === "restore")) return;
+    haptic(10);
     const commitRestore = () => {
       void runQuestMutation({
         action: "update",
@@ -1560,7 +1702,24 @@ export default function SoloApp() {
     const canRestore = quest.status === "archived" && !quest.parentClosedAt &&
       availableAttributes.some(attribute => attribute.id === quest.attributeId) &&
       availableSkills.some(skill => skill.id === quest.skillId);
-    return <article className={`quest-card ${quest.status} ${overdue ? "overdue" : ""} ${cardMotion ? `motion-${cardMotion}` : ""} ${compact ? "compact" : ""}`} key={quest.id}>
+    const pressKey = `quest:${quest.id}`;
+    return <article
+      className={`quest-card ${quest.status} ${overdue ? "overdue" : ""} ${cardMotion ? `motion-${cardMotion}` : ""} ${compact ? "compact" : ""} ${pressedSurface === pressKey ? "pressing" : ""}`}
+      key={quest.id}
+      onPointerDown={event => startLongPress(event, pressKey, () => setQuestMenuId(quest.id))}
+      onPointerMove={moveLongPress}
+      onPointerUp={cancelLongPress}
+      onPointerCancel={cancelLongPress}
+      onPointerLeave={cancelLongPress}
+      onContextMenu={event => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (target?.closest("button,a,input,textarea,select,label")) return;
+        event.preventDefault();
+        cancelLongPress();
+        haptic(14);
+        setQuestMenuId(quest.id);
+      }}
+    >
       <div className="quest-accent" style={{ background: attrColor(quest.attributeId) }} />
       <div className="quest-card-main">
         <div className="quest-meta">
@@ -1597,6 +1756,7 @@ export default function SoloApp() {
             : quest.status !== "archived" && <button className="secondary-action" onClick={() => archiveQuest(quest)} title={t("common.archive")}><Archive aria-hidden="true" size={16} /><span className="action-text">{t("common.archive")}</span></button>}
           <button className="danger-link secondary-action" onClick={() => deleteQuest(quest)} title={t("common.delete")}><Trash2 aria-hidden="true" size={16} /><span className="action-text">{t("common.delete")}</span></button>
         </>}
+        <button className="menu-action" onClick={() => { haptic(10); setQuestMenuId(quest.id); }} aria-label={t("common.more")} title={t("common.more")}><MoreHorizontal aria-hidden="true" size={18} /><span className="action-text">{t("common.more")}</span></button>
       </div>
     </article>;
   };
@@ -1688,12 +1848,19 @@ export default function SoloApp() {
         const completed = quests.filter(q => q.status === "completed").length;
         const hasBoss = quests.some(q => q.type === "Boss");
         const outside = date.getMonth() !== monthDate.getMonth();
-        return <button key={key} className={`${key === selectedDate ? "selected" : ""} ${key === today ? "today" : ""} ${outside ? "outside" : ""} ${hasBoss ? "boss-day" : ""}`} onClick={() => { setSelectedDate(key); setShowAllDates(false); }}>
+        const planForDay = () => { setSelectedDate(key); setShowAllDates(false); beginQuestOnDate(key); };
+        return <HoldButton
+          key={key}
+          className={`${key === selectedDate ? "selected" : ""} ${key === today ? "today" : ""} ${outside ? "outside" : ""} ${hasBoss ? "boss-day" : ""}`}
+          title={t("planner.holdToPlan")}
+          onClick={() => { setSelectedDate(key); setShowAllDates(false); }}
+          onLongPress={() => { haptic(14); planForDay(); }}
+        >
           <span>{date.getDate()}</span>{quests.length > 0 && <b>{quests.length}</b>}
           <i>{quests.slice(0, 3).map((quest, index) => <em key={quest.id} style={{ background: quest.type === "Boss" ? "#ff5277" : quest.status === "completed" ? "var(--cyan)" : attrColor(quest.attributeId), opacity: index < completed ? 1 : .75 }} />)}</i>
-        </button>;
+        </HoldButton>;
       })}</div>
-      <footer><div><span>{t("planner.selectedDay")}</span><strong>{selectedLabel}</strong></div><button onClick={() => beginQuestOnDate(selectedDate)}>{t("planner.addDay")}</button></footer>
+      <footer><div><span>{t("planner.selectedDay")}</span><strong>{selectedLabel}</strong><small>{t("planner.holdToPlan")}</small></div><button onClick={() => beginQuestOnDate(selectedDate)}>{t("planner.addDay")}</button></footer>
     </section>
     <section className="routine-panel">
       <header>
@@ -1875,7 +2042,7 @@ export default function SoloApp() {
       </section>
       <section className="settings-card"><header><i>ƒ</i><div><h2>{t("settings.formula")}</h2><p>{t("settings.formulaText")}</p></div></header><div className="settings-row"><Field label={t("settings.baseXp")}><input type="number" min="1" value={state.settings.baseXp} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, baseXp: Math.max(1, Number(e.target.value)) } }))} /></Field><Field label={t("settings.growth")}><input type="number" min="0" value={state.settings.levelGrowth} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, levelGrowth: Math.max(0, Number(e.target.value)) } }))} /></Field></div></section>
       <section className="settings-card"><header><i>R</i><div><h2>{t("settings.ranks")}</h2><p>{t("settings.ranksText")}</p></div></header><div className="rank-settings">{state.settings.ranks.map((rank, index) => <Field label={`${rank.name}-Rank`} key={rank.name}><input type="number" min="1" value={rank.minLevel} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, ranks: s.settings.ranks.map((r, i) => i === index ? { ...r, minLevel: Math.max(1, Number(e.target.value)) } : r) } }))} /></Field>)}</div></section>
-      <section className="settings-card"><header><i>◈</i><div><h2>{t("settings.rules")}</h2><p>{t("settings.rulesText")}</p></div></header><label className="toggle-row"><div><strong>{t("settings.manualXp")}</strong><span>{t("settings.manualXpText")}</span></div><input type="checkbox" checked={state.settings.manualXpOverride === true} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, manualXpOverride: e.target.checked } }))} /></label><label className="toggle-row"><div><strong>{t("settings.animations")}</strong><span>{t("settings.animationsText")}</span></div><input type="checkbox" checked={state.settings.animations} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, animations: e.target.checked } }))} /></label><label className="toggle-row"><div><strong>{t("settings.spellcheck")}</strong><span>{t("settings.spellcheckText")}</span></div><input type="checkbox" checked={state.settings.spellcheck !== false} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, spellcheck: e.target.checked } }))} /></label></section>
+      <section className="settings-card"><header><i>◈</i><div><h2>{t("settings.rules")}</h2><p>{t("settings.rulesText")}</p></div></header><label className="toggle-row"><div><strong>{t("settings.manualXp")}</strong><span>{t("settings.manualXpText")}</span></div><input type="checkbox" checked={state.settings.manualXpOverride === true} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, manualXpOverride: e.target.checked } }))} /></label><label className="toggle-row"><div><strong>{t("settings.animations")}</strong><span>{t("settings.animationsText")}</span></div><input type="checkbox" checked={state.settings.animations} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, animations: e.target.checked } }))} /></label><label className="toggle-row"><div><strong>{t("settings.haptics")}</strong><span>{t("settings.hapticsText")}</span></div><input type="checkbox" checked={state.settings.hapticFeedback !== false} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, hapticFeedback: e.target.checked } }))} /></label><label className="toggle-row"><div><strong>{t("settings.spellcheck")}</strong><span>{t("settings.spellcheckText")}</span></div><input type="checkbox" checked={state.settings.spellcheck !== false} onChange={e => updateState(s => ({ ...s, settings: { ...s.settings, spellcheck: e.target.checked } }))} /></label></section>
       <section className="settings-card"><header><i>⇅</i><div><h2>{t("settings.backup")}</h2><p>{t("settings.backupText")}</p></div></header><div className="button-row"><button className="primary" onClick={exportJson}>{t("settings.export")}</button><button onClick={() => importRef.current?.click()}>{t("settings.import")}</button><input ref={importRef} hidden type="file" accept="application/json" onChange={e => e.target.files?.[0] && importJson(e.target.files[0])} /></div></section>
       <section className="settings-card account-card"><header><i>@</i><div><h2>{t("settings.account")}</h2><p>{t("settings.accountText")}</p></div></header><div className="account-summary"><div><strong>{cloudUser?.name}</strong><small>{cloudUser?.email}</small></div><div className="account-actions"><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link><button className="danger" onClick={() => void requestAccountDeletion()}>{t("settings.deleteAccount")}</button></div></div></section>
       <section className="settings-card danger-zone"><header><i>!</i><div><h2>{t("settings.reset")}</h2><p>{t("settings.resetText")}</p></div></header><button onClick={() => ensureWritable() && setConfirmAction({ title: t("settings.resetTitle"), text: t("settings.resetConfirm"), action: () => { updateState(() => makeInitialState()); setConfirmAction(null); setToast(t("settings.resetDone")); } })}>{t("settings.resetAction")}</button></section>
@@ -1890,6 +2057,10 @@ export default function SoloApp() {
   const questStorageCount = state.quests.length;
   const projectedQuestStorage = questStorageCount + (questDraft && !editingQuest && questDraft.id !== TUTORIAL_QUEST_ID ? 1 : 0);
   const questStorageTone = projectedQuestStorage >= questStorageLimit ? "full" : projectedQuestStorage >= questStorageLimit * .9 ? "near" : "";
+  const runQuestMenuAction = (action: () => void) => {
+    setQuestMenuId(null);
+    action();
+  };
 
   return <div className={`app-shell ${state.settings.animations ? "" : "reduce-motion"} ${readOnly ? "read-only" : ""}`} spellCheck={state.settings.spellcheck !== false}>
     {readOnly && <div className={`sync-banner ${syncMode}`}><span>{t("sync.banner")} <strong>READ-ONLY</strong></span><button onClick={() => setBootstrapAttempt(attempt => attempt + 1)}>{t("sync.retry")}</button></div>}
@@ -1918,7 +2089,35 @@ export default function SoloApp() {
       const label = t(item.labelKey);
       return <button aria-current={view === item.id ? "page" : undefined} aria-label={label} key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><i aria-hidden="true"><Icon size={19} strokeWidth={1.9} /></i><span>{label}</span></button>;
     })}</nav>
-    {(tutorialStep !== null || (syncMode === "online" && state.settings.tutorialCompleted !== true)) && <OnboardingTutorial language={language} step={tutorialStep ?? 0} onStepChange={goToTutorialStep} onFinish={finishTutorial} />}
+    {questMenuId && (() => {
+      const quest = state.quests.find(item => item.id === questMenuId);
+      if (!quest) return null;
+      const canRestore = quest.status === "archived" && !quest.parentClosedAt &&
+        availableAttributes.some(attribute => attribute.id === quest.attributeId) &&
+        availableSkills.some(skill => skill.id === quest.skillId);
+      return <div className="modal-backdrop action-sheet-backdrop" onMouseDown={event => event.target === event.currentTarget && setQuestMenuId(null)}>
+        <section className="quest-action-sheet" role="dialog" aria-modal="true" aria-labelledby="quest-actions-title">
+          <header><div><p>{t("quest.actionsTitle")}</p><h2 id="quest-actions-title">{quest.title}</h2><span>{attrName(quest.attributeId)} / {skillName(quest.skillId)} · {quest.xp} XP</span></div><button onClick={() => setQuestMenuId(null)} aria-label={t("common.close")}>×</button></header>
+          <div className="quest-action-grid">
+            {quest.status === "active" && <>
+              <button className="complete" onClick={() => runQuestMenuAction(() => completeQuest(quest))}><CheckCircle2 aria-hidden="true" /><span>{t("quest.clear")}</span></button>
+              <button className="fail" onClick={() => runQuestMenuAction(() => failQuest(quest))}><CircleX aria-hidden="true" /><span>{t("common.failed")}</span></button>
+            </>}
+            {quest.status === "failed" && <button onClick={() => runQuestMenuAction(() => void retryQuest(quest))}><RefreshCcw aria-hidden="true" /><span>{t("quest.retry")}</span></button>}
+            {quest.status === "completed" && <button onClick={() => runQuestMenuAction(() => undoQuest(quest))}><RotateCcw aria-hidden="true" /><span>{t("common.undo")}</span></button>}
+            <button onClick={() => runQuestMenuAction(() => openQuestNote(quest))}><NotebookPen aria-hidden="true" /><span>{t("quest.note")}</span></button>
+            {quest.status !== "archived" && canAwardQuest(quest.id, state.transactions) && <button onClick={() => runQuestMenuAction(() => { if (ensureWritable()) openQuestEditor(quest); })}><Pencil aria-hidden="true" /><span>{t("common.edit")}</span></button>}
+            {quest.status !== "archived" && quest.type !== "Boss" && !quest.parentQuestId && <button onClick={() => runQuestMenuAction(() => saveQuestAsTemplate(quest))}><CopyPlus aria-hidden="true" /><span>{t("template.save")}</span></button>}
+            {canRestore
+              ? <button onClick={() => runQuestMenuAction(() => restoreQuest(quest))}><ArchiveRestore aria-hidden="true" /><span>{t("common.restore")}</span></button>
+              : quest.status !== "archived" && <button onClick={() => runQuestMenuAction(() => archiveQuest(quest))}><Archive aria-hidden="true" /><span>{t("common.archive")}</span></button>}
+            <button className="danger" onClick={() => runQuestMenuAction(() => deleteQuest(quest))}><Trash2 aria-hidden="true" /><span>{t("common.delete")}</span></button>
+          </div>
+          <p className="quest-action-hint">{t("quest.actionsHint")}</p>
+        </section>
+      </div>;
+    })()}
+    {tutorialVisible && <OnboardingTutorial language={language} step={tutorialStep ?? 0} onStepChange={goToTutorialStep} onFinish={finishTutorial} />}
     {templateDraft && <div className="modal-backdrop" onMouseDown={event => event.target === event.currentTarget && setTemplateDraft(null)}>
       <section className="modal quest-modal template-modal" role="dialog" aria-modal="true" aria-label={t("template.editTitle")}>
         <header><div><p>{t("template.eyebrow")}</p><h2>{t("template.editTitle")}</h2><span>{t("template.futureOnly")}</span></div><button onClick={() => setTemplateDraft(null)} aria-label={t("common.close")}>×</button></header>

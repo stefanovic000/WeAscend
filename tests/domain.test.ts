@@ -72,6 +72,7 @@ test("initial state is completely empty at level 1 with zero XP", () => {
   assert.equal(state.settings.manualXpOverride, false);
   assert.equal(state.settings.tutorialCompleted, false);
   assert.equal(state.settings.spellcheck, true);
+  assert.equal(state.settings.hapticFeedback, true);
 });
 
 test("quest date input preserves typed local values and stores a valid instant", () => {
