@@ -8,9 +8,9 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: "/favicon.svg", type: "image/svg+xml" },
-      { url: "/icons/wesolo-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/weascend-192.png", sizes: "192x192", type: "image/png" },
     ],
-    apple: [{ url: "/icons/wesolo-192.png", sizes: "192x192", type: "image/png" }],
+    apple: [{ url: "/icons/weascend-192.png", sizes: "192x192", type: "image/png" }],
   },
   openGraph: {
     title: "WeAscend — Personal Progress System",

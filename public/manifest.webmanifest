@@ -13,8 +13,8 @@
   "theme_color": "#070812",
   "prefer_related_applications": false,
   "icons": [
-    { "src": "/icons/wesolo-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/wesolo-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/wesolo-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "/icons/weascend-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/weascend-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/weascend-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

@@ -13,8 +13,8 @@
   "backgroundColor": "#070812",
   "enableNotifications": false,
   "startUrl": "/",
-  "iconUrl": "https://weascend.wesystemlabs.com/icons/wesolo-512.png",
-  "maskableIconUrl": "https://weascend.wesystemlabs.com/icons/wesolo-maskable-512.png",
+  "iconUrl": "https://weascend.wesystemlabs.com/icons/weascend-512.png",
+  "maskableIconUrl": "https://weascend.wesystemlabs.com/icons/weascend-maskable-512.png",
   "splashScreenFadeOutDuration": 250,
   "signingKey": {
     "path": "./keystore/weascend-test.jks",
