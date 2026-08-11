@@ -7,10 +7,9 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
-      { url: "/favicon.svg", type: "image/svg+xml" },
-      { url: "/icons/weascend-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/weascend-crystal-192.png", sizes: "192x192", type: "image/png" },
     ],
-    apple: [{ url: "/icons/weascend-192.png", sizes: "192x192", type: "image/png" }],
+    apple: [{ url: "/icons/weascend-crystal-192.png", sizes: "192x192", type: "image/png" }],
   },
   openGraph: {
     title: "WeAscend — Personal Progress System",

@@ -1,11 +1,11 @@
-const CACHE = "weascend-shell-v6";
+const CACHE = "weascend-shell-v7";
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll([
     "/",
     "/manifest.webmanifest",
-    "/icons/wesolo-192.png",
-    "/icons/wesolo-512.png",
-    "/icons/wesolo-maskable-512.png",
+    "/icons/weascend-crystal-192.png",
+    "/icons/weascend-crystal-512.png",
+    "/icons/weascend-crystal-maskable-512.png",
   ])));
   self.skipWaiting();
 });
