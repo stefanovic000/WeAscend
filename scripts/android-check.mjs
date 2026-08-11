@@ -33,8 +33,11 @@ if (errors.length > 0) {
 }
 
 const pending = [];
+const signingKeyPath = twa.signingKey?.path
+  ? resolve("android-twa", twa.signingKey.path)
+  : resolve("android-twa", "keystore", "weascend-upload.jks");
 for (const [label, path] of [
-  ["signing key", resolve("android-twa", "keystore", "weascend-upload.jks")],
+  ["signing key", signingKeyPath],
   ["Digital Asset Links", resolve("public", ".well-known", "assetlinks.json")],
 ]) {
   try {

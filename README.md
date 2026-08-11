@@ -192,10 +192,10 @@ Kada internet ili cloud nisu dostupni:
 - Login i registracija imaju odvojene, stalno vidljive tabove. Email registracija prikazuje minimalno pravilo lozinke i konkretne Firebase greške umesto jedne opšte poruke.
 - Play reviewer nalog mora biti trajan, bez OTP-a, sa engleskim uputstvom i primerima podataka.
 - Privacy Policy i spoljni account-deletion URL moraju biti uneti u Play Console.
-- Lagan TWA wrapper config je pripremljen u `android-twa/twa-manifest.json`; notifikacije su namerno isključene za prvu test verziju.
-- Signing key, SHA fingerprinti, Digital Asset Links, APK/AAB i Play izdanje rade se tek nakon potvrde web autentifikacije i dvokorisničke izolacije.
+- Android TWA projekat za API 36 nalazi se u `android-twa/`; notifikacije su namerno isključene za prvu test verziju.
+- Potpisani lokalni test APK je spreman, a njegov testni SHA fingerprint je povezan sa domenom kroz Digital Asset Links. Testni ključ se nikada ne koristi za Play izdanje.
 - `npm run android:check` proverava da PWA i Android konfiguracija ostanu usklađene.
-- `npm run android:assetlinks -- "SHA-256-FINGERPRINT"` kasnije bezbedno generiše javni Digital Asset Links fajl; signing ključ nikada ne ide u Git.
+- `npm run android:assetlinks -- "SHA-256-FINGERPRINT"` bezbedno generiše javni Digital Asset Links fajl; signing ključ nikada ne ide u Git.
 - Detaljan redosled za prvi test APK nalazi se u `android-twa/README.md`.
 
 ## Troubleshooting

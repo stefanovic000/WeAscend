@@ -8,27 +8,44 @@
   "themeColorDark": "#070812",
   "navigationColor": "#070812",
   "navigationColorDark": "#070812",
-  "navigationDividerColor": "#16182b",
-  "navigationDividerColorDark": "#16182b",
+  "navigationDividerColor": "#16182B",
+  "navigationDividerColorDark": "#16182B",
   "backgroundColor": "#070812",
   "enableNotifications": false,
-  "enableSiteSettingsShortcut": true,
-  "fallbackType": "customtabs",
-  "orientation": "any",
   "startUrl": "/",
   "iconUrl": "https://weascend.wesystemlabs.com/icons/wesolo-512.png",
   "maskableIconUrl": "https://weascend.wesystemlabs.com/icons/wesolo-maskable-512.png",
-  "webManifestUrl": "https://weascend.wesystemlabs.com/manifest.webmanifest",
   "splashScreenFadeOutDuration": 250,
-  "minSdkVersion": 23,
-  "appVersion": "0.1.0",
-  "appVersionCode": 1,
+  "signingKey": {
+    "path": "./keystore/weascend-test.jks",
+    "alias": "weascend-test"
+  },
+  "appVersionName": "2",
+  "appVersionCode": 2,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://weascend.wesystemlabs.com/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
   "isChromeOSOnly": false,
   "isMetaQuest": false,
-  "generatorApp": "bubblewrap-cli",
-  "fingerprints": [],
-  "signingKey": {
-    "path": "./keystore/weascend-upload.jks",
-    "alias": "weascend"
-  }
+  "fullScopeUrl": "https://weascend.wesystemlabs.com/",
+  "minSdkVersion": 23,
+  "orientation": "any",
+  "fingerprints": [
+    {
+      "value": "C1:1E:D8:81:88:11:9F:FE:9E:7D:D8:2D:60:9F:10:92:3A:2C:27:37:84:35:4E:4B:E0:A2:A2:40:90:BA:DF:94"
+    }
+  ],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": [],
+  "protocolHandlers": [],
+  "fileHandlers": [],
+  "launchHandlerClientMode": "",
+  "displayOverride": [],
+  "appVersion": "2"
 }

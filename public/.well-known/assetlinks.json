@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.wesystemlabs.weascend",
+      "sha256_cert_fingerprints": [
+        "C1:1E:D8:81:88:11:9F:FE:9E:7D:D8:2D:60:9F:10:92:3A:2C:27:37:84:35:4E:4B:E0:A2:A2:40:90:BA:DF:94"
+      ]
+    }
+  }
+]

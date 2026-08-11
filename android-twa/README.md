@@ -1,39 +1,42 @@
 # WeAscend Android TWA
 
-Ovaj direktorijum čuva trajnu konfiguraciju Android omotača za postojeću WeAscend PWA.
+Ovaj direktorijum sadrži Android projekat koji pakuje produkcionu WeAscend PWA kao Trusted Web Activity.
 
 Trenutno je spremno:
 
 - package ID `com.wesystemlabs.weascend`;
-- produkcioni WeAscend URL i web manifest;
-- boje, launcher/maskable ikone i splash podešavanje;
+- Android projekat za API 36;
+- produkcioni URL `https://weascend.wesystemlabs.com`;
+- launcher, maskable i splash ikone;
+- testni potpisani APK `app-release-signed.apk`;
+- testni sertifikat povezan sa domenom kroz `public/.well-known/assetlinks.json`;
 - browser fallback za uređaje bez TWA podrške;
 - push/notification delegacija je namerno isključena.
 
-Nije još napravljeno:
+## Instalacija testnog APK-a
 
-- produkcioni/upload signing key;
-- SHA-256 fingerprint i javni `.well-known/assetlinks.json`;
-- generisani Android/Gradle projekat;
-- APK ili AAB;
-- Play Console izdanje.
+1. Prenesi `app-release-signed.apk` na Android telefon ili uključi USB debugging i koristi `adb install -r app-release-signed.apk`.
+2. Ako Android pita, dozvoli instalaciju iz tog izvora samo za aplikaciju kojom otvaraš APK.
+3. Pokreni WeAscend sa launcher ikone i proveri login, navigaciju, Back dugme, long-press, offline pregled i različite orijentacije.
 
-To je namerno: signing key je trajni sigurnosni identitet aplikacije. Ne treba praviti probni ključ koji bi kasnije slučajno bio izgubljen ili objavljen u Git-u.
+Testni keystore se nalazi u `keystore/weascend-test.jks` i Git ga ignoriše. On služi samo za lokalni APK i ne sme postati Play upload ili app-signing ključ.
 
-## Kada budemo pravili prvi test APK
+## Provera i ponovni build
 
-1. Objaviti i testirati novu multi-user web verziju sa dva odvojena naloga.
-2. Instalirati Bubblewrap i njegov JDK/Android command-line alat izvan ovog repozitorijuma.
-3. Napraviti i bezbedno sačuvati WeAscend upload key; putanja predviđena u konfiguraciji je `android-twa/keystore/weascend-upload.jks`, a fajl je Git-ignored.
-4. Dodati njegov SHA-256 fingerprint u `twa-manifest.json`.
-5. Generisati javni Asset Links fajl komandom:
+```bash
+npm run android:check
+cd android-twa
+bubblewrap build
+```
 
-   ```bash
-   npm run android:assetlinks -- "AA:BB:...:FF"
-   ```
+Bubblewrap trenutno na Windowsu može pogrešno pozvati Java putanju koja sadrži razmak. Ako potpisivanje padne posle uspešnog Gradle builda, unsigned aligned APK može se potpisati direktno Android `apksigner` alatom.
 
-   Komanda prihvata više fingerprinta, pa kasnije može sadržati i lokalni/upload i Google Play app-signing fingerprint.
-6. Objaviti web verziju sa generisanim `public/.well-known/assetlinks.json`.
-7. Generisati Android projekat iz `twa-manifest.json`, zatim napraviti test APK. AAB za Play ostaje za kasniju fazu.
+## Pre Play Store izdanja
 
-Pre Android builda pokrenuti `npm run android:check`. Provera namerno prijavljuje da signing key i Asset Links nedostaju sve dok ne dođemo do signing faze.
+1. Napraviti poseban produkcioni upload key i čuvati ga izvan Git-a uz bezbedan backup.
+2. Napraviti AAB sa produkcionim ključem i uključiti Play App Signing.
+3. Dodati Play app-signing SHA-256 fingerprint u `assetlinks.json` zajedno sa potrebnim testnim fingerprintom.
+4. Popuniti Play listing, Data Safety, privacy i account-deletion podatke.
+5. Proći Internal i Closed Testing pre produkcije.
+
+Android projekat i package ID ostaju isti; web izmene se i dalje objavljuju na postojećem WeAscend domenu.

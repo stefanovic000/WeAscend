@@ -54,3 +54,4 @@ next-env.d.ts
 /android-twa/decompressed/
 /android-twa/app-release-*.apk
 /android-twa/app-release-*.aab
+/android-twa/*.idsig
