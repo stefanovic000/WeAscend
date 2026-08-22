@@ -1,6 +1,6 @@
-import type { PropsWithChildren } from "react";
+import type { PropsWithChildren, ReactNode } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useCloudState } from "@/providers/CloudStateProvider";
@@ -10,13 +10,15 @@ import { colors, spacing } from "@/theme";
 type ScreenProps = PropsWithChildren<{
   scroll?: boolean;
   contentStyle?: ViewStyle;
+  keyboardAware?: boolean;
+  footer?: ReactNode;
 }>;
 
-export function Screen({ children, scroll = true, contentStyle }: ScreenProps) {
+export function Screen({ children, scroll = true, contentStyle, keyboardAware = false, footer }: ScreenProps) {
   const { offline, refresh, refreshing } = useCloudState();
   const { language } = usePreferences();
   const content = (
-    <View style={[styles.content, contentStyle]}>
+    <View style={[styles.content, footer ? styles.contentWithFooter : null, contentStyle]}>
       {offline ? (
         <View accessibilityLiveRegion="polite" style={styles.offlineBanner}>
           <Ionicons color={colors.gold} name="cloud-offline-outline" size={18} />
@@ -33,17 +35,28 @@ export function Screen({ children, scroll = true, contentStyle }: ScreenProps) {
     </View>
   );
 
-  return (
-    <SafeAreaView edges={["top"]} style={styles.safeArea}>
+  const screen = (
+    <SafeAreaView edges={footer ? ["top", "bottom"] : ["top"]} style={styles.safeArea}>
       {scroll ? (
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          automaticallyAdjustKeyboardInsets={keyboardAware && Platform.OS === "ios"}
+          contentContainerStyle={styles.scrollContent}
+          keyboardDismissMode={keyboardAware ? Platform.OS === "ios" ? "interactive" : "on-drag" : "none"}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           {content}
         </ScrollView>
       ) : (
         content
       )}
+      {footer}
     </SafeAreaView>
   );
+
+  return keyboardAware
+    ? <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.safeArea}>{screen}</KeyboardAvoidingView>
+    : screen;
 }
 
 const styles = StyleSheet.create({
@@ -60,6 +73,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     paddingBottom: 112,
   },
+  contentWithFooter: { paddingBottom: spacing.lg },
   offlineBanner: {
     minHeight: 58,
     marginBottom: spacing.md,

@@ -6,6 +6,20 @@ export function apiUrl(path: string) {
   return `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
+export class ApiError extends Error {
+  code: string;
+  status: number;
+  payload: Record<string, unknown>;
+
+  constructor(code: string, status: number, payload: Record<string, unknown>) {
+    super(code);
+    this.name = "ApiError";
+    this.code = code;
+    this.status = status;
+    this.payload = payload;
+  }
+}
+
 export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(apiUrl(path), {
     ...init,
@@ -16,9 +30,7 @@ export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   });
   const payload = await response.json().catch(() => ({})) as T & { code?: string };
   if (!response.ok) {
-    const error = new Error(payload.code || `http_${response.status}`) as Error & { code: string };
-    error.code = payload.code || `http_${response.status}`;
-    throw error;
+    throw new ApiError(payload.code || `http_${response.status}`, response.status, payload as Record<string, unknown>);
   }
   return payload;
 }

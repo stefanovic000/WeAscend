@@ -4,7 +4,7 @@ import { AppState as NativeAppState } from "react-native";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
 
 import { useAuth } from "@/providers/AuthProvider";
-import { apiJson } from "@/services/api";
+import { ApiError, apiJson } from "@/services/api";
 import { getMobileAuth } from "@/services/firebase";
 
 type CloudStateResponse = {
@@ -30,11 +30,13 @@ type CloudStateContextValue = {
   plan: PlanOverview | null;
   loading: boolean;
   refreshing: boolean;
+  saving: boolean;
   offline: boolean;
   hasCachedData: boolean;
   lastSyncedAt: string | null;
   error: string | null;
   refresh: () => void;
+  saveState: (nextState: WeAscendState) => Promise<void>;
 };
 
 const CloudStateContext = createContext<CloudStateContextValue | null>(null);
@@ -74,6 +76,7 @@ export function CloudStateProvider({ children }: PropsWithChildren) {
   const [plan, setPlan] = useState<PlanOverview | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [offline, setOffline] = useState(false);
   const [hasCachedData, setHasCachedData] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
@@ -81,8 +84,80 @@ export function CloudStateProvider({ children }: PropsWithChildren) {
   const [refreshAttempt, setRefreshAttempt] = useState(0);
   const requestId = useRef(0);
   const visibleUserId = useRef<string | null>(null);
+  const mutationInFlight = useRef(false);
 
   const refresh = useCallback(() => setRefreshAttempt(attempt => attempt + 1), []);
+
+  const saveState = useCallback(async (nextState: WeAscendState) => {
+    const userId = identity?.id;
+    if (!userId || !identity.emailVerified) throw new Error("authentication_required");
+    if (offline) throw new Error("offline_read_only");
+    if (mutationInFlight.current) throw new Error("save_in_progress");
+    if (!isWeAscendState(nextState)) throw new Error("invalid_state");
+
+    mutationInFlight.current = true;
+    setSaving(true);
+    try {
+      const auth = await getMobileAuth();
+      if (!auth.currentUser || auth.currentUser.uid !== userId) throw new Error("authentication_required");
+      const token = await auth.currentUser.getIdToken();
+      const response = await apiJson<CloudStateResponse>("/api/state", {
+        method: "PUT",
+        cache: "no-store",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ state: nextState, revision }),
+      });
+      if (!isWeAscendState(response.state)) throw new Error("invalid_state");
+
+      const savedAt = new Date().toISOString();
+      const snapshot: CachedSnapshot = {
+        version: 1,
+        userId,
+        state: response.state,
+        revision: response.revision,
+        updatedAt: response.updatedAt,
+        plan,
+        cachedAt: savedAt,
+      };
+      await AsyncStorage.setItem(cacheKey(userId), JSON.stringify(snapshot));
+      setState(response.state);
+      setRevision(response.revision);
+      setHasCachedData(true);
+      setLastSyncedAt(response.updatedAt ?? savedAt);
+      setOffline(false);
+      setError(null);
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.code === "revision_conflict") {
+        const confirmed = reason.payload.state;
+        const confirmedRevision = Number(reason.payload.revision);
+        if (isWeAscendState(confirmed) && Number.isInteger(confirmedRevision)) {
+          const savedAt = new Date().toISOString();
+          await AsyncStorage.setItem(cacheKey(userId), JSON.stringify({
+            version: 1,
+            userId,
+            state: confirmed,
+            revision: confirmedRevision,
+            updatedAt: null,
+            plan,
+            cachedAt: savedAt,
+          } satisfies CachedSnapshot));
+          setState(confirmed);
+          setRevision(confirmedRevision);
+          setLastSyncedAt(savedAt);
+        }
+      } else if (!(reason instanceof ApiError) || reason.status >= 500) {
+        setOffline(true);
+      }
+      setError(errorCode(reason));
+      throw reason;
+    } finally {
+      mutationInFlight.current = false;
+      setSaving(false);
+    }
+  }, [identity?.emailVerified, identity?.id, offline, plan, revision]);
 
   useEffect(() => {
     const userId = identity?.id;
@@ -190,12 +265,14 @@ export function CloudStateProvider({ children }: PropsWithChildren) {
     plan,
     loading,
     refreshing,
+    saving,
     offline,
     hasCachedData,
     lastSyncedAt,
     error,
     refresh,
-  }), [error, hasCachedData, lastSyncedAt, loading, offline, plan, refreshing, refresh, revision, state]);
+    saveState,
+  }), [error, hasCachedData, lastSyncedAt, loading, offline, plan, refreshing, refresh, revision, saveState, saving, state]);
 
   return <CloudStateContext.Provider value={value}>{children}</CloudStateContext.Provider>;
 }

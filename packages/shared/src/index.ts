@@ -3,6 +3,8 @@ export const WEASCEND_APP_SCHEME = "weascend";
 
 export type QuestType = "Main" | "Daily" | "Side" | "Mandatory" | "Correction" | "Boss";
 export type QuestStatus = "active" | "completed" | "failed" | "skipped" | "archived";
+export type XpCategory = "growth" | "maintenance" | "result" | "boss";
+export type XpSource = "rules" | "ai" | "argument" | "manual" | "legacy";
 
 export type RankRule = { name: string; minLevel: number };
 
@@ -48,13 +50,24 @@ export type Quest = {
   attributeId: string;
   skillId: string;
   xp: number;
+  xpCategory?: XpCategory;
+  focusMinutes?: number;
+  outputBonus?: 0 | 5 | 10;
+  xpRuleValue?: number;
+  xpSource?: XpSource;
+  xpArgumentReason?: string;
   date: string;
   deadline: string;
+  recurrence: "none" | "daily" | "weekly";
   status: QuestStatus;
   difficulty: "Easy" | "Normal" | "Hard" | "Extreme";
   completionConditions: string;
   failureConsequence: string;
   parentQuestId?: string;
+  stepOrder?: number;
+  seriesId?: string;
+  templateId?: string;
+  routineDate?: string;
   createdAt: string;
   updatedAt: string;
   completedAt?: string;

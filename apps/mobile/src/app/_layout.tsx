@@ -6,7 +6,7 @@ import { colors } from "@/theme";
 import { AuthLoading } from "@/components/AuthLoading";
 import { AuthProvider, useAuth } from "@/providers/AuthProvider";
 import { CloudStateProvider } from "@/providers/CloudStateProvider";
-import { PreferencesProvider } from "@/providers/PreferencesProvider";
+import { PreferencesProvider, usePreferences } from "@/providers/PreferencesProvider";
 
 export default function RootLayout() {
   return (
@@ -25,6 +25,7 @@ export default function RootLayout() {
 
 function RootNavigator() {
   const { identity, loading } = useAuth();
+  const { language } = usePreferences();
 
   if (loading) return <AuthLoading />;
 
@@ -48,7 +49,7 @@ function RootNavigator() {
         </Stack.Protected>
         <Stack.Protected guard={verified}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="quest/new" options={{ presentation: "modal", title: "New quest" }} />
+          <Stack.Screen name="quest/new" options={{ presentation: "modal", title: language === "sr" ? "Novi quest" : "New quest" }} />
         </Stack.Protected>
       </Stack>
   );
