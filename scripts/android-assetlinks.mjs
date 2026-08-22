@@ -36,7 +36,7 @@ const document = [
   },
 ];
 
-const outputDirectory = resolve("public", ".well-known");
+const outputDirectory = resolve("apps", "web", "public", ".well-known");
 const outputFile = resolve(outputDirectory, "assetlinks.json");
 await mkdir(outputDirectory, { recursive: true });
 await writeFile(outputFile, `${JSON.stringify(document, null, 2)}\n`, "utf8");

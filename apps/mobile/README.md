@@ -7,7 +7,7 @@ This folder is intentionally separate from the existing web/PWA client. The firs
 ## Run locally
 
 ```bash
-cd mobile
+cd apps/mobile
 npm install
 npm run android
 ```

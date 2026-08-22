@@ -1,48 +1,22 @@
 {
-  "name": "weascend",
+  "name": "weascend-monorepo",
   "version": "0.1.0",
   "private": true,
-  "engines": {
-    "node": ">=22.13.0"
-  },
   "scripts": {
-    "dev": "vinext dev",
-    "build": "vinext build",
-    "preview": "vinext start",
-    "start": "vinext start",
+    "install:all": "npm --prefix apps/web install && npm --prefix apps/mobile install",
+    "dev": "npm --prefix apps/web run dev",
+    "build": "npm --prefix apps/web run build",
+    "preview": "npm --prefix apps/web run preview",
+    "start": "npm --prefix apps/web run start",
+    "test": "npm --prefix apps/web test",
+    "lint": "npm --prefix apps/web run lint",
+    "web:dev": "npm --prefix apps/web run dev",
+    "web:build": "npm --prefix apps/web run build",
+    "mobile:start": "npm --prefix apps/mobile start",
+    "mobile:android": "npm --prefix apps/mobile run android",
+    "mobile:ios": "npm --prefix apps/mobile run ios",
+    "mobile:typecheck": "npm --prefix apps/mobile run typecheck",
     "android:check": "node scripts/android-check.mjs",
-    "android:assetlinks": "node scripts/android-assetlinks.mjs",
-    "mobile:start": "npm --prefix mobile start",
-    "mobile:android": "npm --prefix mobile run android",
-    "mobile:typecheck": "npm --prefix mobile run typecheck",
-    "test": "node --experimental-strip-types --test tests/domain.test.ts",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
-  },
-  "dependencies": {
-    "firebase": "^12.17.1",
-    "jose": "^6.2.8",
-    "lucide-react": "^1.28.0",
-    "mongodb": "^7.0.0",
-    "next": "^16.3.0",
-    "react": "19.2.6",
-    "react-dom": "19.2.6"
-  },
-  "devDependencies": {
-    "@cloudflare/vite-plugin": "1.37.1",
-    "@tailwindcss/postcss": "4.2.1",
-    "@types/node": "22.19.19",
-    "@types/react": "19.2.14",
-    "@types/react-dom": "19.2.3",
-    "@vitejs/plugin-react": "6.0.2",
-    "@vitejs/plugin-rsc": "0.5.26",
-    "eslint": "9.39.4",
-    "eslint-config-next": "^16.3.0",
-    "react-server-dom-webpack": "19.2.6",
-    "tailwindcss": "4.2.1",
-    "typescript": "5.9.3",
-    "vinext": "0.0.50",
-    "vite": "8.0.13",
-    "wrangler": "4.92.0"
-  },
-  "type": "module"
+    "android:assetlinks": "node scripts/android-assetlinks.mjs"
+  }
 }

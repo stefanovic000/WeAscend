@@ -8,7 +8,7 @@ const expected = {
 };
 
 const twaPath = resolve("android-twa", "twa-manifest.json");
-const pwaPath = resolve("public", "manifest.webmanifest");
+const pwaPath = resolve("apps", "web", "public", "manifest.webmanifest");
 const twa = JSON.parse(await readFile(twaPath, "utf8"));
 const pwa = JSON.parse(await readFile(pwaPath, "utf8"));
 
@@ -38,7 +38,7 @@ const signingKeyPath = twa.signingKey?.path
   : resolve("android-twa", "keystore", "weascend-upload.jks");
 for (const [label, path] of [
   ["signing key", signingKeyPath],
-  ["Digital Asset Links", resolve("public", ".well-known", "assetlinks.json")],
+  ["Digital Asset Links", resolve("apps", "web", "public", ".well-known", "assetlinks.json")],
 ]) {
   try {
     await access(path, constants.R_OK);

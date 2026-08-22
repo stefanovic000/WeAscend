@@ -1,7 +1,7 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/node_modules
+node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -11,12 +11,12 @@
 !.yarn/versions
 
 # testing
-/coverage
+coverage/
 
 # next.js
-/.next/
-/.vinext/
-/out/
+.next/
+.vinext/
+out/
 
 # misc
 .DS_Store
@@ -40,7 +40,8 @@ yarn-error.log*
 # typescript
 next-env.d.ts
 /dist/
-/.wrangler/
+/apps/*/dist/
+.wrangler/
 /outputs/
 /work/
 /.npm-cache/
@@ -58,9 +59,9 @@ next-env.d.ts
 /android-twa/local.properties
 
 # Expo / React Native mobile development output
-/mobile/node_modules/
-/mobile/.expo/
-/mobile/dist/
-/mobile/android/
-/mobile/ios/
+/apps/mobile/node_modules/
+/apps/mobile/.expo/
+/apps/mobile/dist/
+/apps/mobile/android/
+/apps/mobile/ios/
 *.mobileprovision

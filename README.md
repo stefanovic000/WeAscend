@@ -4,12 +4,13 @@ Cloud-synced PWA za lični napredak inspirisana „Solo Leveling“ sistemom. En
 
 Produkcija: [WeAscend](https://weascend.wesystemlabs.com)
 
-## Klijenti u ovom repozitorijumu
+## Struktura repozitorijuma
 
-- `app/` — postojeća produkciona web/PWA aplikacija.
-- `mobile/` — novi Expo/React Native klijent za Android i iOS, trenutno u početnoj razvojnoj fazi.
-- `server/` i `app/api/` — serverske granice koje oba klijenta postepeno treba da koriste.
+- `apps/web/` — postojeća produkciona web/PWA aplikacija, njeni API endpointi i Sites konfiguracija.
+- `apps/mobile/` — novi Expo/React Native klijent za Android i iOS, trenutno u početnoj razvojnoj fazi.
 - `packages/shared/` — budući zajednički tipovi, validacija i XP pravila. Produkciona pravila se premeštaju postepeno uz testove, ne odjednom.
+- `android-twa/` — prethodni Android web omotač, zadržan dok ga native aplikacija ne zameni.
+- `scripts/` — provere koje povezuju web manifest sa starim Android omotačem.
 
 Mobilni razvoj je izolovan na Git grani `codex/mobile-app`; postojeća objavljena web verzija se time ne menja.
 
@@ -30,7 +31,7 @@ Mobilni razvoj je izolovan na Git grani `codex/mobile-app`; postojeća objavljen
 Potrebni su Node.js 22.13+ i npm.
 
 ```bash
-npm install
+npm run install:all
 npm run dev
 ```
 
@@ -50,6 +51,8 @@ Za proveru TypeScript osnove bez pokretanja emulatora:
 npm run mobile:typecheck
 ```
 
+Web komande sa root-a prosleđuju se projektu u `apps/web/`. Za Sites hosting i direktan rad na web klijentu koristi se taj folder kao radni direktorijum.
+
 Provere:
 
 ```bash
@@ -61,7 +64,7 @@ npm run preview
 
 ## Lokalna konfiguracija
 
-Kopiraj `.env.example` u `.env.local`:
+Kopiraj `apps/web/.env.example` u `apps/web/.env.local`:
 
 ```dotenv
 MONGODB_URI=mongodb+srv://USER:PASSWORD@CLUSTER.mongodb.net/?retryWrites=true&w=majority

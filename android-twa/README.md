@@ -9,7 +9,7 @@ Trenutno je spremno:
 - produkcioni URL `https://weascend.wesystemlabs.com`;
 - launcher, maskable i splash ikone;
 - testni potpisani APK `app-release-signed.apk`;
-- testni sertifikat povezan sa domenom kroz `public/.well-known/assetlinks.json`;
+- testni sertifikat povezan sa domenom kroz `apps/web/public/.well-known/assetlinks.json`;
 - browser fallback za uređaje bez TWA podrške;
 - push/notification delegacija je namerno isključena.
 
