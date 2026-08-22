@@ -56,3 +56,11 @@ next-env.d.ts
 /android-twa/app-release-*.aab
 /android-twa/*.idsig
 /android-twa/local.properties
+
+# Expo / React Native mobile development output
+/mobile/node_modules/
+/mobile/.expo/
+/mobile/dist/
+/mobile/android/
+/mobile/ios/
+*.mobileprovision

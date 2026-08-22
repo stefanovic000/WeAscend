@@ -4,6 +4,15 @@ Cloud-synced PWA za lični napredak inspirisana „Solo Leveling“ sistemom. En
 
 Produkcija: [WeAscend](https://weascend.wesystemlabs.com)
 
+## Klijenti u ovom repozitorijumu
+
+- `app/` — postojeća produkciona web/PWA aplikacija.
+- `mobile/` — novi Expo/React Native klijent za Android i iOS, trenutno u početnoj razvojnoj fazi.
+- `server/` i `app/api/` — serverske granice koje oba klijenta postepeno treba da koriste.
+- `packages/shared/` — budući zajednički tipovi, validacija i XP pravila. Produkciona pravila se premeštaju postepeno uz testove, ne odjednom.
+
+Mobilni razvoj je izolovan na Git grani `codex/mobile-app`; postojeća objavljena web verzija se time ne menja.
+
 ## Osnovno ponašanje
 
 - Novi nalog počinje potpuno prazan: Level 1, 0 XP, bez atributa, skillova i questova.
@@ -28,6 +37,18 @@ npm run dev
 Otvori adresu koju terminal prikaže, podrazumevano `http://localhost:3000`.
 
 Na Windows-u možeš koristiti i `start.bat`.
+
+Početna mobilna aplikacija:
+
+```bash
+npm run mobile:android
+```
+
+Za proveru TypeScript osnove bez pokretanja emulatora:
+
+```bash
+npm run mobile:typecheck
+```
 
 Provere:
 
