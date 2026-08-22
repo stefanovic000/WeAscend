@@ -3,6 +3,8 @@ import { Tabs, useRouter } from "expo-router";
 import { Pressable, StyleSheet, View, type ColorValue } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useCloudState } from "@/providers/CloudStateProvider";
+import { usePreferences } from "@/providers/PreferencesProvider";
 import { colors } from "@/theme";
 
 type TabIconProps = {
@@ -19,6 +21,9 @@ function TabIcon({ color, focused, name, activeName }: TabIconProps) {
 export default function TabLayout() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { offline } = useCloudState();
+  const { language } = usePreferences();
+  const sr = language === "sr";
   const bottomInset = Math.max(insets.bottom, 8);
 
   return (
@@ -40,14 +45,14 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Today",
+          title: sr ? "Danas" : "Today",
           tabBarIcon: (props) => <TabIcon {...props} name="today-outline" activeName="today" />,
         }}
       />
       <Tabs.Screen
         name="quests"
         options={{
-          title: "Quests",
+          title: sr ? "Questovi" : "Quests",
           tabBarIcon: (props) => <TabIcon {...props} name="checkbox-outline" activeName="checkbox" />,
         }}
       />
@@ -56,7 +61,7 @@ export default function TabLayout() {
         listeners={{
           tabPress: (event) => {
             event.preventDefault();
-            router.push("/quest/new");
+            if (!offline) router.push("/quest/new");
           },
         }}
         options={{
@@ -64,10 +69,11 @@ export default function TabLayout() {
           tabBarButton: (props) => (
             <View style={styles.createSlot}>
               <Pressable
-                accessibilityLabel="Create quest"
+                accessibilityLabel={sr ? "Napravi quest" : "Create quest"}
                 accessibilityRole="button"
+                disabled={offline}
                 onPress={props.onPress}
-                style={({ pressed }) => [styles.createButton, pressed && styles.createPressed]}
+                style={({ pressed }) => [styles.createButton, offline && styles.createDisabled, pressed && styles.createPressed]}
               >
                 <Ionicons color={colors.text} name="add" size={30} />
               </Pressable>
@@ -78,14 +84,14 @@ export default function TabLayout() {
       <Tabs.Screen
         name="progress"
         options={{
-          title: "Progress",
+          title: sr ? "Napredak" : "Progress",
           tabBarIcon: (props) => <TabIcon {...props} name="git-network-outline" activeName="git-network" />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: "Profile",
+          title: sr ? "Profil" : "Profile",
           tabBarIcon: (props) => <TabIcon {...props} name="person-outline" activeName="person" />,
         }}
       />
@@ -126,4 +132,5 @@ const styles = StyleSheet.create({
   createPressed: {
     transform: [{ scale: 0.94 }],
   },
+  createDisabled: { opacity: 0.45 },
 });

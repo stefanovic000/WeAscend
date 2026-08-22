@@ -1,5 +1,5 @@
 # WeAscend Shared
 
-Platform-neutral contracts and domain rules shared by the web client, mobile client and server will live here.
+Platform-neutral contracts and read-only progress calculations shared by the web client, mobile client and server live here.
 
-The existing production rules have deliberately not been moved yet. They will be extracted with dedicated tests when the mobile client begins consuming real account data, avoiding an unsafe all-at-once migration.
+The mobile application now consumes these contracts for cloud snapshots. Mutation rules remain on the server until they can be extracted with dedicated parity tests, avoiding an unsafe all-at-once migration.

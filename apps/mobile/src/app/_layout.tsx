@@ -5,6 +5,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { colors } from "@/theme";
 import { AuthLoading } from "@/components/AuthLoading";
 import { AuthProvider, useAuth } from "@/providers/AuthProvider";
+import { CloudStateProvider } from "@/providers/CloudStateProvider";
 import { PreferencesProvider } from "@/providers/PreferencesProvider";
 
 export default function RootLayout() {
@@ -13,7 +14,9 @@ export default function RootLayout() {
       <StatusBar style="light" />
       <PreferencesProvider>
         <AuthProvider>
-          <RootNavigator />
+          <CloudStateProvider>
+            <RootNavigator />
+          </CloudStateProvider>
         </AuthProvider>
       </PreferencesProvider>
     </SafeAreaProvider>
