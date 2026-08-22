@@ -14,6 +14,8 @@ npm run android
 
 `npm start` opens the Expo development server. iOS local builds require macOS and Xcode; Android development works on Windows with Android Studio.
 
+The app uses the production WeAscend API by default. To point a development build elsewhere, copy `.env.example` to `.env.local` and change `EXPO_PUBLIC_WEASCEND_API_URL`. Never put Firebase Admin, MongoDB, Resend or AI secrets in a mobile environment file.
+
 ## Structure
 
 ```text
@@ -23,4 +25,4 @@ src/
 └── theme/        color, spacing and shape tokens
 ```
 
-Planned integration order: authentication, cloud API client, Growth Areas and Skills, quests, XP ledger, history, then premium/AI capabilities.
+Email/password authentication, verification and persisted Firebase sessions are connected to the existing account system. Google OAuth is intentionally deferred until the Android OAuth client is registered. Next integration order: cloud state, Growth Areas and Skills, quests, XP ledger, history, then premium/AI capabilities.
