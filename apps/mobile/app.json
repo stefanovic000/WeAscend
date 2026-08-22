@@ -13,6 +13,7 @@
       "buildNumber": "1"
     },
     "android": {
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#070812",
         "foregroundImage": "./assets/android-icon-foreground.png"

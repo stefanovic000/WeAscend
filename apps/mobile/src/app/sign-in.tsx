@@ -165,8 +165,14 @@ export default function SignInScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.flex}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.flex}>
+        <ScrollView
+          automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+          contentContainerStyle={styles.scroll}
+          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.topLine}>
             <View style={styles.emblem}><Text style={styles.mark}>W</Text></View>
             <Pressable
@@ -261,7 +267,7 @@ export default function SignInScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   flex: { flex: 1 },
-  scroll: { flexGrow: 1, justifyContent: "center", paddingHorizontal: spacing.lg, paddingVertical: spacing.xl },
+  scroll: { flexGrow: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.xl },
   topLine: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.lg },
   emblem: { width: 50, height: 50, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.violet, transform: [{ rotate: "45deg" }] },
   mark: { color: colors.violetSoft, fontSize: 21, fontWeight: "800", transform: [{ rotate: "-45deg" }] },
