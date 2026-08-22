@@ -279,6 +279,56 @@ test("server quest mutations change only the targeted quest and preserve XP hist
   assert.equal(deleted.state.transactions.length, 1);
 });
 
+test("server-authoritative mobile actions award XP once and support undo, failure, notes, and archive", () => {
+  const state = makeInitialState();
+  state.attributes = [{ id: "a", name: "Intelligence", color: "#866bff", createdAt: "now", updatedAt: "now" }];
+  state.skills = [{ id: "s", attributeId: "a", name: "University", createdAt: "now", updatedAt: "now" }];
+  const quest: Quest = { id: "q", title: "Focused study", description: "", type: "Side", attributeId: "a", skillId: "s", xp: 100, date: "2026-08-23", deadline: "", recurrence: "none", difficulty: "Normal", completionConditions: "Finish", failureConsequence: "", status: "active", createdAt: "now", updatedAt: "now" };
+  state.quests = [quest];
+
+  const completed = applyQuestMutation(state, { action: "complete", questId: "q" }, "completed");
+  assert.equal(completed.ok, true);
+  if (!completed.ok) return;
+  assert.equal(completed.state.quests[0]?.status, "completed");
+  assert.equal(completed.state.quests[0]?.completedAt, "completed");
+  assert.equal(activeXp(completed.state.transactions), 100);
+  assert.equal(completed.state.levelEvents.at(-1)?.type, "level");
+  assert.deepEqual(applyQuestMutation(completed.state, { action: "complete", questId: "q" }), { ok: false, code: "invalid_status" });
+
+  const noted = applyQuestMutation(completed.state, { action: "note", questId: "q", note: "  Remember this method  " }, "noted");
+  assert.equal(noted.ok, true);
+  if (!noted.ok) return;
+  assert.equal(noted.state.quests[0]?.note, "Remember this method");
+  assert.equal(activeXp(noted.state.transactions), 100);
+
+  const archived = applyQuestMutation(noted.state, { action: "archive", questId: "q" }, "archived");
+  assert.equal(archived.ok, true);
+  if (!archived.ok) return;
+  assert.equal(archived.state.quests[0]?.archivedFromStatus, "completed");
+  const restored = applyQuestMutation(archived.state, { action: "restore", questId: "q" }, "restored");
+  assert.equal(restored.ok, true);
+  if (!restored.ok) return;
+  assert.equal(restored.state.quests[0]?.status, "completed");
+  assert.equal(activeXp(restored.state.transactions), 100);
+
+  const undone = applyQuestMutation(restored.state, { action: "undo_completion", questId: "q" }, "undone");
+  assert.equal(undone.ok, true);
+  if (!undone.ok) return;
+  assert.equal(undone.state.quests[0]?.status, "active");
+  assert.equal(activeXp(undone.state.transactions), 0);
+
+  const failed = applyQuestMutation(undone.state, { action: "fail", questId: "q" }, "failed");
+  assert.equal(failed.ok, true);
+  if (!failed.ok) return;
+  assert.equal(failed.state.quests[0]?.status, "failed");
+  const retried = applyQuestMutation(failed.state, { action: "retry", questId: "q" }, "retried");
+  assert.equal(retried.ok, true);
+  if (!retried.ok) return;
+  assert.equal(retried.state.quests.length, 1);
+  assert.equal(retried.state.quests[0]?.id, "q");
+  assert.equal(retried.state.quests[0]?.status, "active");
+});
+
 test("retrying a failed quest restores the same quest without creating a copy", () => {
   const state = makeInitialState();
   state.attributes = [{ id: "a", name: "Strength", color: "#866bff", createdAt: "now", updatedAt: "now" }];

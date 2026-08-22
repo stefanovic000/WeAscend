@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { activeXp, localDateKey, progressFromXp, rankForLevel } from "@weascend/shared";
-import { useRouter } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
+import { type Href, useRouter } from "expo-router";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { CloudStateMessage } from "@/components/CloudStateMessage";
 import { PageHeader } from "@/components/PageHeader";
@@ -61,7 +61,13 @@ export default function TodayScreen() {
       {todayQuests.length ? todayQuests.map(quest => {
         const skill = state.skills.find(item => item.id === quest.skillId);
         return (
-          <View key={quest.id} style={[styles.questCard, quest.status === "failed" && styles.failedQuest]}>
+          <Pressable
+            accessibilityHint={sr ? "Otvara detalje i radnje za quest" : "Opens quest details and actions"}
+            accessibilityRole="button"
+            key={quest.id}
+            onPress={() => router.push(`/quest/${encodeURIComponent(quest.id)}` as Href)}
+            style={({ pressed }) => [styles.questCard, quest.status === "failed" && styles.failedQuest, pressed && styles.questPressed]}
+          >
             <View style={styles.questTopLine}>
               <Text style={styles.questType}>{quest.type.toUpperCase()}</Text>
               <Text style={[styles.questStatus, quest.status === "failed" && styles.failedText]}>{quest.status.toUpperCase()}</Text>
@@ -71,7 +77,8 @@ export default function TodayScreen() {
               <Text style={styles.questMeta}>{skill?.name ?? (sr ? "Obrisan skill" : "Deleted skill")}</Text>
               <Text style={styles.questXp}>+{quest.xp} XP</Text>
             </View>
-          </View>
+            <View style={styles.questOpenRow}><Text style={styles.questOpen}>{sr ? "Otvori" : "Open"}</Text><Ionicons color={colors.violetSoft} name="chevron-forward" size={16} /></View>
+          </Pressable>
         );
       }) : (
         <View style={styles.emptyCard}>
@@ -179,4 +186,7 @@ const styles = StyleSheet.create({
   questMetaRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: spacing.sm },
   questMeta: { flex: 1, color: colors.textMuted, fontSize: 12 },
   questXp: { color: colors.cyan, fontSize: 13, fontWeight: "800" },
+  questOpenRow: { paddingTop: spacing.xs, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 3, borderTopWidth: 1, borderTopColor: colors.border },
+  questOpen: { color: colors.violetSoft, fontSize: 12, fontWeight: "700" },
+  questPressed: { opacity: 0.78, transform: [{ scale: 0.99 }] },
 });

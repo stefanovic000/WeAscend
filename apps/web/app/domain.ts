@@ -151,12 +151,14 @@ export type QuestMutation =
   | { action: "create_many"; quests: Quest[] }
   | { action: "update"; quest: Quest }
   | { action: "delete"; questId: string }
+  | { action: "complete" | "fail" | "retry" | "archive" | "restore" | "undo_completion"; questId: string }
+  | { action: "note"; questId: string; note: string }
   | { action: "boss_attempt"; bossQuestId: string; outcome: "failed" | "cleared"; result: string }
   | { action: "undo_boss_clear"; bossQuestId: string };
 
 export type QuestMutationResult =
   | { ok: true; state: AppState }
-  | { ok: false; code: "invalid_quest" | "quest_not_found" | "invalid_attempt" | "boss_already_cleared" | "earned_quest_locked" };
+  | { ok: false; code: "invalid_quest" | "quest_not_found" | "invalid_status" | "invalid_attempt" | "boss_already_cleared" | "earned_quest_locked" };
 
 export const defaultSettings: Settings = {
   baseXp: 100,
@@ -535,6 +537,134 @@ export function applyQuestMutation(state: AppState, mutation: QuestMutation, sta
   if (mutation.action === "delete") {
     if (!boundedString(mutation.questId, 120, true)) return { ok: false, code: "invalid_quest" };
     return { ok: true, state: deleteQuestFromState(state, mutation.questId) };
+  }
+
+  if (mutation.action === "note") {
+    if (!boundedString(mutation.questId, 120, true) || !boundedString(mutation.note, CONTENT_LIMITS.note)) {
+      return { ok: false, code: "invalid_quest" };
+    }
+    const quest = state.quests.find(item => item.id === mutation.questId);
+    if (!quest) return { ok: false, code: "quest_not_found" };
+    const note = mutation.note.trim();
+    return {
+      ok: true,
+      state: {
+        ...state,
+        quests: state.quests.map(item => item.id === quest.id
+          ? { ...item, note: note || undefined, updatedAt: stamp }
+          : item),
+      },
+    };
+  }
+
+  if (
+    mutation.action === "complete" || mutation.action === "fail" || mutation.action === "retry" ||
+    mutation.action === "archive" || mutation.action === "restore" || mutation.action === "undo_completion"
+  ) {
+    if (!boundedString(mutation.questId, 120, true)) return { ok: false, code: "invalid_quest" };
+    const quest = state.quests.find(item => item.id === mutation.questId);
+    if (!quest) return { ok: false, code: "quest_not_found" };
+
+    if (mutation.action === "archive") {
+      if (quest.status === "archived") return { ok: false, code: "invalid_status" };
+      return {
+        ok: true,
+        state: {
+          ...state,
+          quests: state.quests.map(item => item.id === quest.id
+            ? { ...item, status: "archived", archivedFromStatus: item.status, updatedAt: stamp }
+            : item),
+        },
+      };
+    }
+
+    if (mutation.action === "restore") {
+      if (quest.status !== "archived") return { ok: false, code: "invalid_status" };
+      return {
+        ok: true,
+        state: {
+          ...state,
+          quests: state.quests.map(item => item.id === quest.id
+            ? { ...item, status: item.archivedFromStatus ?? "active", archivedFromStatus: undefined, updatedAt: stamp }
+            : item),
+        },
+      };
+    }
+
+    if (quest.type === "Boss") return { ok: false, code: "invalid_status" };
+
+    if (mutation.action === "fail") {
+      if (quest.status !== "active") return { ok: false, code: "invalid_status" };
+      return {
+        ok: true,
+        state: {
+          ...state,
+          quests: state.quests.map(item => item.id === quest.id ? { ...item, status: "failed", updatedAt: stamp } : item),
+        },
+      };
+    }
+
+    if (mutation.action === "retry") {
+      if (quest.status !== "failed" && quest.status !== "skipped") return { ok: false, code: "invalid_status" };
+      return {
+        ok: true,
+        state: {
+          ...state,
+          quests: state.quests.map(item => item.id === quest.id
+            ? { ...item, status: "active", archivedFromStatus: undefined, completedAt: undefined, updatedAt: stamp }
+            : item),
+        },
+      };
+    }
+
+    if (mutation.action === "undo_completion") {
+      if (quest.status !== "completed") return { ok: false, code: "invalid_status" };
+      return {
+        ok: true,
+        state: {
+          ...state,
+          quests: state.quests.map(item => item.id === quest.id
+            ? { ...item, status: "active", completedAt: undefined, updatedAt: stamp }
+            : item),
+          transactions: state.transactions.map(transaction => transaction.questId === quest.id && !transaction.reversedAt
+            ? { ...transaction, reversedAt: stamp }
+            : transaction),
+        },
+      };
+    }
+
+    if (quest.status !== "active" || !canAwardQuest(quest.id, state.transactions)) {
+      return { ok: false, code: "invalid_status" };
+    }
+    const beforeProgress = progressFromXp(activeXp(state.transactions), state.settings);
+    const beforeRank = rankForLevel(beforeProgress.level, state.settings.ranks);
+    const transaction: XpTransaction | null = quest.xp > 0 ? {
+      id: crypto.randomUUID(),
+      questId: quest.id,
+      amount: quest.xp,
+      kind: "quest",
+      attributeId: quest.attributeId,
+      skillId: quest.skillId,
+      createdAt: stamp,
+    } : null;
+    const transactions = transaction ? [...state.transactions, transaction] : state.transactions;
+    const afterProgress = progressFromXp(activeXp(transactions), state.settings);
+    const afterRank = rankForLevel(afterProgress.level, state.settings.ranks);
+    return {
+      ok: true,
+      state: {
+        ...state,
+        quests: state.quests.map(item => item.id === quest.id
+          ? { ...item, status: "completed", completedAt: stamp, updatedAt: stamp }
+          : item),
+        transactions,
+        levelEvents: [
+          ...state.levelEvents,
+          ...(afterProgress.level > beforeProgress.level ? [{ id: crypto.randomUUID(), type: "level" as const, value: String(afterProgress.level), createdAt: stamp }] : []),
+          ...(afterRank !== beforeRank ? [{ id: crypto.randomUUID(), type: "rank" as const, value: afterRank, createdAt: stamp }] : []),
+        ],
+      },
+    };
   }
 
   if (mutation.action === "boss_attempt") {

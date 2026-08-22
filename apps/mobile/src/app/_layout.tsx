@@ -50,6 +50,7 @@ function RootNavigator() {
         <Stack.Protected guard={verified}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="quest/new" options={{ presentation: "modal", title: language === "sr" ? "Novi quest" : "New quest" }} />
+          <Stack.Screen name="quest/[id]" options={{ title: language === "sr" ? "Detalji questa" : "Quest details" }} />
         </Stack.Protected>
       </Stack>
   );

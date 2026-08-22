@@ -1,8 +1,8 @@
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 import type { Quest, QuestType, WeAscendState, XpCategory } from "@weascend/shared";
-import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { type Href, useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -38,6 +38,7 @@ const copy = {
     steps: ["Growth Area", "Skill", "Quest", "Schedule", "XP", "Confirm"],
     eyebrow: "GUIDED MISSION",
     title: "Create a focused quest",
+    editTitle: "Edit this quest",
     pathHelp: "First define what this work improves. The hierarchy always stays visible.",
     chooseArea: "What part of your life does this improve?",
     chooseAreaHelp: "Choose a broad area such as Languages, University, Strength, or Career.",
@@ -78,6 +79,7 @@ const copy = {
     timing: "Timing",
     reward: "Reward",
     activate: "Activate quest",
+    saveChanges: "Save changes",
     activating: "Activating…",
     back: "Back",
     continue: "Continue",
@@ -92,6 +94,7 @@ const copy = {
     steps: ["Oblast", "Skill", "Quest", "Termin", "XP", "Potvrda"],
     eyebrow: "VOĐENA MISIJA",
     title: "Napravi fokusiran quest",
+    editTitle: "Izmeni ovaj quest",
     pathHelp: "Prvo odredi šta ovaj rad unapređuje. Hijerarhija uvek ostaje vidljiva.",
     chooseArea: "Koji deo života ovo unapređuje?",
     chooseAreaHelp: "Izaberi širu oblast kao Languages, University, Strength ili Career.",
@@ -132,6 +135,7 @@ const copy = {
     timing: "Termin",
     reward: "Nagrada",
     activate: "Aktiviraj quest",
+    saveChanges: "Sačuvaj izmene",
     activating: "Aktiviram…",
     back: "Nazad",
     continue: "Nastavi",
@@ -164,6 +168,8 @@ function apiCode(reason: unknown) {
 
 export default function NewQuestScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ editId?: string | string[] }>();
+  const editId = Array.isArray(params.editId) ? params.editId[0] : params.editId;
   const { state, offline, saveState, saving } = useCloudState();
   const { language } = usePreferences();
   const t = copy[language];
@@ -188,6 +194,7 @@ export default function NewQuestScreen() {
   const [aiOffline, setAiOffline] = useState(false);
   const [useZeroXp, setUseZeroXp] = useState(false);
   const [error, setError] = useState("");
+  const hydratedEditId = useRef<string | null>(null);
 
   const attributes = useMemo(() => state?.attributes.filter(attribute => !attribute.deletedAt) ?? [], [state]);
   const selectedAttribute = attributes.find(attribute => attribute.id === selectedAttributeId);
@@ -208,6 +215,43 @@ export default function NewQuestScreen() {
     language,
   });
   const activeSuggestion = suggestion && suggestionFingerprint === fingerprint ? suggestion : null;
+
+  useEffect(() => {
+    if (!state || !editId || hydratedEditId.current === editId) return;
+    const existing = state.quests.find(quest => quest.id === editId);
+    if (!existing) return;
+    hydratedEditId.current = editId;
+    setSelectedAttributeId(existing.attributeId);
+    setSelectedSkillId(existing.skillId);
+    setTitle(existing.title);
+    setDescription(existing.description);
+    setCompletionConditions(existing.completionConditions);
+    setQuestType(existing.type);
+    const existingDate = new Date(existing.date);
+    if (!Number.isNaN(existingDate.getTime())) setScheduledAt(existingDate);
+    const deadline = new Date(existing.deadline);
+    const duration = deadline.getTime() - existingDate.getTime();
+    if (!existing.deadline || Number.isNaN(duration)) setWindowChoice("none");
+    else if (duration === 30 * 60_000) setWindowChoice("30");
+    else if (duration === 60 * 60_000) setWindowChoice("60");
+    else if (duration === 120 * 60_000) setWindowChoice("120");
+    else setWindowChoice("eod");
+  }, [editId, state]);
+
+  useEffect(() => {
+    if (!state || !editId || hydratedEditId.current !== editId || !title.trim() || suggestion) return;
+    const existing = state.quests.find(quest => quest.id === editId);
+    if (!existing || existing.title !== title || existing.description !== description || existing.completionConditions !== completionConditions) return;
+    const current: XpSuggestion = {
+      xp: existing.xp,
+      category: existing.xpCategory ?? (existing.type === "Boss" ? "boss" : "growth"),
+      confidence: "high",
+      rationale: language === "sr" ? "Trenutna potvrđena nagrada." : "Current confirmed reward.",
+    };
+    setSuggestion(current);
+    setSuggestionFingerprint(fingerprint);
+    setLastEstimateFingerprint("");
+  }, [completionConditions, description, editId, fingerprint, language, state, suggestion, title]);
 
   if (!state) {
     return <Screen><CloudStateMessage /></Screen>;
@@ -312,23 +356,30 @@ export default function NewQuestScreen() {
     const attributeId = newAreaMode ? makeId("area") : selectedAttributeId;
     const skillId = newSkillMode ? makeId("skill") : selectedSkillId;
     const xp = activeSuggestion?.xp ?? 0;
+    const existingQuest = editId ? state.quests.find(item => item.id === editId) : undefined;
     const quest: Quest = {
-      id: makeId("quest"),
+      ...existingQuest,
+      id: existingQuest?.id ?? makeId("quest"),
       title: title.trim(),
       description: description.trim(),
       type: questType,
       attributeId,
       skillId,
       xp,
-      ...(activeSuggestion ? { xpCategory: activeSuggestion.category, xpSource: "ai" as const } : {}),
+      ...(activeSuggestion ? {
+        xpCategory: activeSuggestion.category,
+        xpSource: existingQuest && activeSuggestion.rationale === (language === "sr" ? "Trenutna potvrđena nagrada." : "Current confirmed reward.")
+          ? existingQuest.xpSource ?? "legacy" as const
+          : "ai" as const,
+      } : {}),
       date: scheduledAt.toISOString(),
       deadline: endOfWindow(scheduledAt, windowChoice),
       recurrence: "none",
       difficulty: "Normal",
       completionConditions: completionConditions.trim(),
-      failureConsequence: "",
-      status: "active",
-      createdAt: stamp,
+      failureConsequence: existingQuest?.failureConsequence ?? "",
+      status: existingQuest?.status ?? "active",
+      createdAt: existingQuest?.createdAt ?? stamp,
       updatedAt: stamp,
     };
 
@@ -348,12 +399,12 @@ export default function NewQuestScreen() {
         createdAt: stamp,
         updatedAt: stamp,
       }] : state.skills,
-      quests: [quest, ...state.quests],
+      quests: existingQuest ? state.quests.map(item => item.id === existingQuest.id ? quest : item) : [quest, ...state.quests],
     };
 
     try {
       await saveState(nextState);
-      router.replace("/");
+      router.replace(existingQuest ? (`/quest/${encodeURIComponent(existingQuest.id)}` as Href) : "/");
     } catch (reason) {
       setError(apiCode(reason) === "revision_conflict" ? t.conflict : t.saveFailed);
     }
@@ -371,7 +422,7 @@ export default function NewQuestScreen() {
       ) : (
         <Pressable disabled={offline || saving} onPress={() => void activate()} style={[styles.continueButton, (offline || saving) && styles.disabled]}>
           {saving ? <ActivityIndicator color={colors.text} /> : <Ionicons color={colors.text} name="flash" size={19} />}
-          <Text style={styles.continueLabel}>{saving ? t.activating : offline ? t.readOnly : t.activate}</Text>
+          <Text style={styles.continueLabel}>{saving ? t.activating : offline ? t.readOnly : editId ? t.saveChanges : t.activate}</Text>
         </Pressable>
       )}
     </View>
@@ -380,7 +431,7 @@ export default function NewQuestScreen() {
   return (
     <Screen footer={footer} keyboardAware>
       <Text style={styles.eyebrow}>{t.eyebrow}</Text>
-      <Text style={styles.title}>{t.title}</Text>
+      <Text style={styles.title}>{editId ? t.editTitle : t.title}</Text>
       <Text style={styles.description}>{t.pathHelp}</Text>
 
       <View style={styles.pathRow}>

@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { isWeAscendState, makeInitialState, type PlanOverview, type WeAscendState } from "@weascend/shared";
+import { isWeAscendState, makeInitialState, type PlanOverview, type QuestCommand, type WeAscendState } from "@weascend/shared";
 import { AppState as NativeAppState } from "react-native";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
 
@@ -37,6 +37,7 @@ type CloudStateContextValue = {
   error: string | null;
   refresh: () => void;
   saveState: (nextState: WeAscendState) => Promise<void>;
+  runQuestCommand: (command: QuestCommand) => Promise<WeAscendState>;
 };
 
 const CloudStateContext = createContext<CloudStateContextValue | null>(null);
@@ -129,6 +130,77 @@ export function CloudStateProvider({ children }: PropsWithChildren) {
       setLastSyncedAt(response.updatedAt ?? savedAt);
       setOffline(false);
       setError(null);
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.code === "revision_conflict") {
+        const confirmed = reason.payload.state;
+        const confirmedRevision = Number(reason.payload.revision);
+        if (isWeAscendState(confirmed) && Number.isInteger(confirmedRevision)) {
+          const savedAt = new Date().toISOString();
+          await AsyncStorage.setItem(cacheKey(userId), JSON.stringify({
+            version: 1,
+            userId,
+            state: confirmed,
+            revision: confirmedRevision,
+            updatedAt: null,
+            plan,
+            cachedAt: savedAt,
+          } satisfies CachedSnapshot));
+          setState(confirmed);
+          setRevision(confirmedRevision);
+          setLastSyncedAt(savedAt);
+        }
+      } else if (!(reason instanceof ApiError) || reason.status >= 500) {
+        setOffline(true);
+      }
+      setError(errorCode(reason));
+      throw reason;
+    } finally {
+      mutationInFlight.current = false;
+      setSaving(false);
+    }
+  }, [identity?.emailVerified, identity?.id, offline, plan, revision]);
+
+  const runQuestCommand = useCallback(async (command: QuestCommand) => {
+    const userId = identity?.id;
+    if (!userId || !identity.emailVerified) throw new Error("authentication_required");
+    if (offline) throw new Error("offline_read_only");
+    if (mutationInFlight.current) throw new Error("save_in_progress");
+
+    mutationInFlight.current = true;
+    setSaving(true);
+    try {
+      const auth = await getMobileAuth();
+      if (!auth.currentUser || auth.currentUser.uid !== userId) throw new Error("authentication_required");
+      const token = await auth.currentUser.getIdToken();
+      const response = await apiJson<CloudStateResponse>("/api/quests", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ...command, revision }),
+      });
+      if (!isWeAscendState(response.state)) throw new Error("invalid_state");
+
+      const savedAt = new Date().toISOString();
+      const snapshot: CachedSnapshot = {
+        version: 1,
+        userId,
+        state: response.state,
+        revision: response.revision,
+        updatedAt: response.updatedAt,
+        plan,
+        cachedAt: savedAt,
+      };
+      await AsyncStorage.setItem(cacheKey(userId), JSON.stringify(snapshot));
+      setState(response.state);
+      setRevision(response.revision);
+      setHasCachedData(true);
+      setLastSyncedAt(response.updatedAt ?? savedAt);
+      setOffline(false);
+      setError(null);
+      return response.state;
     } catch (reason) {
       if (reason instanceof ApiError && reason.code === "revision_conflict") {
         const confirmed = reason.payload.state;
@@ -272,7 +344,8 @@ export function CloudStateProvider({ children }: PropsWithChildren) {
     error,
     refresh,
     saveState,
-  }), [error, hasCachedData, lastSyncedAt, loading, offline, plan, refreshing, refresh, revision, saveState, saving, state]);
+    runQuestCommand,
+  }), [error, hasCachedData, lastSyncedAt, loading, offline, plan, refreshing, refresh, revision, runQuestCommand, saveState, saving, state]);
 
   return <CloudStateContext.Provider value={value}>{children}</CloudStateContext.Provider>;
 }

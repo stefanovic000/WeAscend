@@ -60,11 +60,13 @@ export type Quest = {
   deadline: string;
   recurrence: "none" | "daily" | "weekly";
   status: QuestStatus;
+  archivedFromStatus?: Exclude<QuestStatus, "archived">;
   difficulty: "Easy" | "Normal" | "Hard" | "Extreme";
   completionConditions: string;
   failureConsequence: string;
   parentQuestId?: string;
   stepOrder?: number;
+  parentClosedAt?: string;
   seriesId?: string;
   templateId?: string;
   routineDate?: string;
@@ -110,6 +112,11 @@ export type PlanOverview = {
   limitsEnforced: boolean;
   billingEnabled: boolean;
 };
+
+export type QuestCommand =
+  | { action: "create" | "update"; quest: Quest }
+  | { action: "delete" | "complete" | "fail" | "retry" | "archive" | "restore" | "undo_completion"; questId: string }
+  | { action: "note"; questId: string; note: string };
 
 export const defaultSettings: Settings = {
   baseXp: 100,

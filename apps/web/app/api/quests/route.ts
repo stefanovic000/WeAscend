@@ -30,6 +30,7 @@ function normalizeCommand(value: unknown): { revision: number; mutation: QuestMu
     quest?: unknown;
     quests?: unknown;
     questId?: unknown;
+    note?: unknown;
     bossQuestId?: unknown;
     outcome?: unknown;
     result?: unknown;
@@ -39,6 +40,16 @@ function normalizeCommand(value: unknown): { revision: number; mutation: QuestMu
 
   if (payload.action === "delete" && typeof payload.questId === "string") {
     return { revision, mutation: { action: "delete", questId: payload.questId } };
+  }
+  if (
+    (payload.action === "complete" || payload.action === "fail" || payload.action === "retry" ||
+      payload.action === "archive" || payload.action === "restore" || payload.action === "undo_completion") &&
+    typeof payload.questId === "string"
+  ) {
+    return { revision, mutation: { action: payload.action, questId: payload.questId } };
+  }
+  if (payload.action === "note" && typeof payload.questId === "string" && typeof payload.note === "string") {
+    return { revision, mutation: { action: "note", questId: payload.questId, note: payload.note } };
   }
   if ((payload.action === "create" || payload.action === "update") && isValidQuest(payload.quest) && isQuestContentWithinLimits(payload.quest)) {
     return { revision, mutation: { action: payload.action, quest: payload.quest } };

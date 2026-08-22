@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
+import { type Href, useRouter } from "expo-router";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { CloudStateMessage } from "@/components/CloudStateMessage";
 import { PageHeader } from "@/components/PageHeader";
@@ -42,7 +42,13 @@ export default function QuestsScreen() {
             const attribute = state.attributes.find(item => item.id === quest.attributeId);
             const skill = state.skills.find(item => item.id === quest.skillId);
             return (
-              <View key={quest.id} style={[styles.questCard, quest.status === "failed" && styles.failedCard]}>
+              <Pressable
+                accessibilityHint={sr ? "Otvara detalje i radnje za quest" : "Opens quest details and actions"}
+                accessibilityRole="button"
+                key={quest.id}
+                onPress={() => router.push(`/quest/${encodeURIComponent(quest.id)}` as Href)}
+                style={({ pressed }) => [styles.questCard, quest.status === "failed" && styles.failedCard, pressed && styles.pressed]}
+              >
                 <View style={styles.topLine}>
                   <Text style={styles.type}>{quest.type.toUpperCase()}</Text>
                   <Text style={[styles.status, quest.status === "failed" && styles.failed]}>{quest.status.toUpperCase()}</Text>
@@ -53,7 +59,8 @@ export default function QuestsScreen() {
                   <Text numberOfLines={1} style={styles.path}>{attribute?.name ?? "—"} › {skill?.name ?? "—"}</Text>
                   <Text style={styles.xp}>+{quest.xp} XP</Text>
                 </View>
-              </View>
+                <View style={styles.openRow}><Text style={styles.openText}>{sr ? "Otvori quest" : "Open quest"}</Text><Ionicons color={colors.violetSoft} name="chevron-forward" size={17} /></View>
+              </Pressable>
             );
           })}
           <PrimaryButton disabled={offline} label={sr ? "Napravi quest" : "Create quest"} onPress={() => router.push("/quest/new")} />
@@ -83,6 +90,9 @@ const styles = StyleSheet.create({
   bottomLine: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
   path: { flex: 1, color: colors.textMuted, fontSize: 12 },
   xp: { color: colors.cyan, fontSize: 13, fontWeight: "800" },
+  openRow: { paddingTop: spacing.xs, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 3, borderTopWidth: 1, borderTopColor: colors.border },
+  openText: { color: colors.violetSoft, fontSize: 12, fontWeight: "700" },
+  pressed: { opacity: 0.78, transform: [{ scale: 0.99 }] },
   emptyState: { gap: spacing.md, padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
   emptyTitle: { color: colors.text, fontSize: 22, fontWeight: "700" },
   emptyBody: { color: colors.textMuted, fontSize: 15, lineHeight: 22 },
