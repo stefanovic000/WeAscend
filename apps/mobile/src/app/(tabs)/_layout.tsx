@@ -52,8 +52,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="quests"
         options={{
-          title: sr ? "Questovi" : "Quests",
-          tabBarIcon: (props) => <TabIcon {...props} name="checkbox-outline" activeName="checkbox" />,
+          title: sr ? "Plan" : "Plan",
+          tabBarIcon: (props) => <TabIcon {...props} name="calendar-outline" activeName="calendar" />,
         }}
       />
       <Tabs.Screen

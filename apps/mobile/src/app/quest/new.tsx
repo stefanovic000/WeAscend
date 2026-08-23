@@ -168,8 +168,9 @@ function apiCode(reason: unknown) {
 
 export default function NewQuestScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ editId?: string | string[] }>();
+  const params = useLocalSearchParams<{ editId?: string | string[]; date?: string | string[] }>();
   const editId = Array.isArray(params.editId) ? params.editId[0] : params.editId;
+  const requestedDate = Array.isArray(params.date) ? params.date[0] : params.date;
   const { state, offline, runQuestCommand, saving } = useCloudState();
   const { language } = usePreferences();
   const t = copy[language];
@@ -195,6 +196,7 @@ export default function NewQuestScreen() {
   const [useZeroXp, setUseZeroXp] = useState(false);
   const [error, setError] = useState("");
   const hydratedEditId = useRef<string | null>(null);
+  const hydratedRequestedDate = useRef(false);
 
   const attributes = useMemo(() => state?.attributes.filter(attribute => !attribute.deletedAt) ?? [], [state]);
   const selectedAttribute = attributes.find(attribute => attribute.id === selectedAttributeId);
@@ -215,6 +217,14 @@ export default function NewQuestScreen() {
     language,
   });
   const activeSuggestion = suggestion && suggestionFingerprint === fingerprint ? suggestion : null;
+
+  useEffect(() => {
+    if (editId || hydratedRequestedDate.current || !requestedDate || !/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) return;
+    const [year, month, day] = requestedDate.split("-").map(Number);
+    const candidate = new Date(year, month - 1, day, scheduledAt.getHours(), scheduledAt.getMinutes(), 0, 0);
+    hydratedRequestedDate.current = true;
+    if (candidate.getFullYear() === year && candidate.getMonth() === month - 1 && candidate.getDate() === day) setScheduledAt(candidate);
+  }, [editId, requestedDate, scheduledAt]);
 
   useEffect(() => {
     if (!state || !editId || hydratedEditId.current === editId) return;
