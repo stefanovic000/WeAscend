@@ -97,7 +97,10 @@ export function OnboardingTour() {
     const left = Math.max(4, targetRect.x - spotlightPadding);
     const top = Math.max(4, targetRect.y - spotlightPadding);
     const right = Math.min(width - 4, targetRect.x + targetRect.width + spotlightPadding);
-    const bottom = Math.min(height - 4, targetRect.y + targetHeight + spotlightPadding);
+    // Do not clamp this to useWindowDimensions().height: on edge-to-edge Android
+    // devices that value can stop above the raised tab button even though the
+    // overlay itself continues behind the navigation area.
+    const bottom = targetRect.y + targetHeight + spotlightPadding;
     return {
       left,
       top,
