@@ -8,10 +8,12 @@ import { colors, radius, spacing } from "@/theme";
 import { useAuth } from "@/providers/AuthProvider";
 import { useCloudState } from "@/providers/CloudStateProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
+import { useOnboarding } from "@/providers/OnboardingProvider";
 
 export default function ProfileScreen() {
   const { identity, signOut } = useAuth();
   const { language } = usePreferences();
+  const { restart } = useOnboarding();
   const { lastSyncedAt, offline, plan, refreshing, refresh } = useCloudState();
   const [busy, setBusy] = useState(false);
   const sr = language === "sr";
@@ -42,6 +44,14 @@ export default function ProfileScreen() {
           <Ionicons color={colors.violetSoft} name="refresh" size={20} />
         </Pressable>
       </View>
+      <Pressable onPress={restart} style={styles.tutorialButton}>
+        <Ionicons color={colors.violetSoft} name="compass-outline" size={21} />
+        <View style={styles.copy}>
+          <Text style={styles.tutorialTitle}>{sr ? "Ponovi vodič" : "Replay guide"}</Text>
+          <Text style={styles.tutorialBody}>{sr ? "Ponovo prođi kroz osnovni WeAscend tok." : "Walk through the core WeAscend flow again."}</Text>
+        </View>
+        <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
+      </Pressable>
       <Pressable
         disabled={busy}
         onPress={() => {
@@ -96,6 +106,9 @@ const styles = StyleSheet.create({
   syncTitle: { color: colors.text, fontSize: 13, fontWeight: "700" },
   syncTime: { color: colors.textMuted, fontSize: 10, lineHeight: 15 },
   refreshButton: { width: 40, height: 40, alignItems: "center", justifyContent: "center", borderRadius: 20, backgroundColor: colors.surfaceRaised },
+  tutorialButton: { minHeight: 66, marginTop: spacing.md, padding: spacing.md, flexDirection: "row", alignItems: "center", gap: spacing.sm, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
+  tutorialTitle: { color: colors.text, fontSize: 14, fontWeight: "700" },
+  tutorialBody: { color: colors.textMuted, fontSize: 11, lineHeight: 16 },
   signOutButton: {
     minHeight: 50,
     marginTop: spacing.md,

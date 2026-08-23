@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View, type ColorValue } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useCloudState } from "@/providers/CloudStateProvider";
+import { OnboardingTour } from "@/components/OnboardingTour";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import { colors } from "@/theme";
 
@@ -27,7 +28,8 @@ export default function TabLayout() {
   const bottomInset = Math.max(insets.bottom, 8);
 
   return (
-    <Tabs
+    <View style={styles.root}>
+      <Tabs
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.violetSoft,
@@ -95,11 +97,14 @@ export default function TabLayout() {
           tabBarIcon: (props) => <TabIcon {...props} name="person-outline" activeName="person" />,
         }}
       />
-    </Tabs>
+      </Tabs>
+      <OnboardingTour />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1 },
   tabBar: {
     paddingTop: 8,
     backgroundColor: "#0b0d19",

@@ -6,6 +6,7 @@ import { colors } from "@/theme";
 import { AuthLoading } from "@/components/AuthLoading";
 import { AuthProvider, useAuth } from "@/providers/AuthProvider";
 import { CloudStateProvider } from "@/providers/CloudStateProvider";
+import { OnboardingProvider } from "@/providers/OnboardingProvider";
 import { PreferencesProvider, usePreferences } from "@/providers/PreferencesProvider";
 
 export default function RootLayout() {
@@ -14,9 +15,11 @@ export default function RootLayout() {
       <StatusBar style="light" />
       <PreferencesProvider>
         <AuthProvider>
-          <CloudStateProvider>
-            <RootNavigator />
-          </CloudStateProvider>
+          <OnboardingProvider>
+            <CloudStateProvider>
+              <RootNavigator />
+            </CloudStateProvider>
+          </OnboardingProvider>
         </AuthProvider>
       </PreferencesProvider>
     </SafeAreaProvider>
