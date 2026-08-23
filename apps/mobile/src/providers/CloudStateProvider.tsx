@@ -36,7 +36,6 @@ type CloudStateContextValue = {
   lastSyncedAt: string | null;
   error: string | null;
   refresh: () => void;
-  saveState: (nextState: WeAscendState) => Promise<void>;
   runQuestCommand: (command: QuestCommand) => Promise<WeAscendState>;
   runGrowthCommand: (command: GrowthCommand) => Promise<WeAscendState>;
 };
@@ -89,77 +88,6 @@ export function CloudStateProvider({ children }: PropsWithChildren) {
   const mutationInFlight = useRef(false);
 
   const refresh = useCallback(() => setRefreshAttempt(attempt => attempt + 1), []);
-
-  const saveState = useCallback(async (nextState: WeAscendState) => {
-    const userId = identity?.id;
-    if (!userId || !identity.emailVerified) throw new Error("authentication_required");
-    if (offline) throw new Error("offline_read_only");
-    if (mutationInFlight.current) throw new Error("save_in_progress");
-    if (!isWeAscendState(nextState)) throw new Error("invalid_state");
-
-    mutationInFlight.current = true;
-    setSaving(true);
-    try {
-      const auth = await getMobileAuth();
-      if (!auth.currentUser || auth.currentUser.uid !== userId) throw new Error("authentication_required");
-      const token = await auth.currentUser.getIdToken();
-      const response = await apiJson<CloudStateResponse>("/api/state", {
-        method: "PUT",
-        cache: "no-store",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ state: nextState, revision }),
-      });
-      if (!isWeAscendState(response.state)) throw new Error("invalid_state");
-
-      const savedAt = new Date().toISOString();
-      const snapshot: CachedSnapshot = {
-        version: 1,
-        userId,
-        state: response.state,
-        revision: response.revision,
-        updatedAt: response.updatedAt,
-        plan,
-        cachedAt: savedAt,
-      };
-      await AsyncStorage.setItem(cacheKey(userId), JSON.stringify(snapshot));
-      setState(response.state);
-      setRevision(response.revision);
-      setHasCachedData(true);
-      setLastSyncedAt(response.updatedAt ?? savedAt);
-      setOffline(false);
-      setError(null);
-    } catch (reason) {
-      if (reason instanceof ApiError && reason.code === "revision_conflict") {
-        const confirmed = reason.payload.state;
-        const confirmedRevision = Number(reason.payload.revision);
-        if (isWeAscendState(confirmed) && Number.isInteger(confirmedRevision)) {
-          const savedAt = new Date().toISOString();
-          await AsyncStorage.setItem(cacheKey(userId), JSON.stringify({
-            version: 1,
-            userId,
-            state: confirmed,
-            revision: confirmedRevision,
-            updatedAt: null,
-            plan,
-            cachedAt: savedAt,
-          } satisfies CachedSnapshot));
-          setState(confirmed);
-          setRevision(confirmedRevision);
-          setLastSyncedAt(savedAt);
-        }
-      } else if (!(reason instanceof ApiError) || reason.status >= 500) {
-        setOffline(true);
-      }
-      setError(errorCode(reason));
-      throw reason;
-    } finally {
-      mutationInFlight.current = false;
-      setSaving(false);
-    }
-  }, [identity?.emailVerified, identity?.id, offline, plan, revision]);
 
   const runCommand = useCallback(async (path: "/api/quests" | "/api/growth", command: QuestCommand | GrowthCommand) => {
     const userId = identity?.id;
@@ -353,10 +281,9 @@ export function CloudStateProvider({ children }: PropsWithChildren) {
     lastSyncedAt,
     error,
     refresh,
-    saveState,
     runQuestCommand,
     runGrowthCommand,
-  }), [error, hasCachedData, lastSyncedAt, loading, offline, plan, refreshing, refresh, revision, runGrowthCommand, runQuestCommand, saveState, saving, state]);
+  }), [error, hasCachedData, lastSyncedAt, loading, offline, plan, refreshing, refresh, revision, runGrowthCommand, runQuestCommand, saving, state]);
 
   return <CloudStateContext.Provider value={value}>{children}</CloudStateContext.Provider>;
 }
