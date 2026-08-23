@@ -4,18 +4,21 @@ import { type Href, useRouter } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { CloudStateMessage } from "@/components/CloudStateMessage";
+import { GettingStartedCard, gettingStartedProgress } from "@/components/GettingStartedCard";
 import { PageHeader } from "@/components/PageHeader";
 import { OnboardingTarget } from "@/components/OnboardingTarget";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { Screen } from "@/components/Screen";
 import { useCloudState } from "@/providers/CloudStateProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
+import { useOnboarding } from "@/providers/OnboardingProvider";
 import { colors, radius, spacing } from "@/theme";
 
 export default function TodayScreen() {
   const router = useRouter();
   const { state, plan, offline } = useCloudState();
   const { language } = usePreferences();
+  const { checklistRequested } = useOnboarding();
   const sr = language === "sr";
 
   if (!state) {
@@ -36,6 +39,7 @@ export default function TodayScreen() {
     .sort((left, right) => left.date.localeCompare(right.date));
   const activeToday = todayQuests.filter(quest => quest.status === "active").length;
   const planLabel = plan?.name === "premium" ? "PREMIUM" : sr ? "FREE PUT" : "FREE PATH";
+  const setupVisible = !gettingStartedProgress(state).complete || checklistRequested;
 
   return (
     <Screen>
@@ -53,7 +57,7 @@ export default function TodayScreen() {
         </View>
       </OnboardingTarget>
 
-      <PrimaryButton disabled={offline} label={sr ? "Napravi quest" : "Create quest"} onPress={() => router.push("/quest/new")} />
+      {setupVisible ? <GettingStartedCard language={language} offline={offline} state={state} /> : <PrimaryButton disabled={offline} label={sr ? "Napravi quest" : "Create quest"} onPress={() => router.push("/quest/new")} />}
 
       <View style={styles.sectionHeading}>
         <Text style={styles.sectionTitle}>{sr ? "Danas" : "Today"}</Text>

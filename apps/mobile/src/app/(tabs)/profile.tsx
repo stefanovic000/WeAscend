@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { useState } from "react";
 
@@ -12,8 +13,9 @@ import { useOnboarding } from "@/providers/OnboardingProvider";
 
 export default function ProfileScreen() {
   const { identity, signOut } = useAuth();
+  const router = useRouter();
   const { language } = usePreferences();
-  const { restart } = useOnboarding();
+  const { restart, showChecklist } = useOnboarding();
   const { lastSyncedAt, offline, plan, refreshing, refresh } = useCloudState();
   const [busy, setBusy] = useState(false);
   const sr = language === "sr";
@@ -49,6 +51,14 @@ export default function ProfileScreen() {
         <View style={styles.copy}>
           <Text style={styles.tutorialTitle}>{sr ? "Ponovi vodič" : "Replay guide"}</Text>
           <Text style={styles.tutorialBody}>{sr ? "Ponovo prođi kroz osnovni WeAscend tok." : "Walk through the core WeAscend flow again."}</Text>
+        </View>
+        <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
+      </Pressable>
+      <Pressable onPress={() => { showChecklist(); router.push("/"); }} style={styles.tutorialButton}>
+        <Ionicons color={colors.cyan} name="checkbox-outline" size={21} />
+        <View style={styles.copy}>
+          <Text style={styles.tutorialTitle}>{sr ? "Prva misija" : "First mission checklist"}</Text>
+          <Text style={styles.tutorialBody}>{sr ? "Pogledaj praktične prve korake na Command ekranu." : "Review the practical first steps on your Command screen."}</Text>
         </View>
         <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
       </Pressable>

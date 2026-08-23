@@ -114,7 +114,7 @@ export function OnboardingTour() {
   const promptAtTop = targetRect ? targetRect.y > height / 2 : step === 2 || step === 3;
   const finish = () => {
     next();
-    router.replace("/progress");
+    router.replace("/");
   };
 
   return (
@@ -145,7 +145,7 @@ export function OnboardingTour() {
         <View style={styles.progress}>{Array.from({ length: totalSteps }, (_, index) => <View key={index} style={[styles.progressDot, index === step && styles.progressDotActive]} />)}</View>
         <View style={styles.actions}>
           {step > 0 ? <Pressable onPress={back} style={styles.backButton}><Ionicons color={colors.textMuted} name="arrow-back" size={18} /><Text style={styles.backText}>{sr ? "Nazad" : "Back"}</Text></Pressable> : <View />}
-          <Pressable onPress={step === totalSteps - 1 ? finish : next} style={styles.nextButton}><Text style={styles.nextText}>{step === totalSteps - 1 ? (sr ? "Idi na oblasti" : "Go to Growth Areas") : (sr ? "Nastavi" : "Next")}</Text><Ionicons color={colors.text} name={step === totalSteps - 1 ? "git-network-outline" : "arrow-forward"} size={18} /></Pressable>
+          <Pressable onPress={step === totalSteps - 1 ? finish : next} style={styles.nextButton}><Text style={styles.nextText}>{step === totalSteps - 1 ? (sr ? "Počni" : "Begin") : (sr ? "Nastavi" : "Next")}</Text><Ionicons color={colors.text} name={step === totalSteps - 1 ? "compass-outline" : "arrow-forward"} size={18} /></Pressable>
         </View>
       </View>
     </View>

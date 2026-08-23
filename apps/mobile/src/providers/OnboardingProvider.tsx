@@ -11,12 +11,15 @@ export type OnboardingTargetRect = { x: number; y: number; width: number; height
 
 type OnboardingContextValue = {
   active: boolean;
+  checklistRequested: boolean;
   step: number;
   totalSteps: number;
   next: () => void;
   back: () => void;
   skip: () => void;
   restart: () => void;
+  showChecklist: () => void;
+  dismissChecklist: () => void;
   registerTarget: (targetId: string, node: View | null) => void;
   measureTarget: (targetId: string) => Promise<OnboardingTargetRect | null>;
 };
@@ -30,6 +33,7 @@ function storageKey(userId: string) {
 export function OnboardingProvider({ children }: PropsWithChildren) {
   const { identity } = useAuth();
   const [active, setActive] = useState(false);
+  const [checklistRequested, setChecklistRequested] = useState(false);
   const [step, setStep] = useState(0);
   const targets = useRef(new Map<string, View>());
 
@@ -37,6 +41,7 @@ export function OnboardingProvider({ children }: PropsWithChildren) {
     const userId = identity?.emailVerified ? identity.id : null;
     let cancelled = false;
     setActive(false);
+    setChecklistRequested(false);
     setStep(0);
     if (!userId) return () => { cancelled = true; };
 
@@ -76,6 +81,7 @@ export function OnboardingProvider({ children }: PropsWithChildren) {
 
   const value = useMemo<OnboardingContextValue>(() => ({
     active,
+    checklistRequested,
     step,
     totalSteps: TOTAL_STEPS,
     next,
@@ -85,9 +91,11 @@ export function OnboardingProvider({ children }: PropsWithChildren) {
       setStep(0);
       setActive(true);
     },
+    showChecklist: () => setChecklistRequested(true),
+    dismissChecklist: () => setChecklistRequested(false),
     registerTarget,
     measureTarget,
-  }), [active, complete, measureTarget, next, registerTarget, step]);
+  }), [active, checklistRequested, complete, measureTarget, next, registerTarget, step]);
 
   return <OnboardingContext.Provider value={value}>{children}</OnboardingContext.Provider>;
 }
