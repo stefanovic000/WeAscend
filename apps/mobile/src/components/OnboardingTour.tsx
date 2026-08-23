@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { type Href, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
-import { Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { BackHandler, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useCloudState } from "@/providers/CloudStateProvider";
@@ -34,6 +34,7 @@ export function OnboardingTour() {
   const { active, step, totalSteps, next, back, skip, measureTarget } = useOnboarding();
   const { language } = usePreferences();
   const [targetRect, setTargetRect] = useState<OnboardingTargetRect | null>(null);
+  const overlayRef = useRef<View | null>(null);
   const sr = language === "sr";
   const current = steps[language][step] ?? steps[language][0];
 
@@ -48,9 +49,26 @@ export function OnboardingTour() {
     if (!active || !state || !current.target) return () => { cancelled = true; };
 
     const measure = async (attempt = 0) => {
+      const overlayOrigin = await new Promise<{ x: number; y: number } | null>(resolve => {
+        const overlay = overlayRef.current;
+        if (!overlay) {
+          resolve(null);
+          return;
+        }
+        overlay.measureInWindow((x, y, measuredWidth, measuredHeight) => {
+          resolve(measuredWidth > 0 && measuredHeight > 0 ? { x, y } : null);
+        });
+      });
       const rect = await measureTarget(current.target ?? "");
       if (cancelled) return;
-      if (rect) setTargetRect(rect);
+      if (rect && overlayOrigin) {
+        setTargetRect({
+          x: rect.x - overlayOrigin.x,
+          y: rect.y - overlayOrigin.y,
+          width: rect.width,
+          height: rect.height,
+        });
+      }
       else if (attempt < 5) timeout = setTimeout(() => void measure(attempt + 1), 120);
     };
     timeout = setTimeout(() => void measure(), 220);
@@ -59,6 +77,15 @@ export function OnboardingTour() {
       if (timeout) clearTimeout(timeout);
     };
   }, [active, current.route, current.target, measureTarget, state]);
+
+  useEffect(() => {
+    if (!active) return;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      skip();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [active, skip]);
 
   if (!active || !state) return null;
 
@@ -76,30 +103,28 @@ export function OnboardingTour() {
   };
 
   return (
-    <Modal animationType="fade" navigationBarTranslucent onRequestClose={skip} statusBarTranslucent transparent visible>
-      <View style={styles.overlay}>
-        {highlight ? <View pointerEvents="none" style={[styles.highlight, highlight]} /> : null}
-        <View style={[styles.card, promptAtTop ? { top: insets.top + 28 } : { bottom: insets.bottom + 94 }]}>
-          <View style={styles.cardHeader}>
-            <View style={styles.icon}><Ionicons color={colors.cyan} name={current.icon} size={22} /></View>
-            <View style={styles.heading}><Text style={styles.eyebrow}>{current.eyebrow}</Text><Text style={styles.counter}>{step + 1} / {totalSteps}</Text></View>
-            <Pressable accessibilityLabel={sr ? "Preskoči tutorijal" : "Skip tutorial"} onPress={skip} style={styles.skipButton}><Text style={styles.skip}>{sr ? "Preskoči" : "Skip"}</Text></Pressable>
-          </View>
-          <Text style={styles.title}>{current.title}</Text>
-          <Text style={styles.body}>{current.body}</Text>
-          <View style={styles.progress}>{Array.from({ length: totalSteps }, (_, index) => <View key={index} style={[styles.progressDot, index === step && styles.progressDotActive]} />)}</View>
-          <View style={styles.actions}>
-            {step > 0 ? <Pressable onPress={back} style={styles.backButton}><Ionicons color={colors.textMuted} name="arrow-back" size={18} /><Text style={styles.backText}>{sr ? "Nazad" : "Back"}</Text></Pressable> : <View />}
-            <Pressable onPress={step === totalSteps - 1 ? finish : next} style={styles.nextButton}><Text style={styles.nextText}>{step === totalSteps - 1 ? (sr ? "Idi na oblasti" : "Go to Growth Areas") : (sr ? "Nastavi" : "Next")}</Text><Ionicons color={colors.text} name={step === totalSteps - 1 ? "git-network-outline" : "arrow-forward"} size={18} /></Pressable>
-          </View>
+    <View collapsable={false} ref={overlayRef} style={styles.overlay}>
+      {highlight ? <View pointerEvents="none" style={[styles.highlight, highlight]} /> : null}
+      <View style={[styles.card, promptAtTop ? { top: insets.top + 28 } : { bottom: insets.bottom + 94 }]}>
+        <View style={styles.cardHeader}>
+          <View style={styles.icon}><Ionicons color={colors.cyan} name={current.icon} size={22} /></View>
+          <View style={styles.heading}><Text style={styles.eyebrow}>{current.eyebrow}</Text><Text style={styles.counter}>{step + 1} / {totalSteps}</Text></View>
+          <Pressable accessibilityLabel={sr ? "Preskoči tutorijal" : "Skip tutorial"} onPress={skip} style={styles.skipButton}><Text style={styles.skip}>{sr ? "Preskoči" : "Skip"}</Text></Pressable>
+        </View>
+        <Text style={styles.title}>{current.title}</Text>
+        <Text style={styles.body}>{current.body}</Text>
+        <View style={styles.progress}>{Array.from({ length: totalSteps }, (_, index) => <View key={index} style={[styles.progressDot, index === step && styles.progressDotActive]} />)}</View>
+        <View style={styles.actions}>
+          {step > 0 ? <Pressable onPress={back} style={styles.backButton}><Ionicons color={colors.textMuted} name="arrow-back" size={18} /><Text style={styles.backText}>{sr ? "Nazad" : "Back"}</Text></Pressable> : <View />}
+          <Pressable onPress={step === totalSteps - 1 ? finish : next} style={styles.nextButton}><Text style={styles.nextText}>{step === totalSteps - 1 ? (sr ? "Idi na oblasti" : "Go to Growth Areas") : (sr ? "Nastavi" : "Next")}</Text><Ionicons color={colors.text} name={step === totalSteps - 1 ? "git-network-outline" : "arrow-forward"} size={18} /></Pressable>
         </View>
       </View>
-    </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "rgba(3, 4, 12, 0.76)" },
+  overlay: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 1000, elevation: 1000, backgroundColor: "rgba(3, 4, 12, 0.76)" },
   highlight: { position: "absolute", borderWidth: 2, borderColor: colors.cyan, backgroundColor: "rgba(49, 216, 212, 0.05)", shadowColor: colors.cyan, shadowOpacity: 0.7, shadowRadius: 16, elevation: 8 },
   card: { position: "absolute", left: spacing.md, right: spacing.md, padding: spacing.md, borderWidth: 1, borderColor: "#574890", borderRadius: radius.lg, backgroundColor: "#111326" },
   cardHeader: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
