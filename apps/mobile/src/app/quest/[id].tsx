@@ -1,11 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
-import type { QuestCommand } from "@weascend/shared";
+import type { BossAttempt, QuestCommand } from "@weascend/shared";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -26,6 +28,8 @@ function commandError(reason: unknown, sr: boolean) {
   if (code === "revision_conflict") return sr ? "Pronađeni su noviji podaci. Proveri quest i pokušaj ponovo." : "Newer data was found. Review the quest and try again.";
   if (code === "offline_read_only") return sr ? "Poveži se na internet da bi menjao quest." : "Reconnect before changing this quest.";
   if (code === "invalid_status") return sr ? "Ta radnja više nije dostupna za trenutni status." : "That action is no longer available for the current status.";
+  if (code === "invalid_attempt") return sr ? "Upiši kratak, konkretan rezultat pokušaja." : "Enter a short, concrete result for this attempt.";
+  if (code === "boss_already_cleared") return sr ? "Ovaj Boss je već završen." : "This Boss has already been cleared.";
   return sr ? "Promena nije sačuvana. Potvrđeni podaci nisu izmenjeni." : "The change was not saved. Confirmed data stayed unchanged.";
 }
 
@@ -81,6 +85,8 @@ export default function QuestDetailsScreen() {
   const [error, setError] = useState("");
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
+  const [bossOutcome, setBossOutcome] = useState<"failed" | "cleared" | null>(null);
+  const [bossResult, setBossResult] = useState("");
 
   const quest = state?.quests.find(item => item.id === id);
   const attribute = state?.attributes.find(item => item.id === quest?.attributeId);
@@ -88,6 +94,14 @@ export default function QuestDetailsScreen() {
   const hasXp = useMemo(
     () => Boolean(state && quest && state.transactions.some(transaction => transaction.questId === quest.id && !transaction.reversedAt)),
     [quest, state],
+  );
+  const bossAttempts = useMemo(
+    () => (state?.bossAttempts ?? [])
+      .filter((attempt): attempt is BossAttempt => Boolean(
+        attempt && attempt.bossQuestId === id && !attempt.reversedAt,
+      ))
+      .sort((left, right) => right.attemptNumber - left.attemptNumber),
+    [id, state?.bossAttempts],
   );
 
   if (!state) return <Screen><CloudStateMessage /></Screen>;
@@ -142,6 +156,35 @@ export default function QuestDetailsScreen() {
     () => setNoteOpen(false),
   );
 
+  const openBossResult = (outcome: "failed" | "cleared") => {
+    setBossResult("");
+    setBossOutcome(outcome);
+  };
+
+  const saveBossResult = () => {
+    if (!bossOutcome || !bossResult.trim()) return;
+    void mutate(
+      { action: "boss_attempt", bossQuestId: quest.id, outcome: bossOutcome, result: bossResult.trim() },
+      () => {
+        setBossOutcome(null);
+        setBossResult("");
+      },
+    );
+  };
+
+  const confirmUndoBoss = () => {
+    Alert.alert(
+      sr ? "Poništiti Boss Clear?" : "Undo Boss Clear?",
+      sr
+        ? "Boss će ponovo postati aktivan, a samo njegov Clear XP biće poništen. XP pripremnih questova ostaje."
+        : "The Boss will become active again and only its Clear XP will be reversed. Preparation XP stays earned.",
+      [
+        { text: sr ? "Odustani" : "Cancel", style: "cancel" },
+        { text: sr ? "Poništi Clear" : "Undo Clear", style: "destructive", onPress: () => void mutate({ action: "undo_boss_clear", bossQuestId: quest.id }) },
+      ],
+    );
+  };
+
   return (
     <Screen keyboardAware>
       <View style={styles.hero}>
@@ -173,11 +216,39 @@ export default function QuestDetailsScreen() {
       {quest.type === "Boss" && quest.status !== "archived" ? (
         <View style={styles.bossNotice}>
           <Ionicons color={colors.gold} name="shield-outline" size={21} />
-          <Text style={styles.bossText}>{sr ? "Boss zahteva zabeležen rezultat. Boss pokušaji stižu u sledećem koraku mobilne aplikacije." : "A Boss requires a recorded result. Boss attempts are coming in the next mobile step."}</Text>
+          <Text style={styles.bossText}>{sr ? "Boss XP se dobija samo kada zabeležiš konkretan Clear rezultat. Neuspešan pokušaj čuva lekciju, ali ne daje Boss XP." : "Boss XP is awarded only when you record a concrete Clear result. A failed attempt preserves the lesson but awards no Boss XP."}</Text>
+        </View>
+      ) : null}
+
+      {quest.type === "Boss" && bossAttempts.length ? (
+        <View style={styles.attemptSection}>
+          <Text style={styles.detailLabel}>{sr ? "ISTORIJA POKUŠAJA" : "ATTEMPT HISTORY"}</Text>
+          {bossAttempts.map(attempt => (
+            <View key={attempt.id} style={styles.attemptCard}>
+              <View style={styles.attemptTop}>
+                <Text style={[styles.attemptOutcome, attempt.outcome === "failed" ? styles.dangerText : styles.clearText]}>
+                  {attempt.outcome === "failed" ? (sr ? "NEUSPEŠAN POKUŠAJ" : "FAILED ATTEMPT") : "BOSS CLEAR"}
+                </Text>
+                <Text style={styles.attemptNumber}>#{attempt.attemptNumber}</Text>
+              </View>
+              <Text style={styles.attemptResult}>{attempt.result}</Text>
+              <Text style={styles.attemptDate}>{formatMoment(attempt.createdAt, language)}</Text>
+            </View>
+          ))}
         </View>
       ) : null}
 
       <View style={styles.actions}>
+        {quest.type === "Boss" && quest.status === "active" ? (
+          <>
+            <ActionButton disabled={locked} icon="trophy-outline" label={sr ? "Potvrdi Boss Clear" : "Confirm Boss Clear"} onPress={() => openBossResult("cleared")} tone="primary" />
+            <ActionButton disabled={locked} icon="shield-half-outline" label={sr ? "Zabeleži neuspešan pokušaj" : "Record failed attempt"} onPress={() => openBossResult("failed")} tone="danger" />
+            {!hasXp ? <ActionButton disabled={locked} icon="create-outline" label={sr ? "Izmeni Boss" : "Edit Boss"} onPress={() => router.push({ pathname: "/quest/new", params: { editId: quest.id } } as Href)} /> : null}
+          </>
+        ) : null}
+        {quest.type === "Boss" && quest.status === "completed" ? (
+          <ActionButton disabled={locked} icon="arrow-undo-outline" label={sr ? "Poništi Boss Clear i XP" : "Undo Boss Clear and XP"} onPress={confirmUndoBoss} />
+        ) : null}
         {quest.type !== "Boss" && quest.status === "active" ? (
           <>
             <ActionButton disabled={locked} icon="checkmark-circle-outline" label={sr ? "Završi quest" : "Complete quest"} onPress={() => void mutate({ action: "complete", questId: quest.id })} tone="primary" />
@@ -235,6 +306,45 @@ export default function QuestDetailsScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal animationType="fade" onRequestClose={() => !saving && setBossOutcome(null)} transparent visible={bossOutcome !== null}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalTitleRow}>
+              <View style={styles.modalHeading}>
+                <Text style={styles.modalEyebrow}>{bossOutcome === "cleared" ? "BOSS CLEAR" : (sr ? "POKUŠAJ" : "ATTEMPT")}</Text>
+                <Text style={styles.modalTitle}>{bossOutcome === "cleared" ? (sr ? "Zabeleži rezultat" : "Record the result") : (sr ? "Šta se dogodilo?" : "What happened?")}</Text>
+              </View>
+              <Pressable accessibilityLabel={sr ? "Zatvori" : "Close"} disabled={saving} onPress={() => setBossOutcome(null)} style={styles.closeButton}>
+                <Ionicons color={colors.textMuted} name="close" size={24} />
+              </Pressable>
+            </View>
+            <Text style={styles.modalHelp}>
+              {bossOutcome === "cleared"
+                ? (sr ? "Upiši merljiv rezultat koji potvrđuje da je Boss savladan." : "Enter the measurable result that confirms this Boss was cleared.")
+                : (sr ? "Zapiši šta nije uspelo i šta želiš da popraviš pri sledećem pokušaju." : "Record what failed and what you want to improve on the next attempt.")}
+            </Text>
+            <TextInput
+              autoFocus
+              maxLength={1000}
+              multiline
+              onChangeText={setBossResult}
+              placeholder={bossOutcome === "cleared" ? (sr ? "Npr. položen ispit sa ocenom 8…" : "E.g. passed the exam with a score of 82%…") : (sr ? "Npr. zadatak 3 nije završen; ponoviti tu oblast…" : "E.g. question 3 was incomplete; review that topic…")}
+              placeholderTextColor={colors.textMuted}
+              spellCheck={state.settings.spellcheck !== false}
+              style={styles.noteInput}
+              value={bossResult}
+            />
+            <Text style={styles.counter}>{bossResult.length} / 1000</Text>
+            <View style={styles.modalActions}>
+              <Pressable disabled={saving} onPress={() => setBossOutcome(null)} style={styles.modalButton}><Text style={styles.modalButtonText}>{sr ? "Odustani" : "Cancel"}</Text></Pressable>
+              <Pressable disabled={saving || !bossResult.trim()} onPress={saveBossResult} style={[styles.modalButton, bossOutcome === "failed" ? styles.modalFail : styles.modalSave, (saving || !bossResult.trim()) && styles.disabled]}>
+                {saving ? <ActivityIndicator color={colors.text} /> : <Text style={[styles.modalButtonText, bossOutcome === "failed" && styles.dangerText]}>{bossOutcome === "cleared" ? (sr ? "Potvrdi Clear" : "Confirm Clear") : (sr ? "Sačuvaj pokušaj" : "Save attempt")}</Text>}
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </Screen>
   );
 }
@@ -270,6 +380,14 @@ const styles = StyleSheet.create({
   sectionTitle: { color: colors.text, fontSize: 19, fontWeight: "800" },
   bossNotice: { marginBottom: spacing.sm, padding: spacing.md, flexDirection: "row", gap: spacing.sm, borderWidth: 1, borderColor: "#66522d", borderRadius: radius.md, backgroundColor: "#181522" },
   bossText: { flex: 1, color: colors.textMuted, fontSize: 13, lineHeight: 19 },
+  attemptSection: { gap: spacing.sm, marginBottom: spacing.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.surface },
+  attemptCard: { gap: spacing.xs, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border },
+  attemptTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
+  attemptOutcome: { flex: 1, fontSize: 10, fontWeight: "900", letterSpacing: 0.8 },
+  attemptNumber: { color: colors.textMuted, fontSize: 11, fontWeight: "800" },
+  attemptResult: { color: colors.text, fontSize: 13, lineHeight: 19 },
+  attemptDate: { color: colors.textMuted, fontSize: 10 },
+  clearText: { color: colors.cyan },
   actions: { gap: spacing.sm },
   action: { minHeight: 52, paddingHorizontal: spacing.md, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.surfaceRaised },
   actionPrimary: { borderColor: "#7560d1", backgroundColor: colors.violet },
@@ -284,12 +402,16 @@ const styles = StyleSheet.create({
   modalBackdrop: { flex: 1, justifyContent: "center", padding: spacing.md, backgroundColor: "rgba(3, 4, 11, 0.82)" },
   modalCard: { padding: spacing.md, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.surfaceRaised },
   modalTitleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  modalHeading: { flex: 1, gap: 3 },
+  modalEyebrow: { color: colors.violetSoft, fontSize: 9, fontWeight: "900", letterSpacing: 1.2 },
   modalTitle: { color: colors.text, fontSize: 20, fontWeight: "800" },
+  modalHelp: { marginTop: spacing.sm, color: colors.textMuted, fontSize: 13, lineHeight: 19 },
   closeButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   noteInput: { minHeight: 150, marginTop: spacing.sm, padding: spacing.md, color: colors.text, fontSize: 15, lineHeight: 21, textAlignVertical: "top", borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.background },
   counter: { marginTop: spacing.xs, color: colors.textMuted, fontSize: 11, textAlign: "right" },
   modalActions: { marginTop: spacing.md, flexDirection: "row", gap: spacing.sm },
   modalButton: { minHeight: 48, flex: 1, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: radius.md },
   modalSave: { borderColor: "#7560d1", backgroundColor: colors.violet },
+  modalFail: { borderColor: "#713147", backgroundColor: "#21101a" },
   modalButtonText: { color: colors.text, fontSize: 14, fontWeight: "800" },
 });

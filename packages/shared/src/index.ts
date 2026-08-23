@@ -86,6 +86,16 @@ export type XpTransaction = {
   reversedAt?: string;
 };
 
+export type BossAttempt = {
+  id: string;
+  bossQuestId: string;
+  attemptNumber: number;
+  outcome: "failed" | "cleared";
+  result: string;
+  createdAt: string;
+  reversedAt?: string;
+};
+
 export type WeAscendState = {
   version: 1;
   attributes: Attribute[];
@@ -93,7 +103,7 @@ export type WeAscendState = {
   quests: Quest[];
   transactions: XpTransaction[];
   bosses: unknown[];
-  bossAttempts?: unknown[];
+  bossAttempts?: BossAttempt[];
   questTemplates?: unknown[];
   settings: Settings;
   levelEvents: { id: string; type: "level" | "rank"; value: string; createdAt: string }[];
@@ -116,7 +126,9 @@ export type PlanOverview = {
 export type QuestCommand =
   | { action: "create" | "update"; quest: Quest }
   | { action: "delete" | "complete" | "fail" | "retry" | "archive" | "restore" | "undo_completion"; questId: string }
-  | { action: "note"; questId: string; note: string };
+  | { action: "note"; questId: string; note: string }
+  | { action: "boss_attempt"; bossQuestId: string; outcome: "failed" | "cleared"; result: string }
+  | { action: "undo_boss_clear"; bossQuestId: string };
 
 export const defaultSettings: Settings = {
   baseXp: 100,
