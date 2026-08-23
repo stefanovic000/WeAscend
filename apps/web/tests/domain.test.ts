@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activeXp, addTemplateQuestForDate, applyGrowthMutation, applyQuestMutation, calculateQuestXp, canAwardQuest, CONTENT_LIMITS, defaultSettings, deleteAttributeFromState, deleteQuestFromState, hasContentLimitViolation, isQuestContentWithinLimits, isValidCloudState, isValidQuest, makeInitialState, materializeRoutineInstances, normalizeCloudState, progressFromXp, questTemplateFromQuest, rankForLevel, type Quest, type QuestTemplate, type XpTransaction } from "../app/domain.ts";
+import { activeXp, addTemplateQuestForDate, applyGrowthMutation, applyQuestMutation, applyQuestPathMutation, calculateQuestXp, canAwardQuest, CONTENT_LIMITS, defaultSettings, deleteAttributeFromState, deleteQuestFromState, hasContentLimitViolation, isQuestContentWithinLimits, isValidCloudState, isValidQuest, makeInitialState, materializeRoutineInstances, normalizeCloudState, progressFromXp, questTemplateFromQuest, rankForLevel, type Quest, type QuestTemplate, type XpTransaction } from "../app/domain.ts";
 import { translate } from "../app/i18n.ts";
 import { applyBossPreparationFloor, parseXpSuggestion } from "../app/xpAdvisor.ts";
 import { authenticateRequest, authenticateRequestAllowUnverified } from "../server/auth.ts";
@@ -171,6 +171,51 @@ test("server growth mutations create and rename unique areas and skills", () => 
   assert.equal(renamed.ok, true);
   if (!renamed.ok) return;
   assert.equal(renamed.state.skills[0]?.name, "Serbian");
+});
+
+test("quest path mutation atomically creates an area, skill, and quest", () => {
+  const state = makeInitialState();
+  const quest: Quest = {
+    id: "quest-1", title: "Learn Spanish", description: "", type: "Side", attributeId: "area-1", skillId: "skill-1",
+    xp: 20, date: "2026-08-23T10:00:00.000Z", deadline: "", recurrence: "none", difficulty: "Normal",
+    completionConditions: "Finish the lesson", failureConsequence: "", status: "active", createdAt: "client", updatedAt: "client",
+  };
+
+  const result = applyQuestPathMutation(state, {
+    action: "save_with_path",
+    mode: "create",
+    quest,
+    attribute: { id: "area-1", name: "Languages", color: "#866bff" },
+    skill: { id: "skill-1", attributeId: "area-1", name: "Spanish" },
+  }, "server-stamp");
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.deepEqual(result.state.attributes[0], { id: "area-1", name: "Languages", color: "#866bff", createdAt: "server-stamp", updatedAt: "server-stamp" });
+  assert.equal(result.state.skills[0]?.createdAt, "server-stamp");
+  assert.equal(result.state.quests[0]?.createdAt, "server-stamp");
+});
+
+test("quest path mutation leaves the confirmed state untouched when any linked creation fails", () => {
+  const state = makeInitialState();
+  const quest: Quest = {
+    id: "quest-1", title: "Learn Spanish", description: "", type: "Side", attributeId: "area-1", skillId: "skill-1",
+    xp: 20, date: "2026-08-23T10:00:00.000Z", deadline: "", recurrence: "none", difficulty: "Normal",
+    completionConditions: "Finish the lesson", failureConsequence: "", status: "active", createdAt: "client", updatedAt: "client",
+  };
+
+  const result = applyQuestPathMutation(state, {
+    action: "save_with_path",
+    mode: "create",
+    quest,
+    attribute: { id: "area-1", name: "Languages", color: "#866bff" },
+    skill: { id: "skill-1", attributeId: "missing-area", name: "Spanish" },
+  }, "server-stamp");
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(state.attributes, []);
+  assert.deepEqual(state.skills, []);
+  assert.deepEqual(state.quests, []);
 });
 
 test("server skill deletion removes unused skills but preserves historical names and XP", () => {

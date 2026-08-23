@@ -125,6 +125,13 @@ export type PlanOverview = {
 
 export type QuestCommand =
   | { action: "create" | "update"; quest: Quest }
+  | {
+      action: "save_with_path";
+      mode: "create" | "update";
+      quest: Quest;
+      attribute?: Pick<Attribute, "id" | "name" | "color">;
+      skill?: Pick<Skill, "id" | "attributeId" | "name">;
+    }
   | { action: "delete" | "complete" | "fail" | "retry" | "archive" | "restore" | "undo_completion"; questId: string }
   | { action: "note"; questId: string; note: string }
   | { action: "boss_attempt"; bossQuestId: string; outcome: "failed" | "cleared"; result: string }

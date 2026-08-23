@@ -160,6 +160,19 @@ export type QuestMutationResult =
   | { ok: true; state: AppState }
   | { ok: false; code: "invalid_quest" | "quest_not_found" | "invalid_status" | "invalid_attempt" | "boss_already_cleared" | "earned_quest_locked" };
 
+export type QuestPathMutation = {
+  action: "save_with_path";
+  mode: "create" | "update";
+  quest: Quest;
+  attribute?: Pick<Attribute, "id" | "name" | "color">;
+  skill?: Pick<Skill, "id" | "attributeId" | "name">;
+};
+
+export type QuestPathMutationResult =
+  | { ok: true; state: AppState }
+  | { ok: false; code: Extract<QuestMutationResult, { ok: false }>["code"] }
+  | { ok: false; code: Extract<GrowthMutationResult, { ok: false }>["code"] };
+
 export type GrowthMutation =
   | { action: "attribute_create"; id: string; name: string; color: string }
   | { action: "attribute_rename"; attributeId: string; name: string }
@@ -338,6 +351,34 @@ export function applyGrowthMutation(state: AppState, mutation: GrowthMutation, s
   }
 
   return { ok: true, state: deleteSkillFromState(state, skill.id, stamp) };
+}
+
+export function applyQuestPathMutation(state: AppState, mutation: QuestPathMutation, stamp = new Date().toISOString()): QuestPathMutationResult {
+  let nextState = state;
+
+  if (mutation.attribute) {
+    const createdAttribute = applyGrowthMutation(nextState, {
+      action: "attribute_create",
+      id: mutation.attribute.id,
+      name: mutation.attribute.name,
+      color: mutation.attribute.color,
+    }, stamp);
+    if (!createdAttribute.ok) return createdAttribute;
+    nextState = createdAttribute.state;
+  }
+
+  if (mutation.skill) {
+    const createdSkill = applyGrowthMutation(nextState, {
+      action: "skill_create",
+      id: mutation.skill.id,
+      attributeId: mutation.skill.attributeId,
+      name: mutation.skill.name,
+    }, stamp);
+    if (!createdSkill.ok) return createdSkill;
+    nextState = createdSkill.state;
+  }
+
+  return applyQuestMutation(nextState, { action: mutation.mode, quest: mutation.quest }, stamp);
 }
 
 export function deleteQuestFromState(state: AppState, questId: string): AppState {

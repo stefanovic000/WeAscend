@@ -1,6 +1,6 @@
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
-import type { Quest, QuestType, WeAscendState, XpCategory } from "@weascend/shared";
+import type { Quest, QuestType, XpCategory } from "@weascend/shared";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -170,7 +170,7 @@ export default function NewQuestScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ editId?: string | string[] }>();
   const editId = Array.isArray(params.editId) ? params.editId[0] : params.editId;
-  const { state, offline, saveState, saving } = useCloudState();
+  const { state, offline, runQuestCommand, saving } = useCloudState();
   const { language } = usePreferences();
   const t = copy[language];
   const [step, setStep] = useState<Step>(0);
@@ -383,27 +383,20 @@ export default function NewQuestScreen() {
       updatedAt: stamp,
     };
 
-    const nextState: WeAscendState = {
-      ...state,
-      attributes: newAreaMode ? [...state.attributes, {
-        id: attributeId,
-        name: areaName,
-        color: AREA_COLORS[state.attributes.length % AREA_COLORS.length],
-        createdAt: stamp,
-        updatedAt: stamp,
-      }] : state.attributes,
-      skills: newSkillMode ? [...state.skills, {
-        id: skillId,
-        attributeId,
-        name: skillName,
-        createdAt: stamp,
-        updatedAt: stamp,
-      }] : state.skills,
-      quests: existingQuest ? state.quests.map(item => item.id === existingQuest.id ? quest : item) : [quest, ...state.quests],
-    };
-
     try {
-      await saveState(nextState);
+      await runQuestCommand({
+        action: "save_with_path",
+        mode: existingQuest ? "update" : "create",
+        quest,
+        ...(newAreaMode ? {
+          attribute: {
+            id: attributeId,
+            name: areaName,
+            color: AREA_COLORS[state.attributes.length % AREA_COLORS.length],
+          },
+        } : {}),
+        ...(newSkillMode ? { skill: { id: skillId, attributeId, name: skillName } } : {}),
+      });
       router.replace(existingQuest ? (`/quest/${encodeURIComponent(existingQuest.id)}` as Href) : "/");
     } catch (reason) {
       setError(apiCode(reason) === "revision_conflict" ? t.conflict : t.saveFailed);
