@@ -89,13 +89,22 @@ export function OnboardingTour() {
 
   if (!active || !state) return null;
 
-  const highlight = targetRect ? {
-    top: Math.max(6, targetRect.y - 6),
-    left: Math.max(6, targetRect.x - 6),
-    width: Math.min(width - Math.max(6, targetRect.x - 6) - 6, targetRect.width + 12),
-    height: targetRect.height + 12,
-    borderRadius: Math.min(28, (targetRect.height + 12) / 2),
-  } : null;
+  const spotlightPadding = current.target === "create_quest" ? 10 : 5;
+  const spotlight = targetRect ? (() => {
+    const left = Math.max(4, targetRect.x - spotlightPadding);
+    const top = Math.max(4, targetRect.y - spotlightPadding);
+    const right = Math.min(width - 4, targetRect.x + targetRect.width + spotlightPadding);
+    const bottom = Math.min(height - 4, targetRect.y + targetRect.height + spotlightPadding);
+    return {
+      left,
+      top,
+      right,
+      bottom,
+      width: Math.max(0, right - left),
+      height: Math.max(0, bottom - top),
+      borderRadius: current.target === "create_quest" ? Math.max(0, (bottom - top) / 2) : radius.lg,
+    };
+  })() : null;
   const promptAtTop = targetRect ? targetRect.y > height / 2 : step === 2 || step === 3;
   const finish = () => {
     next();
@@ -104,7 +113,21 @@ export function OnboardingTour() {
 
   return (
     <View collapsable={false} ref={overlayRef} style={styles.overlay}>
-      {highlight ? <View pointerEvents="none" style={[styles.highlight, highlight]} /> : null}
+      {spotlight ? (
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          <View style={[styles.shade, { top: 0, right: 0, height: spotlight.top, left: 0 }]} />
+          <View style={[styles.shade, { top: spotlight.bottom, right: 0, bottom: 0, left: 0 }]} />
+          <View style={[styles.shade, { top: spotlight.top, left: 0, width: spotlight.left, height: spotlight.height }]} />
+          <View style={[styles.shade, { top: spotlight.top, left: spotlight.right, right: 0, height: spotlight.height }]} />
+          <View style={[styles.spotlightRing, {
+            top: spotlight.top,
+            left: spotlight.left,
+            width: spotlight.width,
+            height: spotlight.height,
+            borderRadius: spotlight.borderRadius,
+          }]} />
+        </View>
+      ) : <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.shade]} />}
       <View style={[styles.card, promptAtTop ? { top: insets.top + 28 } : { bottom: insets.bottom + 94 }]}>
         <View style={styles.cardHeader}>
           <View style={styles.icon}><Ionicons color={colors.cyan} name={current.icon} size={22} /></View>
@@ -124,8 +147,9 @@ export function OnboardingTour() {
 }
 
 const styles = StyleSheet.create({
-  overlay: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 1000, elevation: 1000, backgroundColor: "rgba(3, 4, 12, 0.76)" },
-  highlight: { position: "absolute", borderWidth: 2, borderColor: colors.cyan, backgroundColor: "rgba(49, 216, 212, 0.05)", shadowColor: colors.cyan, shadowOpacity: 0.7, shadowRadius: 16, elevation: 8 },
+  overlay: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 1000, elevation: 1000 },
+  shade: { position: "absolute", backgroundColor: "rgba(3, 4, 12, 0.82)" },
+  spotlightRing: { position: "absolute", borderWidth: 2, borderColor: colors.cyan, shadowColor: colors.cyan, shadowOpacity: 0.65, shadowRadius: 12, shadowOffset: { width: 0, height: 0 }, elevation: 8 },
   card: { position: "absolute", left: spacing.md, right: spacing.md, padding: spacing.md, borderWidth: 1, borderColor: "#574890", borderRadius: radius.lg, backgroundColor: "#111326" },
   cardHeader: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   icon: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 21, backgroundColor: "#142532" },
