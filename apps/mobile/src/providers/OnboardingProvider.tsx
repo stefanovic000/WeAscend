@@ -4,7 +4,7 @@ import type { View } from "react-native";
 
 import { useAuth } from "@/providers/AuthProvider";
 
-const TOUR_VERSION = 5;
+const TOUR_VERSION = 6;
 const TOTAL_STEPS = 5;
 
 export type OnboardingTargetRect = { x: number; y: number; width: number; height: number };

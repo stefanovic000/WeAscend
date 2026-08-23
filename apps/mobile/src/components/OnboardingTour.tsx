@@ -91,10 +91,13 @@ export function OnboardingTour() {
 
   const spotlightPadding = current.target === "create_quest" ? 4 : 1;
   const spotlight = targetRect ? (() => {
+    // React Navigation clips the raised center tab target to the tab bar's layout
+    // bounds when measuring it. The actual create button is always 58 × 58.
+    const targetHeight = current.target === "create_quest" ? 58 : targetRect.height;
     const left = Math.max(4, targetRect.x - spotlightPadding);
     const top = Math.max(4, targetRect.y - spotlightPadding);
     const right = Math.min(width - 4, targetRect.x + targetRect.width + spotlightPadding);
-    const bottom = Math.min(height - 4, targetRect.y + targetRect.height + spotlightPadding);
+    const bottom = Math.min(height - 4, targetRect.y + targetHeight + spotlightPadding);
     return {
       left,
       top,
