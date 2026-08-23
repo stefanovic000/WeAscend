@@ -49,6 +49,9 @@ export default function QuestsScreen() {
   const visibleQuests = state.quests
     .filter(quest => quest.status !== "archived" && localDateKey(quest.date) === selectedDateKey)
     .sort((left, right) => left.date.localeCompare(right.date));
+  const bossQuests = state.quests.filter(quest => quest.type === "Boss" && quest.status !== "archived");
+  const activeBosses = bossQuests.filter(quest => quest.status === "active");
+  const nextBoss = [...activeBosses].sort((left, right) => left.date.localeCompare(right.date))[0];
   const questDays = new Map<string, { count: number; boss: boolean }>();
   for (const quest of state.quests) {
     if (quest.status === "archived") continue;
@@ -82,6 +85,16 @@ export default function QuestsScreen() {
         title={sr ? "Planer questova" : "Quest planner"}
         description={sr ? "Izaberi dan, vidi misije i planiraj unapred." : "Choose a day, review missions, and plan ahead."}
       />
+
+      <Pressable onPress={() => router.push("/bosses")} style={({ pressed }) => [styles.bossSummary, pressed && styles.pressed]}>
+        <View style={styles.bossSummaryIcon}><Ionicons color={colors.gold} name="shield-outline" size={23} /></View>
+        <View style={styles.bossSummaryCopy}>
+          <Text style={styles.bossSummaryEyebrow}>BOSS QUESTS</Text>
+          <Text style={styles.bossSummaryTitle}>{activeBosses.length ? (sr ? `${activeBosses.length} aktivnih izazova` : `${activeBosses.length} active challenges`) : (sr ? "Planiraj veliki izazov" : "Plan a major challenge")}</Text>
+          <Text numberOfLines={1} style={styles.bossSummaryBody}>{nextBoss ? `${nextBoss.title} · ${new Date(nextBoss.date).toLocaleDateString(locale, { day: "numeric", month: "short" })}` : (sr ? "Ispiti, projekti i merljivi rezultati." : "Exams, projects, and measurable outcomes.")}</Text>
+        </View>
+        <Ionicons color={colors.violetSoft} name="chevron-forward" size={19} />
+      </Pressable>
 
       <View style={styles.calendarCard}>
         <OnboardingTarget targetId="planner_calendar" style={styles.monthHeader}>
@@ -179,6 +192,12 @@ export default function QuestsScreen() {
 }
 
 const styles = StyleSheet.create({
+  bossSummary: { minHeight: 82, marginBottom: spacing.md, padding: spacing.md, flexDirection: "row", alignItems: "center", gap: spacing.sm, borderWidth: 1, borderColor: "#66522d", borderRadius: radius.lg, backgroundColor: "#181522" },
+  bossSummaryIcon: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 22, backgroundColor: "#292117" },
+  bossSummaryCopy: { flex: 1, gap: 3 },
+  bossSummaryEyebrow: { color: colors.gold, fontSize: 8, fontWeight: "900", letterSpacing: 1.2 },
+  bossSummaryTitle: { color: colors.text, fontSize: 15, fontWeight: "800" },
+  bossSummaryBody: { color: colors.textMuted, fontSize: 10 },
   calendarCard: { marginBottom: spacing.lg, padding: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.surface },
   monthHeader: { minHeight: 54, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
   monthButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: radius.pill, backgroundColor: colors.surfaceRaised },

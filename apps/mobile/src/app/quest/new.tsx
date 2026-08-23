@@ -168,9 +168,11 @@ function apiCode(reason: unknown) {
 
 export default function NewQuestScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ editId?: string | string[]; date?: string | string[] }>();
+  const params = useLocalSearchParams<{ editId?: string | string[]; date?: string | string[]; type?: string | string[]; parentQuestId?: string | string[] }>();
   const editId = Array.isArray(params.editId) ? params.editId[0] : params.editId;
   const requestedDate = Array.isArray(params.date) ? params.date[0] : params.date;
+  const requestedType = Array.isArray(params.type) ? params.type[0] : params.type;
+  const parentQuestId = Array.isArray(params.parentQuestId) ? params.parentQuestId[0] : params.parentQuestId;
   const { state, offline, runQuestCommand, saving } = useCloudState();
   const { language } = usePreferences();
   const t = copy[language];
@@ -184,7 +186,7 @@ export default function NewQuestScreen() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [completionConditions, setCompletionConditions] = useState("");
-  const [questType, setQuestType] = useState<QuestType>("Side");
+  const [questType, setQuestType] = useState<QuestType>(requestedType === "Boss" ? "Boss" : "Side");
   const [scheduledAt, setScheduledAt] = useState(() => new Date());
   const [windowChoice, setWindowChoice] = useState<WindowChoice>("60");
   const [picker, setPicker] = useState<"date" | "time" | null>(null);
@@ -197,6 +199,7 @@ export default function NewQuestScreen() {
   const [error, setError] = useState("");
   const hydratedEditId = useRef<string | null>(null);
   const hydratedRequestedDate = useRef(false);
+  const hydratedParentId = useRef<string | null>(null);
 
   const attributes = useMemo(() => state?.attributes.filter(attribute => !attribute.deletedAt) ?? [], [state]);
   const selectedAttribute = attributes.find(attribute => attribute.id === selectedAttributeId);
@@ -247,6 +250,17 @@ export default function NewQuestScreen() {
     else if (duration === 120 * 60_000) setWindowChoice("120");
     else setWindowChoice("eod");
   }, [editId, state]);
+
+  useEffect(() => {
+    if (!state || editId || !parentQuestId || hydratedParentId.current === parentQuestId) return;
+    const parent = state.quests.find(quest => quest.id === parentQuestId && quest.type === "Boss");
+    if (!parent) return;
+    hydratedParentId.current = parentQuestId;
+    setSelectedAttributeId(parent.attributeId);
+    setSelectedSkillId(parent.skillId);
+    setQuestType("Side");
+    setStep(2);
+  }, [editId, parentQuestId, state]);
 
   useEffect(() => {
     if (!state || !editId || hydratedEditId.current !== editId || !title.trim() || suggestion) return;
@@ -367,6 +381,10 @@ export default function NewQuestScreen() {
     const skillId = newSkillMode ? makeId("skill") : selectedSkillId;
     const xp = activeSuggestion?.xp ?? 0;
     const existingQuest = editId ? state.quests.find(item => item.id === editId) : undefined;
+    const parentQuest = !existingQuest && parentQuestId ? state.quests.find(item => item.id === parentQuestId && item.type === "Boss") : undefined;
+    const nextStepOrder = parentQuest
+      ? state.quests.filter(item => item.parentQuestId === parentQuest.id).reduce((highest, item) => Math.max(highest, item.stepOrder ?? 0), 0) + 1
+      : undefined;
     const quest: Quest = {
       ...existingQuest,
       id: existingQuest?.id ?? makeId("quest"),
@@ -388,6 +406,8 @@ export default function NewQuestScreen() {
       difficulty: "Normal",
       completionConditions: completionConditions.trim(),
       failureConsequence: existingQuest?.failureConsequence ?? "",
+      parentQuestId: existingQuest?.parentQuestId ?? parentQuest?.id,
+      stepOrder: existingQuest?.stepOrder ?? nextStepOrder,
       status: existingQuest?.status ?? "active",
       createdAt: existingQuest?.createdAt ?? stamp,
       updatedAt: stamp,
