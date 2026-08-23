@@ -8,6 +8,7 @@ import { GettingStartedCard, gettingStartedProgress } from "@/components/Getting
 import { PageHeader } from "@/components/PageHeader";
 import { OnboardingTarget } from "@/components/OnboardingTarget";
 import { PrimaryButton } from "@/components/PrimaryButton";
+import { RecentProgress } from "@/components/RecentProgress";
 import { Screen } from "@/components/Screen";
 import { useCloudState } from "@/providers/CloudStateProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
@@ -92,6 +93,8 @@ export default function TodayScreen() {
           <Text style={styles.emptyBody}>{sr ? "Questovi planirani za danas pojaviće se ovde." : "Your quests scheduled for today will appear here."}</Text>
         </View>
       )}
+
+      <RecentProgress language={language} state={state} />
     </Screen>
   );
 }

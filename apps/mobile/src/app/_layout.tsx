@@ -54,6 +54,7 @@ function RootNavigator() {
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="quest/new" options={{ presentation: "modal", title: language === "sr" ? "Novi quest" : "New quest" }} />
           <Stack.Screen name="quest/[id]" options={{ title: language === "sr" ? "Detalji questa" : "Quest details" }} />
+          <Stack.Screen name="history" options={{ title: language === "sr" ? "Istorija" : "History" }} />
         </Stack.Protected>
       </Stack>
   );
