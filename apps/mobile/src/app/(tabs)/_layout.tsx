@@ -120,11 +120,11 @@ const styles = StyleSheet.create({
   createSlot: {
     flex: 1,
     alignItems: "center",
+    marginTop: -20,
   },
   createTarget: {
     width: 58,
     height: 58,
-    marginTop: -20,
     borderRadius: 29,
   },
   createButton: {

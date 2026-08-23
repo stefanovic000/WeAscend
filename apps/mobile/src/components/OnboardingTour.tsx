@@ -89,7 +89,7 @@ export function OnboardingTour() {
 
   if (!active || !state) return null;
 
-  const spotlightPadding = current.target === "create_quest" ? 10 : 5;
+  const spotlightPadding = current.target === "create_quest" ? 4 : 1;
   const spotlight = targetRect ? (() => {
     const left = Math.max(4, targetRect.x - spotlightPadding);
     const top = Math.max(4, targetRect.y - spotlightPadding);
@@ -102,7 +102,7 @@ export function OnboardingTour() {
       bottom,
       width: Math.max(0, right - left),
       height: Math.max(0, bottom - top),
-      borderRadius: current.target === "create_quest" ? Math.max(0, (bottom - top) / 2) : radius.lg,
+      borderRadius: current.target === "create_quest" ? Math.max(0, (bottom - top) / 2) : radius.md,
     };
   })() : null;
   const promptAtTop = targetRect ? targetRect.y > height / 2 : step === 2 || step === 3;
@@ -148,8 +148,8 @@ export function OnboardingTour() {
 
 const styles = StyleSheet.create({
   overlay: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 1000, elevation: 1000 },
-  shade: { position: "absolute", backgroundColor: "rgba(3, 4, 12, 0.82)" },
-  spotlightRing: { position: "absolute", borderWidth: 2, borderColor: colors.cyan, shadowColor: colors.cyan, shadowOpacity: 0.65, shadowRadius: 12, shadowOffset: { width: 0, height: 0 }, elevation: 8 },
+  shade: { position: "absolute", backgroundColor: "rgba(3, 4, 12, 0.74)" },
+  spotlightRing: { position: "absolute", borderWidth: 1.5, borderColor: "#8c7cf2" },
   card: { position: "absolute", left: spacing.md, right: spacing.md, padding: spacing.md, borderWidth: 1, borderColor: "#574890", borderRadius: radius.lg, backgroundColor: "#111326" },
   cardHeader: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   icon: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 21, backgroundColor: "#142532" },
