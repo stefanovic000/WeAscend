@@ -1,10 +1,13 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type PropsWithChildren } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
+import type { View } from "react-native";
 
 import { useAuth } from "@/providers/AuthProvider";
 
-const TOUR_VERSION = 1;
+const TOUR_VERSION = 2;
 const TOTAL_STEPS = 5;
+
+export type OnboardingTargetRect = { x: number; y: number; width: number; height: number };
 
 type OnboardingContextValue = {
   active: boolean;
@@ -14,6 +17,8 @@ type OnboardingContextValue = {
   back: () => void;
   skip: () => void;
   restart: () => void;
+  registerTarget: (targetId: string, node: View | null) => void;
+  measureTarget: (targetId: string) => Promise<OnboardingTargetRect | null>;
 };
 
 const OnboardingContext = createContext<OnboardingContextValue | null>(null);
@@ -26,6 +31,7 @@ export function OnboardingProvider({ children }: PropsWithChildren) {
   const { identity } = useAuth();
   const [active, setActive] = useState(false);
   const [step, setStep] = useState(0);
+  const targets = useRef(new Map<string, View>());
 
   useEffect(() => {
     const userId = identity?.emailVerified ? identity.id : null;
@@ -52,6 +58,22 @@ export function OnboardingProvider({ children }: PropsWithChildren) {
     else setStep(step + 1);
   }, [complete, step]);
 
+  const registerTarget = useCallback((targetId: string, node: View | null) => {
+    if (node) targets.current.set(targetId, node);
+    else targets.current.delete(targetId);
+  }, []);
+
+  const measureTarget = useCallback((targetId: string) => new Promise<OnboardingTargetRect | null>(resolve => {
+    const target = targets.current.get(targetId);
+    if (!target) {
+      resolve(null);
+      return;
+    }
+    target.measureInWindow((x, y, width, height) => {
+      resolve(width > 0 && height > 0 ? { x, y, width, height } : null);
+    });
+  }), []);
+
   const value = useMemo<OnboardingContextValue>(() => ({
     active,
     step,
@@ -63,7 +85,9 @@ export function OnboardingProvider({ children }: PropsWithChildren) {
       setStep(0);
       setActive(true);
     },
-  }), [active, complete, next, step]);
+    registerTarget,
+    measureTarget,
+  }), [active, complete, measureTarget, next, registerTarget, step]);
 
   return <OnboardingContext.Provider value={value}>{children}</OnboardingContext.Provider>;
 }

@@ -1,38 +1,39 @@
 import { Ionicons } from "@expo/vector-icons";
 import { type Href, useRouter } from "expo-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useCloudState } from "@/providers/CloudStateProvider";
-import { useOnboarding } from "@/providers/OnboardingProvider";
+import { useOnboarding, type OnboardingTargetRect } from "@/providers/OnboardingProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import { colors, radius, spacing } from "@/theme";
 
 const steps = {
   en: [
-    { route: "/", icon: "compass-outline", eyebrow: "COMMAND", title: "Your next mission", body: "Today keeps the important question visible: what should you do next? Rank and XP show long-term progress." },
-    { route: "/progress", icon: "git-network-outline", eyebrow: "GROWTH PATH", title: "Area → Skill → Quest", body: "Start with a broad area such as Languages, add a skill such as Spanish, then connect concrete quests to it." },
-    { route: "/progress", icon: "add-circle-outline", eyebrow: "CREATE", title: "Turn intent into action", body: "The central + button opens the guided quest creator. It asks what the quest improves before asking for the task." },
-    { route: "/quests", icon: "calendar-outline", eyebrow: "PLAN", title: "Plan future days", body: "Choose any date to see its missions. Long press a day to create a quest there immediately. Boss dates glow red." },
-    { route: "/", icon: "sparkles-outline", eyebrow: "READY", title: "The system is yours", body: "Keep it simple: create one meaningful quest, complete it honestly, and let progress accumulate." },
+    { route: "/", target: "today_progress", icon: "compass-outline", eyebrow: "COMMAND", title: "Your next mission", body: "Today shows what needs attention now. Rank and XP record long-term progress; they are not a daily score you can lose." },
+    { route: "/progress", target: "growth_path", icon: "git-network-outline", eyebrow: "GROWTH PATH", title: "Area → Skill → Quest", body: "Structure comes first: Languages is an area, Spanish is its skill, and Study lesson 1 is a quest that improves it." },
+    { route: "/progress", target: "create_quest", icon: "add-circle-outline", eyebrow: "CREATE", title: "Turn intent into action", body: "Press this + whenever you know the next concrete action. The guided creator connects it to the right area and skill." },
+    { route: "/quests", target: "planner_calendar", icon: "calendar-outline", eyebrow: "PLAN", title: "Plan future days", body: "Tap a day to inspect it. Long press a day to create a quest there immediately. Boss dates are marked red." },
+    { route: "/", target: null, icon: "sparkles-outline", eyebrow: "YOUR FIRST LOOP", title: "Do these three things", body: "1. Create one area and one skill.\n2. Press + and create one real quest.\n3. Return to Today and complete it when the work is done." },
   ],
   sr: [
-    { route: "/", icon: "compass-outline", eyebrow: "COMMAND", title: "Tvoja sledeća misija", body: "Today drži važno pitanje ispred tebe: šta je sledeće što treba da uradiš? Rank i XP prikazuju dugoročni napredak." },
-    { route: "/progress", icon: "git-network-outline", eyebrow: "PUT NAPRETKA", title: "Oblast → Skill → Quest", body: "Počni širom oblasti kao Languages, dodaj skill kao Spanish, pa poveži konkretne questove sa njim." },
-    { route: "/progress", icon: "add-circle-outline", eyebrow: "CREATE", title: "Pretvori nameru u akciju", body: "Centralno + dugme otvara vođeno pravljenje questa. Prvo biraš šta quest unapređuje, pa tek onda zadatak." },
-    { route: "/quests", icon: "calendar-outline", eyebrow: "PLAN", title: "Planiraj buduće dane", body: "Izaberi datum da vidiš njegove misije. Duži pritisak odmah pravi quest za taj dan. Boss datumi svetle crveno." },
-    { route: "/", icon: "sparkles-outline", eyebrow: "SPREMAN", title: "Sistem je tvoj", body: "Drži ga jednostavnim: napravi jedan smislen quest, završi ga iskreno i pusti da se napredak skuplja." },
+    { route: "/", target: "today_progress", icon: "compass-outline", eyebrow: "COMMAND", title: "Tvoja sledeća misija", body: "Today pokazuje šta sada traži pažnju. Rank i XP beleže dugoročni napredak; nisu dnevni rezultat koji možeš izgubiti." },
+    { route: "/progress", target: "growth_path", icon: "git-network-outline", eyebrow: "PUT NAPRETKA", title: "Oblast → Skill → Quest", body: "Prvo struktura: Languages je oblast, Spanish je njen skill, a Uči lekciju 1 je quest koji ga unapređuje." },
+    { route: "/progress", target: "create_quest", icon: "add-circle-outline", eyebrow: "CREATE", title: "Pretvori nameru u akciju", body: "Pritisni ovo + dugme kada znaš sledeću konkretnu akciju. Vođeni unos je povezuje sa pravom oblašću i skillom." },
+    { route: "/quests", target: "planner_calendar", icon: "calendar-outline", eyebrow: "PLAN", title: "Planiraj buduće dane", body: "Dodirni dan da ga pregledaš. Duži pritisak odmah pravi quest za taj datum. Boss datumi su označeni crveno." },
+    { route: "/", target: null, icon: "sparkles-outline", eyebrow: "TVOJ PRVI KRUG", title: "Uradi ove tri stvari", body: "1. Napravi jednu oblast i jedan skill.\n2. Pritisni + i napravi jedan stvaran quest.\n3. Vrati se na Today i završi ga kada obaviš rad." },
   ],
 } as const;
 
 export function OnboardingTour() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { height, width } = useWindowDimensions();
   const { state } = useCloudState();
-  const { active, step, totalSteps, next, back, skip } = useOnboarding();
+  const { active, step, totalSteps, next, back, skip, measureTarget } = useOnboarding();
   const { language } = usePreferences();
+  const [targetRect, setTargetRect] = useState<OnboardingTargetRect | null>(null);
   const sr = language === "sr";
   const current = steps[language][step] ?? steps[language][0];
 
@@ -40,21 +41,44 @@ export function OnboardingTour() {
     if (active && state) router.replace(current.route as Href);
   }, [active, current.route, router, state]);
 
+  useEffect(() => {
+    let cancelled = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    setTargetRect(null);
+    if (!active || !state || !current.target) return () => { cancelled = true; };
+
+    const measure = async (attempt = 0) => {
+      const rect = await measureTarget(current.target ?? "");
+      if (cancelled) return;
+      if (rect) setTargetRect(rect);
+      else if (attempt < 5) timeout = setTimeout(() => void measure(attempt + 1), 120);
+    };
+    timeout = setTimeout(() => void measure(), 220);
+    return () => {
+      cancelled = true;
+      if (timeout) clearTimeout(timeout);
+    };
+  }, [active, current.route, current.target, measureTarget, state]);
+
   if (!active || !state) return null;
 
-  const highlight = step === 2
-    ? { bottom: insets.bottom + 38, left: width / 2 - 38, width: 76, height: 76, borderRadius: 38 }
-    : step === 3
-      ? { bottom: insets.bottom + 8, left: width * 0.2 + 5, width: width * 0.2 - 10, height: 62, borderRadius: 18 }
-      : step === 1
-        ? { top: insets.top + 92, left: 14, right: 14, height: 310, borderRadius: 24 }
-        : { top: insets.top + 92, left: 14, right: 14, height: 180, borderRadius: 24 };
-  const promptAtTop = step === 2 || step === 3;
+  const highlight = targetRect ? {
+    top: Math.max(6, targetRect.y - 6),
+    left: Math.max(6, targetRect.x - 6),
+    width: Math.min(width - Math.max(6, targetRect.x - 6) - 6, targetRect.width + 12),
+    height: targetRect.height + 12,
+    borderRadius: Math.min(28, (targetRect.height + 12) / 2),
+  } : null;
+  const promptAtTop = targetRect ? targetRect.y > height / 2 : step === 2 || step === 3;
+  const finish = () => {
+    next();
+    router.replace("/progress");
+  };
 
   return (
     <Modal animationType="fade" navigationBarTranslucent onRequestClose={skip} statusBarTranslucent transparent visible>
       <View style={styles.overlay}>
-        <View pointerEvents="none" style={[styles.highlight, highlight]} />
+        {highlight ? <View pointerEvents="none" style={[styles.highlight, highlight]} /> : null}
         <View style={[styles.card, promptAtTop ? { top: insets.top + 28 } : { bottom: insets.bottom + 94 }]}>
           <View style={styles.cardHeader}>
             <View style={styles.icon}><Ionicons color={colors.cyan} name={current.icon} size={22} /></View>
@@ -66,7 +90,7 @@ export function OnboardingTour() {
           <View style={styles.progress}>{Array.from({ length: totalSteps }, (_, index) => <View key={index} style={[styles.progressDot, index === step && styles.progressDotActive]} />)}</View>
           <View style={styles.actions}>
             {step > 0 ? <Pressable onPress={back} style={styles.backButton}><Ionicons color={colors.textMuted} name="arrow-back" size={18} /><Text style={styles.backText}>{sr ? "Nazad" : "Back"}</Text></Pressable> : <View />}
-            <Pressable onPress={next} style={styles.nextButton}><Text style={styles.nextText}>{step === totalSteps - 1 ? (sr ? "Završi" : "Finish") : (sr ? "Nastavi" : "Next")}</Text><Ionicons color={colors.text} name={step === totalSteps - 1 ? "checkmark" : "arrow-forward"} size={18} /></Pressable>
+            <Pressable onPress={step === totalSteps - 1 ? finish : next} style={styles.nextButton}><Text style={styles.nextText}>{step === totalSteps - 1 ? (sr ? "Idi na oblasti" : "Go to Growth Areas") : (sr ? "Nastavi" : "Next")}</Text><Ionicons color={colors.text} name={step === totalSteps - 1 ? "git-network-outline" : "arrow-forward"} size={18} /></Pressable>
           </View>
         </View>
       </View>
@@ -93,6 +117,6 @@ const styles = StyleSheet.create({
   actions: { marginTop: spacing.md, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
   backButton: { minHeight: 46, flexDirection: "row", alignItems: "center", gap: spacing.xs, paddingHorizontal: spacing.sm },
   backText: { color: colors.textMuted, fontSize: 13, fontWeight: "700" },
-  nextButton: { minHeight: 48, minWidth: 124, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.xs, paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: colors.violet },
+  nextButton: { minHeight: 48, minWidth: 124, maxWidth: 210, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.xs, paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: colors.violet },
   nextText: { color: colors.text, fontSize: 14, fontWeight: "800" },
 });

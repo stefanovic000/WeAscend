@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useCloudState } from "@/providers/CloudStateProvider";
 import { OnboardingTour } from "@/components/OnboardingTour";
+import { OnboardingTarget } from "@/components/OnboardingTarget";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import { colors } from "@/theme";
 
@@ -70,15 +71,17 @@ export default function TabLayout() {
           title: "",
           tabBarButton: (props) => (
             <View style={styles.createSlot}>
-              <Pressable
-                accessibilityLabel={sr ? "Napravi quest" : "Create quest"}
-                accessibilityRole="button"
-                disabled={offline}
-                onPress={props.onPress}
-                style={({ pressed }) => [styles.createButton, offline && styles.createDisabled, pressed && styles.createPressed]}
-              >
-                <Ionicons color={colors.text} name="add" size={30} />
-              </Pressable>
+              <OnboardingTarget targetId="create_quest" style={styles.createTarget}>
+                <Pressable
+                  accessibilityLabel={sr ? "Napravi quest" : "Create quest"}
+                  accessibilityRole="button"
+                  disabled={offline}
+                  onPress={props.onPress}
+                  style={({ pressed }) => [styles.createButton, offline && styles.createDisabled, pressed && styles.createPressed]}
+                >
+                  <Ionicons color={colors.text} name="add" size={30} />
+                </Pressable>
+              </OnboardingTarget>
             </View>
           ),
         }}
@@ -118,10 +121,15 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
   },
-  createButton: {
+  createTarget: {
     width: 58,
     height: 58,
     marginTop: -20,
+    borderRadius: 29,
+  },
+  createButton: {
+    width: 58,
+    height: 58,
     borderRadius: 29,
     alignItems: "center",
     justifyContent: "center",

@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { CloudStateMessage } from "@/components/CloudStateMessage";
 import { PageHeader } from "@/components/PageHeader";
+import { OnboardingTarget } from "@/components/OnboardingTarget";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { Screen } from "@/components/Screen";
 import { useCloudState } from "@/providers/CloudStateProvider";
@@ -40,7 +41,7 @@ export default function TodayScreen() {
     <Screen>
       <PageHeader eyebrow="WEASCEND · COMMAND" title={sr ? "Koja je tvoja sledeća misija?" : "What is your next mission?"} badge={planLabel} />
 
-      <View style={styles.progressCard}>
+      <OnboardingTarget targetId="today_progress" style={styles.progressCard}>
         <View style={styles.progressIcon}>
           <Ionicons color={colors.violetSoft} name="sparkles" size={24} />
         </View>
@@ -50,7 +51,7 @@ export default function TodayScreen() {
           <Text style={styles.cardBody}>{progress.current} / {progress.needed} XP {sr ? "do sledećeg levela" : "to the next level"}</Text>
           <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${progress.percent}%` }]} /></View>
         </View>
-      </View>
+      </OnboardingTarget>
 
       <PrimaryButton disabled={offline} label={sr ? "Napravi quest" : "Create quest"} onPress={() => router.push("/quest/new")} />
 

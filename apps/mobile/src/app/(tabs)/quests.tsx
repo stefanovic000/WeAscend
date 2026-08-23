@@ -6,6 +6,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { CloudStateMessage } from "@/components/CloudStateMessage";
 import { PageHeader } from "@/components/PageHeader";
+import { OnboardingTarget } from "@/components/OnboardingTarget";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { Screen } from "@/components/Screen";
 import { useCloudState } from "@/providers/CloudStateProvider";
@@ -83,7 +84,7 @@ export default function QuestsScreen() {
       />
 
       <View style={styles.calendarCard}>
-        <View style={styles.monthHeader}>
+        <OnboardingTarget targetId="planner_calendar" style={styles.monthHeader}>
           <Pressable accessibilityLabel={sr ? "Prethodni mesec" : "Previous month"} onPress={() => changeMonth(-1)} style={styles.monthButton}>
             <Ionicons color={colors.violetSoft} name="chevron-back" size={20} />
           </Pressable>
@@ -94,7 +95,7 @@ export default function QuestsScreen() {
           <Pressable accessibilityLabel={sr ? "Sledeći mesec" : "Next month"} onPress={() => changeMonth(1)} style={styles.monthButton}>
             <Ionicons color={colors.violetSoft} name="chevron-forward" size={20} />
           </Pressable>
-        </View>
+        </OnboardingTarget>
         <View style={styles.calendarGrid}>
           {weekdayLabels.map((label, index) => <View key={`${label}-${index}`} style={styles.calendarCellSlot}><Text style={styles.weekday}>{label}</Text></View>)}
           {calendarDays.map((day, index) => {

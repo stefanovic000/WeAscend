@@ -5,6 +5,7 @@ import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressa
 
 import { CloudStateMessage } from "@/components/CloudStateMessage";
 import { PageHeader } from "@/components/PageHeader";
+import { OnboardingTarget } from "@/components/OnboardingTarget";
 import { Screen } from "@/components/Screen";
 import { useCloudState } from "@/providers/CloudStateProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
@@ -98,10 +99,12 @@ export default function ProgressScreen() {
         title={sr ? "Oblasti napretka" : "Growth areas"}
         description={sr ? "Napravi oblast, dodaj joj skillove, pa poveži konkretne questove." : "Create an area, add skills inside it, then connect concrete quests."}
       />
-      <View style={styles.pathHint}><Text style={styles.pathStep}>{sr ? "OBLAST" : "AREA"}</Text><Ionicons color={colors.textMuted} name="chevron-forward" size={15} /><Text style={styles.pathStep}>SKILL</Text><Ionicons color={colors.textMuted} name="chevron-forward" size={15} /><Text style={[styles.pathStep, styles.pathQuest]}>QUEST</Text></View>
-      <Pressable disabled={locked} onPress={() => setEditor({ kind: "attribute", mode: "create", value: "" })} style={({ pressed }) => [styles.addArea, locked && styles.disabled, pressed && styles.pressed]}>
-        <Ionicons color={colors.text} name="add-circle-outline" size={21} /><Text style={styles.addAreaText}>{sr ? "Dodaj oblast napretka" : "Add growth area"}</Text>
-      </Pressable>
+      <OnboardingTarget targetId="growth_path">
+        <View style={styles.pathHint}><Text style={styles.pathStep}>{sr ? "OBLAST" : "AREA"}</Text><Ionicons color={colors.textMuted} name="chevron-forward" size={15} /><Text style={styles.pathStep}>SKILL</Text><Ionicons color={colors.textMuted} name="chevron-forward" size={15} /><Text style={[styles.pathStep, styles.pathQuest]}>QUEST</Text></View>
+        <Pressable disabled={locked} onPress={() => setEditor({ kind: "attribute", mode: "create", value: "" })} style={({ pressed }) => [styles.addArea, locked && styles.disabled, pressed && styles.pressed]}>
+          <Ionicons color={colors.text} name="add-circle-outline" size={21} /><Text style={styles.addAreaText}>{sr ? "Dodaj oblast napretka" : "Add growth area"}</Text>
+        </Pressable>
+      </OnboardingTarget>
       {saving ? <View style={styles.messageRow}><ActivityIndicator color={colors.violetSoft} /><Text style={styles.muted}>{sr ? "Čuvam potvrđenu promenu…" : "Saving confirmed change…"}</Text></View> : null}
       {offline ? <Text style={styles.readOnly}>{sr ? "Offline režim je samo za pregled." : "Offline mode is view-only."}</Text> : null}
       {error ? <Text accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
