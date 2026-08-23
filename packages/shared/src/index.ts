@@ -130,6 +130,14 @@ export type QuestCommand =
   | { action: "boss_attempt"; bossQuestId: string; outcome: "failed" | "cleared"; result: string }
   | { action: "undo_boss_clear"; bossQuestId: string };
 
+export type GrowthCommand =
+  | { action: "attribute_create"; id: string; name: string; color: string }
+  | { action: "attribute_rename"; attributeId: string; name: string }
+  | { action: "attribute_delete"; attributeId: string }
+  | { action: "skill_create"; id: string; attributeId: string; name: string }
+  | { action: "skill_rename"; skillId: string; name: string }
+  | { action: "skill_delete"; skillId: string };
+
 export const defaultSettings: Settings = {
   baseXp: 100,
   levelGrowth: 25,

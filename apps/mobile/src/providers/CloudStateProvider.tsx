@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { isWeAscendState, makeInitialState, type PlanOverview, type QuestCommand, type WeAscendState } from "@weascend/shared";
+import { isWeAscendState, makeInitialState, type GrowthCommand, type PlanOverview, type QuestCommand, type WeAscendState } from "@weascend/shared";
 import { AppState as NativeAppState } from "react-native";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
 
@@ -38,6 +38,7 @@ type CloudStateContextValue = {
   refresh: () => void;
   saveState: (nextState: WeAscendState) => Promise<void>;
   runQuestCommand: (command: QuestCommand) => Promise<WeAscendState>;
+  runGrowthCommand: (command: GrowthCommand) => Promise<WeAscendState>;
 };
 
 const CloudStateContext = createContext<CloudStateContextValue | null>(null);
@@ -160,7 +161,7 @@ export function CloudStateProvider({ children }: PropsWithChildren) {
     }
   }, [identity?.emailVerified, identity?.id, offline, plan, revision]);
 
-  const runQuestCommand = useCallback(async (command: QuestCommand) => {
+  const runCommand = useCallback(async (path: "/api/quests" | "/api/growth", command: QuestCommand | GrowthCommand) => {
     const userId = identity?.id;
     if (!userId || !identity.emailVerified) throw new Error("authentication_required");
     if (offline) throw new Error("offline_read_only");
@@ -172,7 +173,7 @@ export function CloudStateProvider({ children }: PropsWithChildren) {
       const auth = await getMobileAuth();
       if (!auth.currentUser || auth.currentUser.uid !== userId) throw new Error("authentication_required");
       const token = await auth.currentUser.getIdToken();
-      const response = await apiJson<CloudStateResponse>("/api/quests", {
+      const response = await apiJson<CloudStateResponse>(path, {
         method: "POST",
         cache: "no-store",
         headers: {
@@ -230,6 +231,15 @@ export function CloudStateProvider({ children }: PropsWithChildren) {
       setSaving(false);
     }
   }, [identity?.emailVerified, identity?.id, offline, plan, revision]);
+
+  const runQuestCommand = useCallback(
+    (command: QuestCommand) => runCommand("/api/quests", command),
+    [runCommand],
+  );
+  const runGrowthCommand = useCallback(
+    (command: GrowthCommand) => runCommand("/api/growth", command),
+    [runCommand],
+  );
 
   useEffect(() => {
     const userId = identity?.id;
@@ -345,7 +355,8 @@ export function CloudStateProvider({ children }: PropsWithChildren) {
     refresh,
     saveState,
     runQuestCommand,
-  }), [error, hasCachedData, lastSyncedAt, loading, offline, plan, refreshing, refresh, revision, runQuestCommand, saveState, saving, state]);
+    runGrowthCommand,
+  }), [error, hasCachedData, lastSyncedAt, loading, offline, plan, refreshing, refresh, revision, runGrowthCommand, runQuestCommand, saveState, saving, state]);
 
   return <CloudStateContext.Provider value={value}>{children}</CloudStateContext.Provider>;
 }

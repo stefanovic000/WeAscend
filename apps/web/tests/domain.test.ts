@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activeXp, addTemplateQuestForDate, applyQuestMutation, calculateQuestXp, canAwardQuest, CONTENT_LIMITS, defaultSettings, deleteAttributeFromState, deleteQuestFromState, hasContentLimitViolation, isQuestContentWithinLimits, isValidCloudState, isValidQuest, makeInitialState, materializeRoutineInstances, normalizeCloudState, progressFromXp, questTemplateFromQuest, rankForLevel, type Quest, type QuestTemplate, type XpTransaction } from "../app/domain.ts";
+import { activeXp, addTemplateQuestForDate, applyGrowthMutation, applyQuestMutation, calculateQuestXp, canAwardQuest, CONTENT_LIMITS, defaultSettings, deleteAttributeFromState, deleteQuestFromState, hasContentLimitViolation, isQuestContentWithinLimits, isValidCloudState, isValidQuest, makeInitialState, materializeRoutineInstances, normalizeCloudState, progressFromXp, questTemplateFromQuest, rankForLevel, type Quest, type QuestTemplate, type XpTransaction } from "../app/domain.ts";
 import { translate } from "../app/i18n.ts";
 import { applyBossPreparationFloor, parseXpSuggestion } from "../app/xpAdvisor.ts";
 import { authenticateRequest, authenticateRequestAllowUnverified } from "../server/auth.ts";
@@ -149,6 +149,51 @@ test("deleting an unused attribute removes it and its unused skills completely",
 
   assert.deepEqual(next.attributes, []);
   assert.deepEqual(next.skills, []);
+});
+
+test("server growth mutations create and rename unique areas and skills", () => {
+  let state = makeInitialState();
+  const area = applyGrowthMutation(state, { action: "attribute_create", id: "a", name: " Languages ", color: "#866bff" }, "one");
+  assert.equal(area.ok, true);
+  if (!area.ok) return;
+  state = area.state;
+  assert.equal(state.attributes[0]?.name, "Languages");
+  assert.equal(applyGrowthMutation(state, { action: "attribute_create", id: "other", name: "languages", color: "#fff" }).ok, false);
+
+  const skill = applyGrowthMutation(state, { action: "skill_create", id: "s", attributeId: "a", name: " Spanish " }, "two");
+  assert.equal(skill.ok, true);
+  if (!skill.ok) return;
+  state = skill.state;
+  assert.equal(state.skills[0]?.name, "Spanish");
+  assert.equal(applyGrowthMutation(state, { action: "skill_create", id: "duplicate", attributeId: "a", name: "SPANISH" }).ok, false);
+
+  const renamed = applyGrowthMutation(state, { action: "skill_rename", skillId: "s", name: "Serbian" }, "three");
+  assert.equal(renamed.ok, true);
+  if (!renamed.ok) return;
+  assert.equal(renamed.state.skills[0]?.name, "Serbian");
+});
+
+test("server skill deletion removes unused skills but preserves historical names and XP", () => {
+  const state = makeInitialState();
+  state.attributes = [{ id: "a", name: "Languages", color: "#866bff", createdAt: "now", updatedAt: "now" }];
+  state.skills = [
+    { id: "unused", attributeId: "a", name: "Unused", createdAt: "now", updatedAt: "now" },
+    { id: "earned", attributeId: "a", name: "Spanish", createdAt: "now", updatedAt: "now" },
+  ];
+  state.quests = [{ id: "q", title: "Study", description: "", type: "Side", attributeId: "a", skillId: "earned", xp: 20, date: "2026-08-23", deadline: "", recurrence: "none", difficulty: "Normal", completionConditions: "Done", failureConsequence: "", status: "active", createdAt: "now", updatedAt: "now" }];
+  state.transactions = [{ id: "tx", questId: "old", amount: 10, kind: "quest", attributeId: "a", skillId: "earned", createdAt: "now" }];
+
+  const clean = applyGrowthMutation(state, { action: "skill_delete", skillId: "unused" }, "deleted");
+  assert.equal(clean.ok, true);
+  if (!clean.ok) return;
+  assert.equal(clean.state.skills.some(skill => skill.id === "unused"), false);
+
+  const historical = applyGrowthMutation(clean.state, { action: "skill_delete", skillId: "earned" }, "deleted");
+  assert.equal(historical.ok, true);
+  if (!historical.ok) return;
+  assert.equal(historical.state.skills.find(skill => skill.id === "earned")?.deletedAt, "deleted");
+  assert.equal(historical.state.quests[0]?.status, "archived");
+  assert.equal(historical.state.transactions[0]?.amount, 10);
 });
 
 test("quest templates omit private notes and create at most one independent instance per day", () => {

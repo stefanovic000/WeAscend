@@ -160,6 +160,18 @@ export type QuestMutationResult =
   | { ok: true; state: AppState }
   | { ok: false; code: "invalid_quest" | "quest_not_found" | "invalid_status" | "invalid_attempt" | "boss_already_cleared" | "earned_quest_locked" };
 
+export type GrowthMutation =
+  | { action: "attribute_create"; id: string; name: string; color: string }
+  | { action: "attribute_rename"; attributeId: string; name: string }
+  | { action: "attribute_delete"; attributeId: string }
+  | { action: "skill_create"; id: string; attributeId: string; name: string }
+  | { action: "skill_rename"; skillId: string; name: string }
+  | { action: "skill_delete"; skillId: string };
+
+export type GrowthMutationResult =
+  | { ok: true; state: AppState }
+  | { ok: false; code: "invalid_growth" | "growth_not_found" | "duplicate_name" };
+
 export const defaultSettings: Settings = {
   baseXp: 100,
   levelGrowth: 25,
@@ -264,6 +276,68 @@ export function deleteAttributeFromState(state: AppState, attributeId: string, s
       ? { ...quest, status: "archived", archivedFromStatus: quest.status, updatedAt: stamp }
       : quest),
   };
+}
+
+export function deleteSkillFromState(state: AppState, skillId: string, stamp = new Date().toISOString()): AppState {
+  const hasHistory =
+    state.quests.some(quest => quest.skillId === skillId) ||
+    state.transactions.some(transaction => transaction.skillId === skillId);
+
+  if (!hasHistory) return { ...state, skills: state.skills.filter(skill => skill.id !== skillId) };
+
+  return {
+    ...state,
+    skills: state.skills.map(skill => skill.id === skillId
+      ? { ...skill, deletedAt: stamp, updatedAt: stamp }
+      : skill),
+    quests: state.quests.map(quest => quest.skillId === skillId && quest.status === "active"
+      ? { ...quest, status: "archived", archivedFromStatus: quest.status, updatedAt: stamp }
+      : quest),
+  };
+}
+
+export function applyGrowthMutation(state: AppState, mutation: GrowthMutation, stamp = new Date().toISOString()): GrowthMutationResult {
+  const name = "name" in mutation ? mutation.name.trim() : "";
+  if ("name" in mutation && !boundedString(name, mutation.action.startsWith("attribute") ? CONTENT_LIMITS.attributeName : CONTENT_LIMITS.skillName, true)) {
+    return { ok: false, code: "invalid_growth" };
+  }
+
+  if (mutation.action === "attribute_create") {
+    if (!boundedString(mutation.id, 120, true) || !boundedString(mutation.color, 20, true)) return { ok: false, code: "invalid_growth" };
+    if (state.attributes.some(attribute => attribute.id === mutation.id)) return { ok: false, code: "invalid_growth" };
+    if (state.attributes.some(attribute => !attribute.deletedAt && attribute.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase())) return { ok: false, code: "duplicate_name" };
+    return { ok: true, state: { ...state, attributes: [...state.attributes, { id: mutation.id, name, color: mutation.color, createdAt: stamp, updatedAt: stamp }] } };
+  }
+
+  if (mutation.action === "attribute_rename") {
+    const attribute = state.attributes.find(item => item.id === mutation.attributeId && !item.deletedAt);
+    if (!attribute) return { ok: false, code: "growth_not_found" };
+    if (state.attributes.some(item => item.id !== attribute.id && !item.deletedAt && item.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase())) return { ok: false, code: "duplicate_name" };
+    return { ok: true, state: { ...state, attributes: state.attributes.map(item => item.id === attribute.id ? { ...item, name, updatedAt: stamp } : item) } };
+  }
+
+  if (mutation.action === "attribute_delete") {
+    if (!state.attributes.some(item => item.id === mutation.attributeId && !item.deletedAt)) return { ok: false, code: "growth_not_found" };
+    return { ok: true, state: deleteAttributeFromState(state, mutation.attributeId, stamp) };
+  }
+
+  if (mutation.action === "skill_create") {
+    if (!boundedString(mutation.id, 120, true)) return { ok: false, code: "invalid_growth" };
+    if (!state.attributes.some(attribute => attribute.id === mutation.attributeId && !attribute.deletedAt) || state.skills.some(skill => skill.id === mutation.id)) return { ok: false, code: "invalid_growth" };
+    if (state.skills.some(skill => skill.attributeId === mutation.attributeId && !skill.deletedAt && skill.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase())) return { ok: false, code: "duplicate_name" };
+    return { ok: true, state: { ...state, skills: [...state.skills, { id: mutation.id, attributeId: mutation.attributeId, name, createdAt: stamp, updatedAt: stamp }] } };
+  }
+
+  const skillId = mutation.skillId;
+  const skill = state.skills.find(item => item.id === skillId && !item.deletedAt);
+  if (!skill) return { ok: false, code: "growth_not_found" };
+
+  if (mutation.action === "skill_rename") {
+    if (state.skills.some(item => item.id !== skill.id && item.attributeId === skill.attributeId && !item.deletedAt && item.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase())) return { ok: false, code: "duplicate_name" };
+    return { ok: true, state: { ...state, skills: state.skills.map(item => item.id === skill.id ? { ...item, name, updatedAt: stamp } : item) } };
+  }
+
+  return { ok: true, state: deleteSkillFromState(state, skill.id, stamp) };
 }
 
 export function deleteQuestFromState(state: AppState, questId: string): AppState {
