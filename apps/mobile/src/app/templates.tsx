@@ -30,7 +30,7 @@ export default function TemplatesScreen() {
         title={useMode ? (sr ? "Koristi template" : "Use a template") : (sr ? "Quest template-i" : "Quest templates")}
       />
       <Text style={styles.intro}>{useMode
-        ? (sr ? "Izaberi template. Otvoriće se običan quest koji možeš potpuno da promeniš pre aktivacije." : "Choose a template. It opens as a normal quest you can fully change before activation.")
+        ? (sr ? "Izaberi template. Možeš ga koristiti više puta istog dana i svaki quest promeniti pre aktivacije." : "Choose a template. You can use it several times on the same day and edit every quest before activation.")
         : (sr ? "Ovde se čuvaju samo osnove i rasporedi. Pojedinačne instance ostaju među questovima." : "Only foundations and schedules live here. Individual instances stay with your quests.")}
       </Text>
 

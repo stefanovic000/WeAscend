@@ -1,6 +1,6 @@
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
-import { localDateKey, type Quest, type QuestType, type XpCategory } from "@weascend/shared";
+import { type Quest, type QuestType, type XpCategory } from "@weascend/shared";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -421,21 +421,13 @@ export default function NewQuestScreen() {
     const xp = activeSuggestion?.xp ?? 0;
     const existingQuest = editId ? state.quests.find(item => item.id === editId) : undefined;
     const sourceTemplate = !existingQuest && templateId ? state.questTemplates?.find(item => item.id === templateId) : undefined;
-    const routineDate = sourceTemplate ? localDateKey(scheduledAt) : undefined;
-    if (sourceTemplate && state.quests.some(item =>
-      (item.templateId === sourceTemplate.id && item.routineDate === routineDate) ||
-      (item.id === sourceTemplate.sourceQuestId && localDateKey(item.date) === routineDate)
-    )) {
-      setError(language === "sr" ? "Ovaj template već ima quest za izabrani datum." : "This template already has a quest for the selected date.");
-      return;
-    }
     const parentQuest = !existingQuest && parentQuestId ? state.quests.find(item => item.id === parentQuestId && item.type === "Boss") : undefined;
     const nextStepOrder = parentQuest
       ? state.quests.filter(item => item.parentQuestId === parentQuest.id).reduce((highest, item) => Math.max(highest, item.stepOrder ?? 0), 0) + 1
       : undefined;
     const quest: Quest = {
       ...existingQuest,
-      id: existingQuest?.id ?? (sourceTemplate ? `routine:${sourceTemplate.id}:${routineDate}` : makeId("quest")),
+      id: existingQuest?.id ?? makeId("quest"),
       title: title.trim(),
       description: description.trim(),
       type: questType,
@@ -457,7 +449,9 @@ export default function NewQuestScreen() {
       parentQuestId: existingQuest?.parentQuestId ?? parentQuest?.id,
       stepOrder: existingQuest?.stepOrder ?? nextStepOrder,
       templateId: existingQuest?.templateId ?? sourceTemplate?.id,
-      routineDate: existingQuest?.routineDate ?? routineDate,
+      // Only automatically materialized recurrence instances receive a routineDate.
+      // Manually using a template stays reusable any number of times on the same day.
+      routineDate: existingQuest?.routineDate,
       status: existingQuest?.status ?? "active",
       createdAt: existingQuest?.createdAt ?? stamp,
       updatedAt: stamp,
