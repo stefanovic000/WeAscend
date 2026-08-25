@@ -8,6 +8,7 @@ import { buildAuthEmail, buildCustomActionUrl } from "../server/authEmail.ts";
 import { toLocalDateTimeValue, toStoredDateTime } from "../app/dateTime.ts";
 import { detectBossStepLanguage, parseBossStepPlan } from "../app/bossStepPlanner.ts";
 import { exceedsQuestStorage, PLAN_LIMITS, resolvePlan } from "../app/plan.ts";
+import { makeInitialState as makeSharedInitialState, materializeRoutineInstances as materializeSharedRoutines, migrateLegacyQuestRecurrence, type Quest as SharedQuest } from "../../../packages/shared/src/index.ts";
 
 test("plans expose the agreed monthly AI allowances", () => {
   assert.deepEqual(PLAN_LIMITS.free, { xpEstimates: 15, xpArguments: 15, bossPlans: 1, questStorage: 500 });
@@ -801,4 +802,39 @@ test("custom auth emails use the fixed WeAscend action page and provide HTML plu
   assert.match(email.html, /WeAscend/);
   assert.match(email.html, /Potvrdi email/);
   assert.match(email.text, /https:\/\/weascend\.example\/email-action/);
+});
+
+test("mobile legacy recurrence migrates into a template without duplicating the source quest", () => {
+  const state = makeSharedInitialState();
+  state.attributes = [{ id: "area", name: "Body", color: "#fff", createdAt: "now", updatedAt: "now" }];
+  state.skills = [{ id: "skill", attributeId: "area", name: "Gym", createdAt: "now", updatedAt: "now" }];
+  const quest: SharedQuest = {
+    id: "legacy", title: "Train", description: "", type: "Daily", attributeId: "area", skillId: "skill", xp: 20,
+    date: "2026-08-24T09:00:00.000Z", deadline: "", recurrence: "daily", status: "active", difficulty: "Normal",
+    completionConditions: "Finish", failureConsequence: "", createdAt: "now", updatedAt: "now",
+  };
+  state.quests = [quest];
+
+  const migrated = migrateLegacyQuestRecurrence(state, "migration");
+  assert.equal(migrated.quests[0].recurrence, "none");
+  assert.equal(migrated.questTemplates?.length, 1);
+  assert.equal(migrated.questTemplates?.[0].sourceQuestId, "legacy");
+  assert.equal(migrateLegacyQuestRecurrence(migrated), migrated);
+});
+
+test("mobile routine materialization creates only the relevant day and remains idempotent", () => {
+  const state = makeSharedInitialState();
+  state.attributes = [{ id: "area", name: "Mind", color: "#fff", createdAt: "now", updatedAt: "now" }];
+  state.skills = [{ id: "skill", attributeId: "area", name: "Study", createdAt: "now", updatedAt: "now" }];
+  state.questTemplates = [{
+    id: "routine", title: "Study", description: "", type: "Daily", attributeId: "area", skillId: "skill", xp: 20,
+    difficulty: "Normal", completionConditions: "Finish", failureConsequence: "", schedule: "interval", intervalDays: 2,
+    weekdays: [], startDate: "2026-08-01", time: "09:00", deadlineOffsetMinutes: 60, createdAt: "now", updatedAt: "now",
+  }];
+
+  const due = materializeSharedRoutines(state, new Date(2026, 7, 3, 12), "created");
+  const duplicate = materializeSharedRoutines(due, new Date(2026, 7, 3, 18), "duplicate");
+  assert.equal(due.quests.length, 1);
+  assert.equal(duplicate, due);
+  assert.equal(due.quests[0].routineDate, "2026-08-03");
 });

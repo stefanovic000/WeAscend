@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { type Href, useRouter } from "expo-router";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { useState } from "react";
 
@@ -59,6 +59,14 @@ export default function ProfileScreen() {
         <View style={styles.copy}>
           <Text style={styles.tutorialTitle}>{sr ? "Prva misija" : "First mission checklist"}</Text>
           <Text style={styles.tutorialBody}>{sr ? "Pogledaj praktične prve korake na Command ekranu." : "Review the practical first steps on your Command screen."}</Text>
+        </View>
+        <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
+      </Pressable>
+      <Pressable onPress={() => router.push("/templates" as Href)} style={styles.tutorialButton}>
+        <Ionicons color={colors.cyan} name="copy-outline" size={21} />
+        <View style={styles.copy}>
+          <Text style={styles.tutorialTitle}>{sr ? "Quest template-i" : "Quest templates"}</Text>
+          <Text style={styles.tutorialBody}>{sr ? "Uredi prečice i njihove buduće rasporede." : "Manage shortcuts and their future schedules."}</Text>
         </View>
         <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
       </Pressable>

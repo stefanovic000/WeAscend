@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { isWeAscendState, makeInitialState, type GrowthCommand, type PlanOverview, type QuestCommand, type WeAscendState } from "@weascend/shared";
+import { isWeAscendState, makeInitialState, materializeRoutineInstances, migrateLegacyQuestRecurrence, type GrowthCommand, type PlanOverview, type QuestCommand, type WeAscendState } from "@weascend/shared";
 import { AppState as NativeAppState } from "react-native";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
 
@@ -36,6 +36,7 @@ type CloudStateContextValue = {
   lastSyncedAt: string | null;
   error: string | null;
   refresh: () => void;
+  saveState: (nextState: WeAscendState) => Promise<WeAscendState>;
   runQuestCommand: (command: QuestCommand) => Promise<WeAscendState>;
   runGrowthCommand: (command: GrowthCommand) => Promise<WeAscendState>;
 };
@@ -169,6 +170,65 @@ export function CloudStateProvider({ children }: PropsWithChildren) {
     [runCommand],
   );
 
+  const saveState = useCallback(async (nextState: WeAscendState) => {
+    const userId = identity?.id;
+    if (!userId || !identity.emailVerified) throw new Error("authentication_required");
+    if (offline) throw new Error("offline_read_only");
+    if (mutationInFlight.current) throw new Error("save_in_progress");
+
+    mutationInFlight.current = true;
+    setSaving(true);
+    try {
+      const auth = await getMobileAuth();
+      if (!auth.currentUser || auth.currentUser.uid !== userId) throw new Error("authentication_required");
+      const token = await auth.currentUser.getIdToken();
+      const response = await apiJson<CloudStateResponse>("/api/state", {
+        method: "PUT",
+        cache: "no-store",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ state: nextState, revision }),
+      });
+      if (!isWeAscendState(response.state)) throw new Error("invalid_state");
+
+      const savedAt = new Date().toISOString();
+      await AsyncStorage.setItem(cacheKey(userId), JSON.stringify({
+        version: 1,
+        userId,
+        state: response.state,
+        revision: response.revision,
+        updatedAt: response.updatedAt,
+        plan,
+        cachedAt: savedAt,
+      } satisfies CachedSnapshot));
+      setState(response.state);
+      setRevision(response.revision);
+      setHasCachedData(true);
+      setLastSyncedAt(response.updatedAt ?? savedAt);
+      setOffline(false);
+      setError(null);
+      return response.state;
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.code === "revision_conflict") {
+        const confirmed = reason.payload.state;
+        const confirmedRevision = Number(reason.payload.revision);
+        if (isWeAscendState(confirmed) && Number.isInteger(confirmedRevision)) {
+          setState(confirmed);
+          setRevision(confirmedRevision);
+        }
+      } else if (!(reason instanceof ApiError) || reason.status >= 500) {
+        setOffline(true);
+      }
+      setError(errorCode(reason));
+      throw reason;
+    } finally {
+      mutationInFlight.current = false;
+      setSaving(false);
+    }
+  }, [identity?.emailVerified, identity?.id, offline, plan, revision]);
+
   useEffect(() => {
     const userId = identity?.id;
     const currentRequest = ++requestId.current;
@@ -269,6 +329,18 @@ export function CloudStateProvider({ children }: PropsWithChildren) {
     return () => subscription.remove();
   }, [identity?.emailVerified, refresh]);
 
+  useEffect(() => {
+    if (!state || offline || saving) return;
+    const hasTemplates = Boolean(state.questTemplates?.length);
+    const hasLegacyRecurrence = state.quests.some(quest => quest.recurrence !== "none");
+    if (!hasTemplates && !hasLegacyRecurrence) return;
+    const stamp = new Date().toISOString();
+    const migrated = migrateLegacyQuestRecurrence(state, stamp);
+    const next = materializeRoutineInstances(migrated, new Date(), stamp, plan?.limits.questStorage ?? Number.POSITIVE_INFINITY);
+    if (next === state) return;
+    void saveState(next).catch(() => undefined);
+  }, [offline, plan?.limits.questStorage, saveState, saving, state]);
+
   const value = useMemo<CloudStateContextValue>(() => ({
     state,
     revision,
@@ -281,9 +353,10 @@ export function CloudStateProvider({ children }: PropsWithChildren) {
     lastSyncedAt,
     error,
     refresh,
+    saveState,
     runQuestCommand,
     runGrowthCommand,
-  }), [error, hasCachedData, lastSyncedAt, loading, offline, plan, refreshing, refresh, revision, runGrowthCommand, runQuestCommand, saving, state]);
+  }), [error, hasCachedData, lastSyncedAt, loading, offline, plan, refreshing, refresh, revision, runGrowthCommand, runQuestCommand, saveState, saving, state]);
 
   return <CloudStateContext.Provider value={value}>{children}</CloudStateContext.Provider>;
 }

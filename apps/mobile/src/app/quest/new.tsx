@@ -1,6 +1,6 @@
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
-import type { Quest, QuestType, XpCategory } from "@weascend/shared";
+import { localDateKey, type Quest, type QuestType, type XpCategory } from "@weascend/shared";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -168,11 +168,12 @@ function apiCode(reason: unknown) {
 
 export default function NewQuestScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ editId?: string | string[]; date?: string | string[]; type?: string | string[]; parentQuestId?: string | string[] }>();
+  const params = useLocalSearchParams<{ editId?: string | string[]; date?: string | string[]; type?: string | string[]; parentQuestId?: string | string[]; templateId?: string | string[] }>();
   const editId = Array.isArray(params.editId) ? params.editId[0] : params.editId;
   const requestedDate = Array.isArray(params.date) ? params.date[0] : params.date;
   const requestedType = Array.isArray(params.type) ? params.type[0] : params.type;
   const parentQuestId = Array.isArray(params.parentQuestId) ? params.parentQuestId[0] : params.parentQuestId;
+  const templateId = Array.isArray(params.templateId) ? params.templateId[0] : params.templateId;
   const { state, offline, runQuestCommand, saving } = useCloudState();
   const { language } = usePreferences();
   const t = copy[language];
@@ -200,6 +201,7 @@ export default function NewQuestScreen() {
   const hydratedEditId = useRef<string | null>(null);
   const hydratedRequestedDate = useRef(false);
   const hydratedParentId = useRef<string | null>(null);
+  const hydratedTemplateId = useRef<string | null>(null);
 
   const attributes = useMemo(() => state?.attributes.filter(attribute => !attribute.deletedAt) ?? [], [state]);
   const selectedAttribute = attributes.find(attribute => attribute.id === selectedAttributeId);
@@ -261,6 +263,43 @@ export default function NewQuestScreen() {
     setQuestType("Side");
     setStep(2);
   }, [editId, parentQuestId, state]);
+
+  useEffect(() => {
+    if (!state || editId || parentQuestId || !templateId || hydratedTemplateId.current === templateId) return;
+    const template = state.questTemplates?.find(item => item.id === templateId);
+    if (!template) return;
+    hydratedTemplateId.current = templateId;
+    const [hour, minute] = template.time.split(":").map(Number);
+    const requestedParts = requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) ? requestedDate.split("-").map(Number) : null;
+    const nextDate = requestedParts
+      ? new Date(requestedParts[0], requestedParts[1] - 1, requestedParts[2], hour || 0, minute || 0, 0, 0)
+      : new Date(scheduledAt);
+    nextDate.setHours(hour || 0, minute || 0, 0, 0);
+    setSelectedAttributeId(template.attributeId);
+    setSelectedSkillId(template.skillId);
+    setTitle(template.title);
+    setDescription(template.description);
+    setCompletionConditions(template.completionConditions);
+    setQuestType(template.type);
+    setScheduledAt(nextDate);
+    setWindowChoice(template.deadlineOffsetMinutes === 30 ? "30" : template.deadlineOffsetMinutes === 60 ? "60" : template.deadlineOffsetMinutes === 120 ? "120" : template.deadlineOffsetMinutes > 0 ? "eod" : "none");
+    setUseZeroXp(template.xp === 0);
+    setStep(2);
+  }, [editId, parentQuestId, requestedDate, scheduledAt, state, templateId]);
+
+  useEffect(() => {
+    if (!state || !templateId || hydratedTemplateId.current !== templateId || !title.trim() || suggestion) return;
+    const template = state.questTemplates?.find(item => item.id === templateId);
+    if (!template || title !== template.title || description !== template.description || completionConditions !== template.completionConditions) return;
+    const current: XpSuggestion = {
+      xp: template.xp,
+      category: template.xpCategory ?? "growth",
+      confidence: "high",
+      rationale: language === "sr" ? "Nagrada sačuvana u template-u." : "Reward saved in the template.",
+    };
+    setSuggestion(current);
+    setSuggestionFingerprint(fingerprint);
+  }, [completionConditions, description, fingerprint, language, state, suggestion, templateId, title]);
 
   useEffect(() => {
     if (!state || !editId || hydratedEditId.current !== editId || !title.trim() || suggestion) return;
@@ -381,13 +420,22 @@ export default function NewQuestScreen() {
     const skillId = newSkillMode ? makeId("skill") : selectedSkillId;
     const xp = activeSuggestion?.xp ?? 0;
     const existingQuest = editId ? state.quests.find(item => item.id === editId) : undefined;
+    const sourceTemplate = !existingQuest && templateId ? state.questTemplates?.find(item => item.id === templateId) : undefined;
+    const routineDate = sourceTemplate ? localDateKey(scheduledAt) : undefined;
+    if (sourceTemplate && state.quests.some(item =>
+      (item.templateId === sourceTemplate.id && item.routineDate === routineDate) ||
+      (item.id === sourceTemplate.sourceQuestId && localDateKey(item.date) === routineDate)
+    )) {
+      setError(language === "sr" ? "Ovaj template već ima quest za izabrani datum." : "This template already has a quest for the selected date.");
+      return;
+    }
     const parentQuest = !existingQuest && parentQuestId ? state.quests.find(item => item.id === parentQuestId && item.type === "Boss") : undefined;
     const nextStepOrder = parentQuest
       ? state.quests.filter(item => item.parentQuestId === parentQuest.id).reduce((highest, item) => Math.max(highest, item.stepOrder ?? 0), 0) + 1
       : undefined;
     const quest: Quest = {
       ...existingQuest,
-      id: existingQuest?.id ?? makeId("quest"),
+      id: existingQuest?.id ?? (sourceTemplate ? `routine:${sourceTemplate.id}:${routineDate}` : makeId("quest")),
       title: title.trim(),
       description: description.trim(),
       type: questType,
@@ -408,6 +456,8 @@ export default function NewQuestScreen() {
       failureConsequence: existingQuest?.failureConsequence ?? "",
       parentQuestId: existingQuest?.parentQuestId ?? parentQuest?.id,
       stepOrder: existingQuest?.stepOrder ?? nextStepOrder,
+      templateId: existingQuest?.templateId ?? sourceTemplate?.id,
+      routineDate: existingQuest?.routineDate ?? routineDate,
       status: existingQuest?.status ?? "active",
       createdAt: existingQuest?.createdAt ?? stamp,
       updatedAt: stamp,

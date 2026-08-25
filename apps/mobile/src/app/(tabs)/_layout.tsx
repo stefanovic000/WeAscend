@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Tabs, useRouter } from "expo-router";
+import { type Href, Tabs, useRouter } from "expo-router";
 import { Pressable, StyleSheet, View, type ColorValue } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -64,7 +64,7 @@ export default function TabLayout() {
         listeners={{
           tabPress: (event) => {
             event.preventDefault();
-            if (!offline) router.push("/quest/new");
+            if (!offline) router.push("/create-menu" as Href);
           },
         }}
         options={{

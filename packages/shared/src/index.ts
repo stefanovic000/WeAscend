@@ -75,6 +75,33 @@ export type Quest = {
   completedAt?: string;
 };
 
+export type QuestTemplate = {
+  id: string;
+  sourceQuestId?: string;
+  title: string;
+  description: string;
+  type: Exclude<QuestType, "Boss">;
+  attributeId: string;
+  skillId: string;
+  xp: number;
+  xpCategory?: XpCategory;
+  focusMinutes?: number;
+  outputBonus?: 0 | 5 | 10;
+  xpRuleValue?: number;
+  xpSource?: XpSource;
+  difficulty: Quest["difficulty"];
+  completionConditions: string;
+  failureConsequence: string;
+  schedule: "none" | "daily" | "weekly" | "interval";
+  intervalDays?: number;
+  weekdays: number[];
+  startDate: string;
+  time: string;
+  deadlineOffsetMinutes: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type XpTransaction = {
   id: string;
   questId: string;
@@ -104,7 +131,7 @@ export type WeAscendState = {
   transactions: XpTransaction[];
   bosses: unknown[];
   bossAttempts?: BossAttempt[];
-  questTemplates?: unknown[];
+  questTemplates?: QuestTemplate[];
   settings: Settings;
   levelEvents: { id: string; type: "level" | "rank"; value: string; createdAt: string }[];
 };
@@ -227,4 +254,144 @@ export function localDateKey(value: Date | string) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
+}
+
+function dateAtTemplateTime(dateKey: string, time: string) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  return new Date(year, month - 1, day, hour, minute, 0, 0);
+}
+
+function templateId() {
+  return `template-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function questTemplateFromQuest(quest: Quest, stamp = new Date().toISOString()): QuestTemplate | null {
+  if (quest.type === "Boss" || quest.parentQuestId) return null;
+  const start = new Date(quest.date);
+  const end = quest.deadline ? new Date(quest.deadline) : null;
+  const deadlineOffsetMinutes = end && Number.isFinite(end.getTime())
+    ? Math.max(0, Math.min(43_200, Math.round((end.getTime() - start.getTime()) / 60_000)))
+    : 0;
+  return {
+    id: templateId(),
+    sourceQuestId: quest.id,
+    title: quest.title,
+    description: quest.description,
+    type: quest.type,
+    attributeId: quest.attributeId,
+    skillId: quest.skillId,
+    xp: quest.xp,
+    xpCategory: quest.xpCategory,
+    focusMinutes: quest.focusMinutes,
+    outputBonus: quest.outputBonus,
+    xpRuleValue: quest.xpRuleValue,
+    xpSource: quest.xpSource,
+    difficulty: quest.difficulty,
+    completionConditions: quest.completionConditions,
+    failureConsequence: quest.failureConsequence,
+    schedule: "none",
+    intervalDays: 2,
+    weekdays: [start.getDay()],
+    startDate: localDateKey(new Date()),
+    time: `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`,
+    deadlineOffsetMinutes,
+    createdAt: stamp,
+    updatedAt: stamp,
+  };
+}
+
+export function migrateLegacyQuestRecurrence(state: WeAscendState, stamp = new Date().toISOString()): WeAscendState {
+  const templates = state.questTemplates ?? [];
+  const legacyQuests = state.quests.filter(quest =>
+    quest.recurrence !== "none" &&
+    quest.type !== "Boss" &&
+    !quest.parentQuestId &&
+    !templates.some(template => template.sourceQuestId === quest.id)
+  );
+  if (!legacyQuests.length) return state;
+
+  const migratedTemplates = legacyQuests.flatMap(quest => {
+    const template = questTemplateFromQuest(quest, stamp);
+    if (!template) return [];
+    const questDate = new Date(quest.date);
+    return [{
+      ...template,
+      id: `template:legacy:${quest.id}`,
+      schedule: quest.recurrence,
+      weekdays: [questDate.getDay()],
+      startDate: localDateKey(new Date()),
+    } satisfies QuestTemplate];
+  });
+
+  return {
+    ...state,
+    questTemplates: [...migratedTemplates, ...templates],
+    quests: state.quests.map(quest => legacyQuests.some(legacy => legacy.id === quest.id) ? { ...quest, recurrence: "none" as const, updatedAt: stamp } : quest),
+  };
+}
+
+export function questFromTemplate(template: QuestTemplate, dateKey: string, stamp = new Date().toISOString()): Quest {
+  const start = dateAtTemplateTime(dateKey, template.time);
+  const deadline = template.deadlineOffsetMinutes > 0
+    ? new Date(start.getTime() + template.deadlineOffsetMinutes * 60_000).toISOString()
+    : "";
+  return {
+    id: `routine:${template.id}:${dateKey}`,
+    title: template.title,
+    description: template.description,
+    type: template.type,
+    attributeId: template.attributeId,
+    skillId: template.skillId,
+    xp: template.xp,
+    xpCategory: template.xpCategory,
+    focusMinutes: template.focusMinutes,
+    outputBonus: template.outputBonus,
+    xpRuleValue: template.xpRuleValue,
+    xpSource: template.xpSource,
+    date: start.toISOString(),
+    deadline,
+    recurrence: "none",
+    difficulty: template.difficulty,
+    completionConditions: template.completionConditions,
+    failureConsequence: template.failureConsequence,
+    status: "active",
+    templateId: template.id,
+    routineDate: dateKey,
+    createdAt: stamp,
+    updatedAt: stamp,
+  };
+}
+
+export function addTemplateQuestForDate(state: WeAscendState, templateIdValue: string, dateKey: string, stamp = new Date().toISOString()) {
+  const template = (state.questTemplates ?? []).find(item => item.id === templateIdValue);
+  if (!template || state.quests.some(quest =>
+    (quest.templateId === templateIdValue && quest.routineDate === dateKey) ||
+    (quest.id === template.sourceQuestId && localDateKey(quest.date) === dateKey)
+  )) return state;
+  const attribute = state.attributes.find(item => item.id === template.attributeId && !item.deletedAt);
+  const skill = state.skills.find(item => item.id === template.skillId && item.attributeId === template.attributeId && !item.deletedAt);
+  if (!attribute || !skill) return state;
+  return { ...state, quests: [questFromTemplate(template, dateKey, stamp), ...state.quests] };
+}
+
+export function materializeRoutineInstances(
+  state: WeAscendState,
+  date = new Date(),
+  stamp = new Date().toISOString(),
+  maxQuests = Number.POSITIVE_INFINITY,
+) {
+  const dateKey = localDateKey(date);
+  return (state.questTemplates ?? []).reduce((current, template) => {
+    if (current.quests.length >= maxQuests) return current;
+    const start = dateAtTemplateTime(template.startDate, "00:00");
+    const currentDate = dateAtTemplateTime(dateKey, "00:00");
+    const elapsedDays = Math.round((currentDate.getTime() - start.getTime()) / 86_400_000);
+    const due = template.startDate <= dateKey && (
+      template.schedule === "daily" ||
+      (template.schedule === "weekly" && template.weekdays.includes(date.getDay())) ||
+      (template.schedule === "interval" && elapsedDays >= 0 && elapsedDays % (template.intervalDays ?? 2) === 0)
+    );
+    return due ? addTemplateQuestForDate(current, template.id, dateKey, stamp) : current;
+  }, state);
 }

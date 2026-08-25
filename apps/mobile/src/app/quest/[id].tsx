@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import type { BossAttempt, QuestCommand } from "@weascend/shared";
+import { questTemplateFromQuest, type BossAttempt, type QuestCommand } from "@weascend/shared";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
@@ -79,7 +79,7 @@ export default function QuestDetailsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
-  const { state, offline, saving, runQuestCommand } = useCloudState();
+  const { state, offline, saving, runQuestCommand, saveState } = useCloudState();
   const { language } = usePreferences();
   const sr = language === "sr";
   const [error, setError] = useState("");
@@ -103,6 +103,7 @@ export default function QuestDetailsScreen() {
       .sort((left, right) => right.attemptNumber - left.attemptNumber),
     [id, state?.bossAttempts],
   );
+  const linkedTemplate = state?.questTemplates?.find(item => item.id === quest?.templateId || item.sourceQuestId === quest?.id);
 
   if (!state) return <Screen><CloudStateMessage /></Screen>;
   if (!quest) {
@@ -183,6 +184,19 @@ export default function QuestDetailsScreen() {
         { text: sr ? "Poništi Clear" : "Undo Clear", style: "destructive", onPress: () => void mutate({ action: "undo_boss_clear", bossQuestId: quest.id }) },
       ],
     );
+  };
+
+  const saveAsTemplate = async () => {
+    if (offline || saving || quest.type === "Boss" || quest.parentQuestId || linkedTemplate) return;
+    const template = questTemplateFromQuest(quest);
+    if (!template) return;
+    setError("");
+    try {
+      await saveState({ ...state, questTemplates: [template, ...(state.questTemplates ?? [])] });
+      Alert.alert(sr ? "Template je sačuvan" : "Template saved", sr ? "Sada možeš da ga koristiš ručno ili mu dodaš raspored." : "You can now use it manually or add a schedule.");
+    } catch (reason) {
+      setError(commandError(reason, sr));
+    }
   };
 
   return (
@@ -266,6 +280,10 @@ export default function QuestDetailsScreen() {
           <ActionButton disabled={locked} icon="archive-outline" label={sr ? "Vrati iz arhive" : "Restore from archive"} onPress={() => void mutate({ action: "restore", questId: quest.id })} tone="primary" />
         ) : (
           <>
+            {quest.type !== "Boss" && !quest.parentQuestId ? (linkedTemplate
+              ? <ActionButton disabled={false} icon="options-outline" label={sr ? "Uredi povezani template" : "Manage linked template"} onPress={() => router.push(`/template/${encodeURIComponent(linkedTemplate.id)}` as Href)} />
+              : <ActionButton disabled={locked} icon="copy-outline" label={sr ? "Sačuvaj kao template" : "Save as template"} onPress={() => void saveAsTemplate()} />
+            ) : null}
             <ActionButton disabled={locked} icon="document-text-outline" label={quest.note ? (sr ? "Izmeni belešku" : "Edit note") : (sr ? "Dodaj belešku" : "Add note")} onPress={openNote} />
             <ActionButton disabled={locked} icon="archive-outline" label={sr ? "Arhiviraj" : "Archive"} onPress={() => void mutate({ action: "archive", questId: quest.id })} />
           </>
