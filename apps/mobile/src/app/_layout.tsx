@@ -53,7 +53,6 @@ function RootNavigator() {
         <Stack.Protected guard={verified}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="quest/new" options={{ presentation: "modal", title: language === "sr" ? "Novi quest" : "New quest" }} />
-          <Stack.Screen name="create-menu" options={{ presentation: "modal", title: language === "sr" ? "Kreiraj" : "Create" }} />
           <Stack.Screen name="templates" options={{ title: language === "sr" ? "Quest template-i" : "Quest templates" }} />
           <Stack.Screen name="template/[id]" options={{ title: language === "sr" ? "Izmeni template" : "Edit template" }} />
           <Stack.Screen name="quest/[id]" options={{ title: language === "sr" ? "Detalji questa" : "Quest details" }} />
