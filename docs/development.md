@@ -118,3 +118,13 @@ npm run capture              # writes docs/screenshots/*.png
 
 The capture script mocks `/api/*` in the browser and uses a deterministic demo ledger, so it touches
 no database and produces identical images between runs.
+
+The native screens are captured from the Expo web export:
+
+```bash
+npm run export:web --prefix apps/mobile
+cd docs/demo && npm run capture:mobile
+```
+
+That script serves `apps/mobile/dist-web` locally and mocks Firebase sign-in, token refresh and the
+API, so the app renders its real screens without a Firebase project.

@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getApps, initializeApp, type FirebaseOptions } from "firebase/app";
 import * as FirebaseAuth from "firebase/auth";
-import { getAuth, initializeAuth, type Auth, type Persistence } from "firebase/auth";
+import { browserLocalPersistence, getAuth, initializeAuth, type Auth, type Persistence } from "firebase/auth";
 
 import { apiJson } from "@/services/api";
 
@@ -20,6 +20,14 @@ let authPromise: Promise<Auth> | null = null;
 const getReactNativePersistence = (FirebaseAuth as typeof FirebaseAuth & {
   getReactNativePersistence: (storage: typeof AsyncStorage) => Persistence;
 }).getReactNativePersistence;
+
+// The browser build of firebase/auth has no React Native persistence helper, so
+// the web target (and the screenshot tooling) falls back to local storage.
+function authPersistence(): Persistence {
+  return typeof getReactNativePersistence === "function"
+    ? getReactNativePersistence(AsyncStorage)
+    : browserLocalPersistence;
+}
 
 function validConfig(value: unknown): value is FirebaseOptions {
   if (!value || typeof value !== "object") return false;
@@ -58,7 +66,7 @@ export function getMobileAuth() {
       const app = existing ?? initializeApp(config, FIREBASE_APP_NAME);
       try {
         return initializeAuth(app, {
-          persistence: getReactNativePersistence(AsyncStorage),
+          persistence: authPersistence(),
         });
       } catch (reason) {
         const code = reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "";

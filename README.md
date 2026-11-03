@@ -60,15 +60,17 @@ in progress against the same contract.
 | <img src="docs/screenshots/04-bosses.png" alt="Boss quests"> | <img src="docs/screenshots/05-history.png" alt="History and statistics"> |
 | *Preparation steps, attempts and a clear condition* | *Every XP has a source, a time and a state* |
 
+### Native app (Expo)
+
 <table>
 <tr>
-<td width="34%" align="center"><img src="docs/screenshots/08-mobile-dashboard.png" alt="Mobile dashboard" width="280"><br><em>Same PWA, mobile layout</em></td>
-<td width="34%" align="center"><img src="docs/screenshots/09-mobile-quests.png" alt="Mobile quest planner" width="280"><br><em>Calendar and routines on a phone</em></td>
-<td width="32%" valign="middle">
-<strong>One codebase, two form factors.</strong><br><br>
-Responsive PWA with an installable shell, offline read-only mode and bottom navigation on phones.
-A Google Play TWA wrapper reuses the same build, and a native Expo client is being built against the
-same API.
+<td width="24%" align="center"><img src="docs/screenshots/10-app-today.png" alt="App: today" width="220"><br><em>Today</em></td>
+<td width="24%" align="center"><img src="docs/screenshots/11-app-plan.png" alt="App: planner" width="220"><br><em>Plan</em></td>
+<td width="24%" align="center"><img src="docs/screenshots/12-app-progress.png" alt="App: growth areas" width="220"><br><em>Progress</em></td>
+<td width="28%" valign="middle">
+<strong>React Native client</strong><br><br>
+Same API and shared domain types, native navigation and gestures. Today, planner, growth areas,
+bosses and history are wired; Google sign-in and AI planning are next.
 </td>
 </tr>
 </table>
@@ -125,8 +127,8 @@ npm run android:check  # PWA ↔ TWA manifest consistency
   the native client and the Android manifest check.
 - **The API** enforces authentication, payload caps, content limits and per-plan storage quotas;
   secrets never reach the browser bundle.
-- **Screenshots are reproducible** — `docs/demo` mocks `/api/*` in a real browser and drives a
-  deterministic ledger that must pass `isValidCloudState` before capture.
+- **Screenshots are reproducible** — `docs/demo` mocks the API in a real browser for both clients and
+  drives a deterministic ledger that must pass `isValidCloudState` before capture.
 
 ## Roadmap
 

@@ -80,7 +80,26 @@ is, and what today looks like.
 - Strict output validation: an out-of-scale XP value or a missing rationale is treated as an invalid
   response, never applied.
 
+## Native client (Expo)
+
+<p align="center">
+  <img src="screenshots/13-app-bosses.png" alt="App: boss quests" width="46%">
+  <img src="screenshots/14-app-history.png" alt="App: history" width="46%">
+</p>
+
+- Expo Router tabs: Today, Plan, Progress and Profile, with a raised create action in the tab bar.
+- Boss hub with preparation progress and attempts; history with a seven-day chart, clear rate and
+  allocation by growth area.
+- Uses the same REST contract and the shared types package; the cache is AsyncStorage instead of
+  IndexedDB and the client never writes whole-state snapshots — every change is a command.
+- Not finished: Google sign-in and the AI planner are still web-only.
+
 ## Interface and platform
+
+<p align="center">
+  <img src="screenshots/08-mobile-dashboard.png" alt="PWA on a phone" width="45%">
+  <img src="screenshots/09-mobile-quests.png" alt="PWA planner on a phone" width="45%">
+</p>
 
 - English and Serbian, switchable at runtime; the choice persists per device.
 - 13-step guided tour with live element highlighting, replayable from Settings.

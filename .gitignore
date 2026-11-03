@@ -81,3 +81,7 @@ next-env.d.ts
 # TypeScript incremental build info
 *.tsbuildinfo
 
+
+# Expo web export used by the screenshot tooling
+/apps/mobile/dist-web/
+
