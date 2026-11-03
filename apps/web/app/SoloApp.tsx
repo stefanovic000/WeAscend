@@ -110,13 +110,15 @@ const getServerLanguageSnapshot = (): Language => "en";
 
 function Field({ label, children, wide = false, tour }: { label: string; children: React.ReactNode; wide?: boolean; tour?: string }) {
   const fieldLanguage = useSyncExternalStore(subscribeLanguage, getLanguageSnapshot, getServerLanguageSnapshot);
-  type CountedControlProps = { value?: unknown; maxLength?: number; type?: string };
-  const countedControl = Children.toArray(children).find(child =>
-    isValidElement<CountedControlProps>(child)
-    && typeof child.props.value === "string"
-    && typeof child.props.maxLength === "number"
-    && child.props.type !== "password"
-  );
+  type CountedControl = React.ReactElement<{ value?: unknown; maxLength?: number; type?: string }>;
+  const countedControl = Children.toArray(children)
+    .map(child => (isValidElement(child) ? child as CountedControl : null))
+    .find((child): child is CountedControl =>
+      child !== null
+      && typeof child.props.value === "string"
+      && typeof child.props.maxLength === "number"
+      && child.props.type !== "password",
+    ) ?? null;
   const currentLength = countedControl && typeof countedControl.props.value === "string" ? countedControl.props.value.length : null;
   const maxLength = countedControl?.props.maxLength;
   const isMultiline = countedControl?.type === "textarea";
@@ -940,7 +942,6 @@ export default function SoloApp() {
     }));
     if (newRank !== oldRank) setCeremony({ eyebrow: t("ceremony.rankAscension"), title: `${newRank}-RANK`, text: t("quest.rankUp") });
     else if (after.level > before.level) setCeremony({ eyebrow: t("ceremony.levelUp"), title: `LEVEL ${after.level}`, text: t("quest.levelUp", { xp: after.needed }) });
-    else if (quest.type === "Boss") setCeremony({ eyebrow: t("ceremony.dungeonConquered"), title: t("ceremony.bossClear"), text: `${quest.title} · +${quest.xp} XP` });
     else setToast(quest.xp ? t("quest.xpRecorded", { xp: quest.xp }) : t("quest.completedZero"));
   };
 
@@ -1209,10 +1210,11 @@ export default function SoloApp() {
   const archiveQuest = (quest: Quest) => {
     if (quest.status === "archived" || (motionCue?.questId === quest.id && motionCue.kind === "archive")) return;
     haptic(10);
+    const previousStatus = quest.status;
     const commitArchive = () => {
       void runQuestMutation({
         action: "update",
-        quest: { ...quest, status: "archived", archivedFromStatus: quest.status, updatedAt: new Date().toISOString() },
+        quest: { ...quest, status: "archived", archivedFromStatus: previousStatus, updatedAt: new Date().toISOString() },
       }).then(saved => {
         if (saved) setToast(t("quest.archived"));
       });

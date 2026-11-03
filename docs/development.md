@@ -54,6 +54,7 @@ The full commented template is [apps/web/.env.example](../apps/web/.env.example)
 | --- | --- |
 | `npm test` | 46 `node:test` cases over the domain, API rules, auth and email builders |
 | `npm run lint` | ESLint (Next.js config) |
+| `npm run typecheck` | `tsc --noEmit` over the web app, API routes and tests |
 | `npm run build` | Production build through `vinext` (Vite + RSC) |
 | `npm run preview` | Serve the production build locally |
 | `npm run android:check` | Assert that the PWA manifest and the TWA manifest agree |

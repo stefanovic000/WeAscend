@@ -447,6 +447,9 @@ export function hasContentLimitViolation(previous: AppState | null, next: AppSta
 export function isValidQuest(value: unknown): value is Quest {
   if (!value || typeof value !== "object") return false;
   const quest = value as Partial<Quest>;
+  // Validated as untrusted JSON: the declared type excludes "archived", but a
+  // tampered payload can still contain it, so the runtime check stays.
+  const archivedFromStatus = quest.archivedFromStatus as QuestStatus | undefined;
   return boundedString(quest.id, 120, true) &&
     boundedString(quest.title, 500, true) &&
     boundedString(quest.description, 10_000) &&
@@ -469,7 +472,7 @@ export function isValidQuest(value: unknown): value is Quest {
     boundedString(quest.completionConditions, 10_000) &&
     boundedString(quest.failureConsequence, 10_000) &&
     QUEST_STATUSES.includes(quest.status as QuestStatus) &&
-    (quest.archivedFromStatus === undefined || (QUEST_STATUSES.includes(quest.archivedFromStatus) && quest.archivedFromStatus !== "archived")) &&
+    (archivedFromStatus === undefined || (QUEST_STATUSES.includes(archivedFromStatus) && archivedFromStatus !== "archived")) &&
     (quest.seriesId === undefined || boundedString(quest.seriesId, 120, true)) &&
     (quest.parentQuestId === undefined || boundedString(quest.parentQuestId, 120, true)) &&
     (quest.stepOrder === undefined || (Number.isInteger(quest.stepOrder) && Number(quest.stepOrder) >= 0 && Number(quest.stepOrder) <= 10_000)) &&
@@ -484,11 +487,13 @@ export function isValidQuest(value: unknown): value is Quest {
 export function isValidQuestTemplate(value: unknown): value is QuestTemplate {
   if (!value || typeof value !== "object") return false;
   const template = value as Partial<QuestTemplate>;
+  const templateType = template.type as QuestType;
+  const deadlineOffsetMinutes = Number(template.deadlineOffsetMinutes);
   return boundedString(template.id, 80, true) &&
     (template.sourceQuestId === undefined || boundedString(template.sourceQuestId, 120, true)) &&
     boundedString(template.title, 500, true) &&
     boundedString(template.description, 10_000) &&
-    QUEST_TYPES.includes(template.type as QuestType) && template.type !== "Boss" &&
+    QUEST_TYPES.includes(templateType) && templateType !== "Boss" &&
     boundedString(template.attributeId, 120, true) &&
     boundedString(template.skillId, 120, true) &&
     Number.isFinite(template.xp) && Number(template.xp) >= 0 &&
@@ -507,7 +512,7 @@ export function isValidQuestTemplate(value: unknown): value is QuestTemplate {
     new Set(template.weekdays).size === template.weekdays.length &&
     typeof template.startDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(template.startDate) &&
     typeof template.time === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(template.time) &&
-    Number.isInteger(template.deadlineOffsetMinutes) && template.deadlineOffsetMinutes >= 0 && template.deadlineOffsetMinutes <= 43_200 &&
+    Number.isInteger(deadlineOffsetMinutes) && deadlineOffsetMinutes >= 0 && deadlineOffsetMinutes <= 43_200 &&
     boundedString(template.createdAt, 100, true) &&
     boundedString(template.updatedAt, 100, true);
 }
@@ -682,12 +687,13 @@ export function applyQuestMutation(state: AppState, mutation: QuestMutation, sta
 
     if (mutation.action === "archive") {
       if (quest.status === "archived") return { ok: false, code: "invalid_status" };
+      const previousStatus = quest.status;
       return {
         ok: true,
         state: {
           ...state,
           quests: state.quests.map(item => item.id === quest.id
-            ? { ...item, status: "archived", archivedFromStatus: item.status, updatedAt: stamp }
+            ? { ...item, status: "archived", archivedFromStatus: previousStatus, updatedAt: stamp }
             : item),
         },
       };
@@ -874,6 +880,11 @@ export function applyQuestMutation(state: AppState, mutation: QuestMutation, sta
           : attempt),
       },
     };
+  }
+
+  // Every action above returns; this guard states the narrowed shape explicitly.
+  if (mutation.action !== "create" && mutation.action !== "update") {
+    return { ok: false, code: "invalid_quest" };
   }
 
   if (!isValidQuest(mutation.quest) || !isQuestContentWithinLimits(mutation.quest)) return { ok: false, code: "invalid_quest" };

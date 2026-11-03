@@ -201,6 +201,7 @@ development only.
 ```bash
 npm test                # 46 domain and server tests
 npm run lint            # ESLint
+npm run typecheck       # tsc --noEmit
 npm run build           # production build
 npm run android:check   # PWA ↔ TWA configuration consistency
 ```
@@ -226,7 +227,8 @@ screenshots cannot drift away from the schema the product accepts.
 
 - **46 unit tests** cover the XP formula, rank thresholds, duplicate awards, undo, templates, boss
   attempts, cloud-state validation, content limits, plan quotas, auth boundaries and email builders.
-- **CI** runs tests, lint and a production build on every push.
+- **CI** runs tests, lint, strict TypeScript and a production build on every push, plus a typecheck
+  of the native client.
 - **Lint** is clean; Android TWA configuration is checked against the PWA manifest on every run.
 - The API enforces authentication, payload limits, content limits and per-plan storage quotas; secrets
   never reach the browser bundle.
@@ -237,7 +239,6 @@ screenshots cannot drift away from the schema the product accepts.
 - [ ] Split the 2k-line web shell into per-view modules and a tested sync hook.
 - [ ] Merge conflicts instead of replacing a device's pending edits with the server snapshot.
 - [ ] Finish the native client: Google sign-in, bosses, AI planning.
-- [ ] Make `tsc --noEmit` part of CI and drive the existing type backlog to zero.
 - [ ] End-to-end tests for sign-in, quest lifecycle and offline recovery.
 
 ## License

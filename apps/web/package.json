@@ -11,6 +11,7 @@
     "preview": "vinext start",
     "start": "vinext start",
     "test": "node --experimental-strip-types --test tests/domain.test.ts",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
   },
   "dependencies": {

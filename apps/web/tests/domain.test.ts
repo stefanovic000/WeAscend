@@ -10,6 +10,9 @@ import { detectBossStepLanguage, parseBossStepPlan } from "../app/bossStepPlanne
 import { exceedsQuestStorage, PLAN_LIMITS, resolvePlan } from "../app/plan.ts";
 import { makeInitialState as makeSharedInitialState, materializeRoutineInstances as materializeSharedRoutines, migrateLegacyQuestRecurrence, type Quest as SharedQuest } from "../../../packages/shared/src/index.ts";
 
+// NODE_ENV is declared readonly by the framework types; these tests must toggle it.
+const env = process.env as Record<string, string | undefined>;
+
 test("plans expose the agreed monthly AI allowances", () => {
   assert.deepEqual(PLAN_LIMITS.free, { xpEstimates: 15, xpArguments: 15, bossPlans: 1, questStorage: 500 });
   assert.deepEqual(PLAN_LIMITS.premium, { xpEstimates: 150, xpArguments: 100, bossPlans: 10, questStorage: 1_000 });
@@ -708,7 +711,7 @@ test("English is the primary UI language and Serbian translations interpolate va
 test("Firebase authentication requires a verified token and preserves distinct stable user IDs", async () => {
   const previousNodeEnv = process.env.NODE_ENV;
   const previousProjectId = process.env.FIREBASE_PROJECT_ID;
-  process.env.NODE_ENV = "production";
+  env.NODE_ENV = "production";
   process.env.FIREBASE_PROJECT_ID = "weascend-test";
 
   try {
@@ -749,8 +752,8 @@ test("Firebase authentication requires a verified token and preserves distinct s
       assert.notEqual(first.user.id, second.user.id);
     }
   } finally {
-    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
-    else process.env.NODE_ENV = previousNodeEnv;
+    if (previousNodeEnv === undefined) delete env.NODE_ENV;
+    else env.NODE_ENV = previousNodeEnv;
     if (previousProjectId === undefined) delete process.env.FIREBASE_PROJECT_ID;
     else process.env.FIREBASE_PROJECT_ID = previousProjectId;
   }
@@ -759,7 +762,7 @@ test("Firebase authentication requires a verified token and preserves distinct s
 test("the email-only endpoint can authenticate an unverified Firebase user without weakening normal APIs", async () => {
   const previousNodeEnv = process.env.NODE_ENV;
   const previousProjectId = process.env.FIREBASE_PROJECT_ID;
-  process.env.NODE_ENV = "production";
+  env.NODE_ENV = "production";
   process.env.FIREBASE_PROJECT_ID = "weascend-test";
   const request = new Request("https://weascend.example/api/auth/email", {
     headers: { Authorization: "Bearer unverified" },
@@ -781,8 +784,8 @@ test("the email-only endpoint can authenticate an unverified Firebase user witho
       assert.equal(emailOnly.user.emailVerified, false);
     }
   } finally {
-    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
-    else process.env.NODE_ENV = previousNodeEnv;
+    if (previousNodeEnv === undefined) delete env.NODE_ENV;
+    else env.NODE_ENV = previousNodeEnv;
     if (previousProjectId === undefined) delete process.env.FIREBASE_PROJECT_ID;
     else process.env.FIREBASE_PROJECT_ID = previousProjectId;
   }

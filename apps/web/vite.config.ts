@@ -1,5 +1,5 @@
 import vinext from "vinext";
-import { defineConfig } from "vite";
+import { defineConfig, type UserConfig } from "vite";
 import { fileURLToPath } from "node:url";
 import hostingConfig from "./.openai/hosting.json";
 import { bsonWorkerCompat } from "./build/bson-worker-compat";
@@ -38,7 +38,7 @@ const localBindingConfig = {
     : [],
 };
 
-export default defineConfig(async () => {
+export default defineConfig(async (): Promise<UserConfig> => {
   // Keep Wrangler and Miniflare state project-local. These are non-secret tool
   // settings; application environment belongs in ignored `.env*` files.
   process.env.WRANGLER_WRITE_LOGS ??= "false";

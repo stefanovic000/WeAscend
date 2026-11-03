@@ -37,14 +37,32 @@ function json(body: unknown, status = 200) {
   });
 }
 
-function cleanText(value: unknown, maxLength = MAX_TEXT_LENGTH) {
+function cleanText(value: unknown, maxLength: number = MAX_TEXT_LENGTH) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 }
 
-function normalizeRequest(payload: EstimateRequest) {
+type NormalizedRequest = {
+  title: string;
+  description: string;
+  type: string;
+  difficulty: string;
+  attribute: string;
+  skill: string;
+  parentBoss: string;
+  completionConditions: string;
+  language: "en" | "sr";
+  xpCategory: XpCategory | null;
+  mode: "argue" | "estimate";
+  requestedXp: number;
+  argumentReason: string;
+  previousXp: number;
+  allowedXp: readonly number[] | null;
+};
+
+function normalizeRequest(payload: EstimateRequest): NormalizedRequest | null {
   const title = cleanText(payload.title, CONTENT_LIMITS.questTitle);
   const xpCategory = CATEGORIES.includes(payload.xpCategory as XpCategory) ? payload.xpCategory as XpCategory : null;
-  const mode = payload.mode === "argue" ? "argue" : "estimate";
+  const mode: NormalizedRequest["mode"] = payload.mode === "argue" ? "argue" : "estimate";
   if (!title || (mode === "argue" && !xpCategory)) return null;
 
   const allowedXp = xpCategory ? allowedXpForCategory(xpCategory) : null;
