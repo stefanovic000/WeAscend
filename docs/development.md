@@ -12,7 +12,7 @@ the [README](../README.md); the historical Serbian notes are in [operations.sr.m
 
 ```bash
 npm run install:all        # apps/web + apps/mobile
-cp apps/web/.env.example apps/web/.env.local
+cp apps/web/.env.example apps/web/.env.local    # Windows: copy apps\web\.env.example apps\web\.env.local
 npm run dev                # http://localhost:3000
 ```
 
