@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 780" width="1200" height="780" role="img" aria-label="WeAscend architecture: two clients, one edge API, four data services, local browser storage">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#080914"/>
+      <stop offset="1" stop-color="#0d0b1c"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#866bff" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#866bff" stop-opacity="0"/>
+    </radialGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#4b5280"/>
+    </marker>
+    <style>
+      .f { font-family: 'Segoe UI', 'Inter', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif; }
+      .band { font-size: 11px; font-weight: 700; letter-spacing: 2.6px; fill: #7d84a8; }
+      .h { font-size: 17px; font-weight: 700; fill: #f2f3fa; }
+      .h2 { font-size: 14px; font-weight: 700; fill: #eef0ff; }
+      .s { font-size: 12.5px; fill: #9aa0bf; }
+      .c { font-size: 12px; fill: #c9cde4; }
+      .n { font-size: 11.5px; fill: #8b92b5; }
+      .lbl { font-size: 10.5px; fill: #6f7699; letter-spacing: 0.3px; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="780" fill="url(#bg)"/>
+  <circle cx="600" cy="330" r="420" fill="url(#halo)"/>
+
+  <text class="f band" x="40" y="38">SYSTEM ARCHITECTURE</text>
+  <text class="f s" x="40" y="64" style="font-size:15px">Two clients, one shared domain model, one append-only XP ledger.</text>
+
+  <!-- CLIENTS -->
+  <text class="f band" x="1160" y="108" text-anchor="end">CLIENTS</text>
+
+  <rect x="40" y="120" width="530" height="104" rx="8" fill="#0f1122" stroke="#2a3050"/>
+  <rect x="40" y="120" width="4" height="104" rx="2" fill="#866bff"/>
+  <text class="f h" x="66" y="152">Web app + PWA</text>
+  <text class="f c" x="66" y="176">Next.js 16 App Router · React 19 · Vite (vinext)</text>
+  <text class="f n" x="66" y="197">Installable PWA · Android TWA wrapper · offline read-only</text>
+
+  <rect x="600" y="120" width="560" height="104" rx="8" fill="#0f1122" stroke="#2a3050"/>
+  <rect x="600" y="120" width="4" height="104" rx="2" fill="#32d6c5"/>
+  <text class="f h" x="626" y="152">Native app · Expo (in progress)</text>
+  <text class="f c" x="626" y="176">Expo SDK 57 · React Native 0.86 · expo-router</text>
+  <text class="f n" x="626" y="197">Android + iOS, same REST contract, AsyncStorage cache</text>
+
+  <line x1="305" y1="224" x2="305" y2="266" stroke="#4b5280" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="880" y1="224" x2="880" y2="266" stroke="#4b5280" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text class="f lbl" x="313" y="252">HTTPS · Bearer ID token</text>
+
+  <!-- EDGE -->
+  <text class="f band" x="1160" y="284" text-anchor="end">EDGE API — CLOUDFLARE WORKER</text>
+
+  <rect x="40" y="296" width="1120" height="188" rx="10" fill="#0e1020" stroke="#866bff" stroke-opacity="0.45"/>
+  <text class="f h2" x="68" y="326" style="fill:#b5a7ff">Routes</text>
+  <text class="f h2" x="640" y="326" style="fill:#b5a7ff">Every request</text>
+
+  <g class="f c">
+    <rect x="68" y="342" width="540" height="30" rx="6" fill="#141731" stroke="#252b4d"/>
+    <text x="80" y="362">PUT /api/state — full snapshot + revision check</text>
+
+    <rect x="68" y="380" width="540" height="30" rx="6" fill="#141731" stroke="#252b4d"/>
+    <text x="80" y="400">POST /api/quests · /api/growth — atomic commands</text>
+
+    <rect x="68" y="418" width="540" height="30" rx="6" fill="#141731" stroke="#252b4d"/>
+    <text x="80" y="438">POST /api/xp-estimate · /api/boss-steps — AI</text>
+  </g>
+
+  <g class="f n">
+    <circle cx="646" cy="347" r="2.5" fill="#32d6c5"/>
+    <text x="658" y="351">ID token verified against Google JWKS</text>
+    <circle cx="646" cy="377" r="2.5" fill="#32d6c5"/>
+    <text x="658" y="381">UID always read from the token, never the body</text>
+    <circle cx="646" cy="407" r="2.5" fill="#32d6c5"/>
+    <text x="658" y="411">Whole state normalized, content limits enforced</text>
+    <circle cx="646" cy="437" r="2.5" fill="#32d6c5"/>
+    <text x="658" y="441">409 on revision mismatch, 422 on plan quota</text>
+    <circle cx="646" cy="467" r="2.5" fill="#32d6c5"/>
+    <text x="658" y="471">no-store, no cookies → no CSRF surface</text>
+  </g>
+
+  <!-- arrows edge to services -->
+  <line x1="172" y1="484" x2="172" y2="524" stroke="#4b5280" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="457" y1="484" x2="457" y2="524" stroke="#4b5280" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="742" y1="484" x2="742" y2="524" stroke="#4b5280" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="1027" y1="484" x2="1027" y2="524" stroke="#4b5280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- SERVICES -->
+  <text class="f band" x="1160" y="516" text-anchor="end">SERVICES</text>
+
+  <g>
+    <rect x="40" y="528" width="265" height="104" rx="8" fill="#0f1122" stroke="#2a3050"/>
+    <text class="f h2" x="62" y="558">MongoDB Atlas</text>
+    <text class="f n" x="62" y="580">user_states_v2 · users_v2</text>
+    <text class="f n" x="62" y="600">ai_usage_v2 · auth_email_usage_v2</text>
+
+    <rect x="325" y="528" width="265" height="104" rx="8" fill="#0f1122" stroke="#2a3050"/>
+    <text class="f h2" x="347" y="558">Firebase Auth</text>
+    <text class="f n" x="347" y="580">Google + email/password</text>
+    <text class="f n" x="347" y="600">unverified users blocked</text>
+
+    <rect x="610" y="528" width="265" height="104" rx="8" fill="#0f1122" stroke="#2a3050"/>
+    <text class="f h2" x="632" y="558">DeepSeek</text>
+    <text class="f n" x="632" y="580">JSON mode, temperature 0</text>
+    <text class="f n" x="632" y="600">output re-validated server-side</text>
+
+    <rect x="895" y="528" width="265" height="104" rx="8" fill="#0f1122" stroke="#2a3050"/>
+    <text class="f h2" x="917" y="558">Resend</text>
+    <text class="f n" x="917" y="580">branded verification / reset</text>
+    <text class="f n" x="917" y="600">Firebase one-time action codes</text>
+  </g>
+
+  <!-- BROWSER STORAGE -->
+  <text class="f band" x="1160" y="682" text-anchor="end">LOCAL STORAGE</text>
+
+  <rect x="40" y="694" width="360" height="62" rx="8" fill="#0c0e1c" stroke="#232847"/>
+  <text class="f c" x="60" y="720">IndexedDB — last confirmed state per user</text>
+  <text class="f lbl" x="60" y="740">keyed user:&lt;uid&gt; · read-only view when offline</text>
+
+  <rect x="420" y="694" width="360" height="62" rx="8" fill="#0c0e1c" stroke="#232847"/>
+  <text class="f c" x="440" y="720">Service worker — app shell only</text>
+  <text class="f lbl" x="440" y="740">/api/* is never cached</text>
+
+  <rect x="800" y="694" width="360" height="62" rx="8" fill="#0c0e1c" stroke="#232847"/>
+  <text class="f c" x="820" y="720">localStorage — language and flags</text>
+  <text class="f lbl" x="820" y="740">contains no personal data</text>
+</svg>

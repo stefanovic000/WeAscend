@@ -1,0 +1,12 @@
+{
+  "name": "weascend-screenshot-tools",
+  "private": true,
+  "type": "module",
+  "description": "Dev-only Playwright helper that renders the documentation screenshots against a mocked API.",
+  "scripts": {
+    "capture": "node --experimental-strip-types --no-warnings capture.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.56.1"
+  }
+}

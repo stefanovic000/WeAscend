@@ -1,7 +1,26 @@
 {
-  "name": "weascend-monorepo",
+  "name": "weascend",
   "version": "0.1.0",
   "private": true,
+  "description": "WeAscend — a quest-based personal progress system with an append-only XP ledger, ranks, bosses and an optional AI XP advisor.",
+  "homepage": "https://weascend.wesystemlabs.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stefanovic000/weascend.git"
+  },
+  "author": "Uroš Stefanović",
+  "license": "MIT",
+  "keywords": [
+    "nextjs",
+    "react",
+    "typescript",
+    "expo",
+    "cloudflare-workers",
+    "mongodb",
+    "firebase-auth",
+    "pwa",
+    "gamification"
+  ],
   "scripts": {
     "install:all": "npm --prefix apps/web install && npm --prefix apps/mobile install",
     "dev": "npm --prefix apps/web run dev",
@@ -17,6 +36,7 @@
     "mobile:ios": "npm --prefix apps/mobile run ios",
     "mobile:typecheck": "npm --prefix apps/mobile run typecheck",
     "android:check": "node scripts/android-check.mjs",
-    "android:assetlinks": "node scripts/android-assetlinks.mjs"
+    "android:assetlinks": "node scripts/android-assetlinks.mjs",
+    "docs:screenshots": "npm --prefix docs/demo run capture"
   }
 }

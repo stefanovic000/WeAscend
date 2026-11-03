@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 280" width="1280" height="280" role="img" aria-label="WeAscend — personal progress system">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#070812"/>
+      <stop offset="0.55" stop-color="#0a0b18"/>
+      <stop offset="1" stop-color="#120f24"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#866bff" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#866bff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="rule" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#866bff"/>
+      <stop offset="1" stop-color="#32d6c5"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#866bff" stroke-opacity="0.07" stroke-width="1"/>
+    </pattern>
+    <style>
+      .t { font-family: 'Segoe UI', 'Inter', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif; }
+      .word { font-size: 58px; font-weight: 700; letter-spacing: 3px; fill: #f2f3fa; }
+      .tag { font-size: 19px; fill: #9aa0bf; letter-spacing: 0.2px; }
+      .eyebrow { font-size: 12px; fill: #32d6c5; letter-spacing: 3.6px; font-weight: 600; }
+      .chip { font-size: 13px; fill: #c9cde4; letter-spacing: 0.4px; }
+    </style>
+  </defs>
+
+  <rect width="1280" height="280" fill="url(#bg)"/>
+  <rect width="1280" height="280" fill="url(#grid)"/>
+  <circle cx="1060" cy="60" r="320" fill="url(#glow)"/>
+
+  <g transform="translate(84,118)">
+    <rect x="0" y="0" width="62" height="62" rx="4" fill="#0d0f1c" stroke="#866bff" stroke-width="1.5" transform="rotate(45 31 31)"/>
+    <text class="t" x="31" y="43" text-anchor="middle" font-size="30" font-weight="700" fill="#b5a7ff">W</text>
+  </g>
+
+  <text class="t eyebrow" x="186" y="104">PERSONAL PROGRESS SYSTEM</text>
+  <text class="t word" x="182" y="172">WeAscend</text>
+  <text class="t tag" x="186" y="207">Plan concrete work. Clear it. Watch skills, XP and rank grow.</text>
+
+  <rect x="186" y="228" width="120" height="2" fill="url(#rule)"/>
+
+  <g>
+    <text class="t" x="1196" y="238" text-anchor="end" font-size="13" fill="#5f6787" letter-spacing="0.6">weascend.wesystemlabs.com</text>
+  </g>
+</svg>

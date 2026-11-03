@@ -68,3 +68,16 @@ next-env.d.ts
 
 # Locally generated install packages
 /builds/*.apk
+
+# Screenshot tooling and render previews
+/docs/demo/node_modules/
+/.preview-*.png
+
+# Local agent attachments
+/.codex-remote-attachments/
+/.agents/
+
+
+# TypeScript incremental build info
+*.tsbuildinfo
+

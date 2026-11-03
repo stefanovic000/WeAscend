@@ -1,275 +1,245 @@
-# WeAscend — Personal Progress System
+<p align="center">
+  <img src="docs/banner.svg" alt="WeAscend — personal progress system" width="100%">
+</p>
 
-Cloud-synced PWA za lični napredak inspirisana „Solo Leveling“ sistemom. Engleski je podrazumevani jezik, a srpski se bira u Settings. Svaki Firebase nalog ima sopstveno MongoDB stanje; IndexedDB čuva odvojenu poslednju potvrđenu verziju po nalogu samo za offline pregled.
+<h1 align="center">WeAscend</h1>
 
-Produkcija: [WeAscend](https://weascend.wesystemlabs.com)
+<p align="center">
+  <em>Turn personal goals into a quest log. Clear a quest, earn XP once, watch the rank grow.</em>
+</p>
 
-## Struktura repozitorijuma
+<p align="center">
+  <a href="https://github.com/stefanovic000/weascend/actions/workflows/ci.yml"><img src="https://github.com/stefanovic000/weascend/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/license-MIT-866bff" alt="MIT">
+  <img src="https://img.shields.io/badge/node-%E2%89%A522.13-339933" alt="Node 22.13+">
+  <img src="https://img.shields.io/badge/Next.js-16-black" alt="Next.js 16">
+  <img src="https://img.shields.io/badge/React-19-61dafb" alt="React 19">
+  <img src="https://img.shields.io/badge/Expo-SDK%2057-000020" alt="Expo SDK 57">
+  <img src="https://img.shields.io/badge/edge-Cloudflare%20Workers-f38020" alt="Cloudflare Workers">
+</p>
 
-- `apps/web/` — postojeća produkciona web/PWA aplikacija, njeni API endpointi i Sites konfiguracija.
-- `apps/mobile/` — novi Expo/React Native klijent za Android i iOS, trenutno u početnoj razvojnoj fazi.
-- `packages/shared/` — budući zajednički tipovi, validacija i XP pravila. Produkciona pravila se premeštaju postepeno uz testove, ne odjednom.
-- `android-twa/` — prethodni Android web omotač, zadržan dok ga native aplikacija ne zameni.
-- `scripts/` — provere koje povezuju web manifest sa starim Android omotačem.
+---
 
-Mobilni razvoj je izolovan na Git grani `codex/mobile-app`; postojeća objavljena web verzija se time ne menja.
+**WeAscend** is a personal progress system built around one idea: effort should be recorded as a
+transaction, not as a number you can edit. You plan a quest, define a measurable success condition,
+and when you clear it the system writes **one** XP transaction into an append-only ledger. That
+ledger is the only source of truth for your level, rank, attributes and skills — which is why undo,
+history and statistics are always exact.
 
-## Osnovno ponašanje
+It is a real product: an installable PWA in production, a REST API on the edge, an Expo client in
+progress, and a domain model that both clients share.
 
-- Novi nalog počinje potpuno prazan: Level 1, 0 XP, bez atributa, skillova i questova.
-- Vođeni spotlight tutorijal se automatski prikazuje jednom po nalogu: prelazi kroz Dashboard, Attributes & Skills, kalendar, pravljenje questa, AI XP, Bosses i History, dok jasno ističe kontrolu o kojoj govori. Probni quest se nikada ne čuva, a tutorijal može ponovo da se pokrene iz Settings.
-- Firebase Authentication podržava Google i email/password prijavu.
-- Email/password nalog mora potvrditi email pre pristupa podacima.
-- MongoDB je jedini cloud izvor istine; IndexedDB je cache odvojen po Firebase UID-u.
-- Kada cloud nije dostupan, aplikacija je READ-ONLY: podaci mogu da se pregledaju, ali ne i menjaju.
-- XP se jednom evidentira u transakcionoj istoriji i pripisuje globalnom nivou, atributu i skillu.
-- Revizije sprečavaju da jedan uređaj neprimetno pregazi novije stanje sa drugog uređaja.
-- Engleski je glavni jezik; srpski se bira u **Settings → Language**.
+> **Status:** closed beta at [weascend.wesystemlabs.com](https://weascend.wesystemlabs.com). Billing is not enabled;
+> AI features are optional and degrade gracefully when no API key is configured.
 
-## Pokretanje
+<p align="center">
+  <img src="docs/screenshots/01-dashboard.png" alt="Dashboard" width="100%">
+</p>
 
-Potrebni su Node.js 22.13+ i npm.
+## Why this project is not just a CRUD app
 
-```bash
-npm run install:all
-npm run dev
+- **XP is derived, never stored.** Levels and ranks are computed from the transaction ledger, so a
+  completed quest can never award XP twice and undo reverses a transaction instead of deleting history.
+- **The server re-validates everything.** A Firebase ID token is verified against Google's JWKS, the
+  UID is always taken from the token, and the full state is structurally re-checked before it is written.
+- **Offline is read-only by design.** IndexedDB keeps the last confirmed snapshot per account for
+  browsing; every mutation is blocked while the cloud is unreachable.
+- **Concurrency is explicit.** Each write carries a revision; a stale device gets `409` and the server
+  snapshot instead of silently overwriting newer work.
+- **AI only suggests.** DeepSeek returns a JSON XP estimate which is validated against hard XP
+  allow-lists on the server — the model can never invent a reward that the rules do not allow.
+
+## Screenshots
+
+| Quest planner | Attributes & skills |
+| --- | --- |
+| <img src="docs/screenshots/02-quests.png" alt="Quest planner"> | <img src="docs/screenshots/03-growth.png" alt="Attributes and skills"> |
+| *Calendar, routines and reusable templates* | *XP rolls up per attribute and skill* |
+
+| Boss quests | History & statistics |
+| --- | --- |
+| <img src="docs/screenshots/04-bosses.png" alt="Boss quests"> | <img src="docs/screenshots/05-history.png" alt="History and statistics"> |
+| *Preparation steps, attempts and a clear condition* | *Every XP has a source, a time and a state* |
+
+| Quest editor | Settings & plan usage |
+| --- | --- |
+| <img src="docs/screenshots/07-quest-editor.png" alt="Quest editor"> | <img src="docs/screenshots/06-settings.png" alt="Settings and plan usage"> |
+| *Rules-based XP with an optional AI estimate* | *Language, account, tutorial and plan limits* |
+
+<table>
+<tr>
+<td width="34%" align="center"><img src="docs/screenshots/08-mobile-dashboard.png" alt="Mobile dashboard" width="280"><br><em>Same PWA, mobile layout</em></td>
+<td width="34%" align="center"><img src="docs/screenshots/09-mobile-quests.png" alt="Mobile quest planner" width="280"><br><em>Calendar and routines on a phone</em></td>
+<td width="32%" valign="middle">
+<strong>One codebase, two form factors.</strong><br><br>
+The web client is a responsive PWA with an installable shell, offline read-only mode and a bottom
+navigation on phones. A Google Play TWA wrapper reuses the same build, and a native Expo client is
+being developed against the same REST contract.
+</td>
+</tr>
+</table>
+
+## Architecture
+
+<p align="center">
+  <img src="docs/system-architecture.svg" alt="System architecture" width="100%">
+</p>
+
+| Layer | Choice | Why |
+| --- | --- | --- |
+| Web client | Next.js 16 App Router + React 19, built with Vite (`vinext`) | Server components for static pages, one deployable for UI + API |
+| Runtime | Cloudflare Workers | Global edge, no server to keep alive |
+| Data | MongoDB Atlas | One document per account: the whole state plus a revision |
+| Auth | Firebase Auth + `jose` JWKS verification | Google and email/password without running an auth server |
+| AI | DeepSeek chat completions, JSON mode | XP estimates and boss-step drafts, always re-validated |
+| Mail | Resend + Firebase Admin service account | Branded verification and reset emails with one-time codes |
+| Native | Expo SDK 57 / React Native 0.86 | Android and iOS against the same API |
+
+### The domain model
+
+`AppState` is a small, deliberately boring document:
+
+```ts
+type AppState = {
+  version: 1;
+  attributes: Attribute[];      // "Mind", "Body", "Craft"
+  skills: Skill[];              // nested under an attribute
+  quests: Quest[];              // active / completed / failed / archived
+  transactions: XpTransaction[]; // append-only, reversible via reversedAt
+  bossAttempts?: BossAttempt[];
+  questTemplates?: QuestTemplate[];
+  settings: Settings;           // XP formula inputs, ranks, UI preferences
+  levelEvents: { type: "level" | "rank"; value: string; createdAt: string }[];
+};
 ```
 
-Otvori adresu koju terminal prikaže, podrazumevano `http://localhost:3000`.
+`apps/web/app/domain.ts` is a pure reducer module — no React, no IO, no clock — so the same rules run
+in the browser (optimistic UI) and on the server (authoritative write), and the entire rule set is
+covered by unit tests.
 
-Na Windows-u možeš koristiti i `start.bat`.
+### Two write paths, on purpose
 
-Početna mobilna aplikacija:
+| Path | Used for | Guarantees |
+| --- | --- | --- |
+| `PUT /api/state` | Full snapshot sync, debounced after local edits | Structural validation, content limits, plan quota, revision check |
+| `POST /api/quests` · `/api/growth` | Atomic commands (create, complete, archive, boss attempt) | The server re-applies the transition to its own copy, then compares revisions |
 
-```bash
-npm run mobile:android
-```
+The snapshot path keeps the client simple and lets it work optimistically; the command path gives
+strict per-action semantics. Migrating the remaining snapshot mutations onto commands is on the
+roadmap — see below.
 
-Za proveru TypeScript osnove bez pokretanja emulatora:
+## How XP works
 
-```bash
-npm run mobile:typecheck
-```
+XP is chosen by category, never by difficulty. Difficulty and quest type never multiply a reward.
 
-Web komande sa root-a prosleđuju se projektu u `apps/web/`. Za Sites hosting i direktan rad na web klijentu koristi se taj folder kao radni direktorijum.
+| Category | What it rewards | Scale |
+| --- | --- | --- |
+| `growth` | Focused work | 0 / 5 / 10 / 20 / 30 / 40 by minutes, +0 / 5 / 10 for a concrete output, capped at 50 |
+| `maintenance` | Routine upkeep | 0 / 5 / 10 |
+| `result` | A completed deliverable | 0 / 10 / 20 / 30 |
+| `boss` | Real tests and milestones | 0 / 75 / 100 / 150 / 200 / 300 / 400 |
 
-Provere:
+- A level costs `100 + 25 × (level − 1)` XP; ranks sit at levels 1 / 20 / 40 / 60 / 80 / 100 (E → S).
+- One quest instance can award XP **once**; undo marks the transaction reversed.
+- Deleting a quest keeps its legitimately earned transaction as an anonymous historical record, so the
+  ledger always adds up.
+- Skills and attributes with history are soft-deleted rather than removed.
 
-```bash
-npm test
-npm run lint
-npm run build
-npm run preview
-```
+## Features
 
-## Lokalna konfiguracija
+**Quests** — calendar planner, long-press a day to plan, six quest types, measurable completion
+conditions, deadlines, notes, archive/restore, six filters, JSON export and import.
 
-Kopiraj `apps/web/.env.example` u `apps/web/.env.local`:
+**Progression** — append-only XP ledger, level and rank-up ceremonies, per-attribute and per-skill
+rollups, 14-day activity chart, clear rate, allocation breakdown.
 
-```dotenv
-MONGODB_URI=mongodb+srv://USER:PASSWORD@CLUSTER.mongodb.net/?retryWrites=true&w=majority
-MONGODB_DB=ascend
+**Bosses** — a boss is a quest with a gate, a clear condition and preparation steps that earn their
+own XP; attempts are recorded with results; an optional AI planner drafts up to 12 editable steps.
 
-FIREBASE_PROJECT_ID=weascend-project
-FIREBASE_API_KEY=Firebase-Web-API-key
-FIREBASE_AUTH_DOMAIN=weascend-project.firebaseapp.com
-FIREBASE_APP_ID=Firebase-Web-App-ID
-FIREBASE_MESSAGING_SENDER_ID=Firebase-Sender-ID
+**Templates** — save a quest as a routine with a daily / weekly / interval schedule; instances are
+materialised per day and stay independent, so editing a template never rewrites history.
 
-# Uključi tek kada su sve vrednosti podešene.
-AUTH_EMAIL_PROVIDER=resend
-RESEND_API_KEY=re_...
-AUTH_EMAIL_FROM=WeAscend <account@weascend.example>
-APP_BASE_URL=https://weascend.wesystemlabs.com
-FIREBASE_ADMIN_CLIENT_EMAIL=firebase-adminsdk-...@weascend-project.iam.gserviceaccount.com
-FIREBASE_ADMIN_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
-AUTH_EMAIL_RATE_LIMIT_SECRET=duga-nasumicna-tajna
+**Accounts** — Google and email/password sign-in, email verification, branded verification and reset
+emails, account deletion from the app and from a public `/delete-account` URL, per-account local cache.
 
-ANDROID_APPLICATION_ID=com.wesystemlabs.weascend
+**AI (optional)** — XP estimate, a reasoned appeal when you disagree, and boss-step drafts. Every
+response is schema-checked; prompts treat quest text as data, never as instructions.
 
-DEEPSEEK_API_KEY=sk-...
-DEEPSEEK_MODEL=deepseek-v4-flash
+**Polish** — 13-step guided tour with live highlighting, English and Serbian, haptics, reduced-motion
+support, PWA install, read-only offline mode.
 
-AI_LIMITS_ENABLED=false
-AI_XP_DAILY_LIMIT=20
-AI_BOSS_STEPS_DAILY_LIMIT=5
-AI_COOLDOWN_SECONDS=10
-PREMIUM_BETA_ACCESS=true
-```
-
-Važno:
-
-- `.env.local` se ne šalje na hosting.
-- `MONGODB_URI`, `DEEPSEEK_API_KEY`, `RESEND_API_KEY`, Firebase Admin ključ i rate-limit secret su server-only tajne.
-- Nikada ih ne stavljaj u `VITE_*`, `NEXT_PUBLIC_*`, Git, JSON backup ili browser kod.
-- Firebase web konfiguracija identifikuje projekat i nije Firebase Admin credential, ali se i dalje učitava kroz environment konfiguraciju.
-- Bez Firebase konfiguracije lokalni development koristi lokalnog test korisnika. Produkcija nema taj bypass.
-- Bez MongoDB-a aplikacija može prikazati cache, ali ne dozvoljava trajne izmene.
-
-## Firebase Authentication
-
-1. U [Firebase Console](https://console.firebase.google.com/) napravi WeAscend projekat.
-2. U **Authentication → Sign-in method** uključi Google i Email/Password.
-3. U **Project settings → Your apps** dodaj Web app.
-4. Kopiraj `projectId`, `apiKey`, `authDomain`, `appId` i `messagingSenderId` u environment vrednosti.
-5. U Authentication settings dodaj lokalni i produkcioni domen u **Authorized domains**.
-6. Uključi email-enumeration protection.
-7. Za Resend migraciju napravi Firebase service account sa pravom `firebaseauth.users.sendEmail` i sačuvaj njegov email/private key samo u serverskim environment vrednostima.
-8. U Resend-u potvrdi domen, napravi server-only API ključ i koristi adresu tog domena u `AUTH_EMAIL_FROM`.
-9. Postavi `APP_BASE_URL` na tačan javni HTTPS origin, bez putanje. Linkovi se ne grade iz dolaznog Host headera.
-10. Tek nakon probnog verification i reset emaila postavi `AUTH_EMAIL_PROVIDER=resend`. Bez tog flag-a aplikacija privremeno koristi Firebase email slanje.
-11. Firebase Android app je registrovan sa trajnim package ID-em `com.wesystemlabs.weascend`; signing SHA fingerprinti se dodaju kada nastane prvi ključ.
-
-Klijent šalje Firebase ID token serveru preko HTTPS-a. Server proverava potpis, issuer, audience/projekat, vreme važenja, `auth_time`, stabilni UID i potvrđen email. Browser nikada ne bira `userId`.
-
-Kod prilagođenih poruka Firebase i dalje pravi jednokratni action code, dok Resend šalje WeAscend HTML i plain-text email. Verification endpoint prihvata i bezbedno proverava token još nepotvrđenog korisnika; ostali privatni API endpointi i dalje zahtevaju potvrđen email. Nepotvrđena Firebase sesija ostaje samo na uređaju na kojem je započeta registracija i nema pristup privatnim API-jima. Ako se verifikacioni link otvori u istom browseru i pripada istoj email adresi, aplikacija osvežava potvrđeni token i automatski ulazi; drugi browser ili drugi nalog i dalje zahtevaju prijavu. Password-reset odgovor je isti bez obzira na to da li nalog postoji, a slanje je ograničeno cooldown-om i dnevnim limitom. API ključ, Firebase private key i sadržaj emaila ne ulaze u browser niti MongoDB.
-
-## MongoDB Atlas
-
-Napravi poseban database korisnički nalog sa minimalnim pravima nad bazom `ascend`. Cloudflare Worker nema stabilnu izlaznu IP adresu, pa besplatan Atlas setup može zahtevati `0.0.0.0/0`. Rizik se ograničava snažnom database lozinkom, minimalnim pravima, server-only URI-jem i autentifikacijom svakog API zahteva.
-
-Nova multi-user verzija koristi:
+## Repository layout
 
 ```text
-Database:    ascend
-Collections: user_states_v2
-             users_v2
-             ai_usage_v2
-             auth_email_usage_v2
+weascend/
+├── apps/web/            Next.js PWA + REST API (Cloudflare Worker)
+│   ├── app/             routes, domain model, UI, i18n
+│   ├── server/          auth, Mongo, AI protection, email
+│   ├── tests/           46 node:test cases over the domain and server rules
+│   └── public/          manifest, service worker, icons
+├── apps/mobile/         Expo / React Native client (in progress)
+├── packages/shared/     Types and shared helpers for the native client
+├── android-twa/         Bubblewrap wrapper for Google Play (legacy path)
+├── docs/                architecture, screenshots, demo tooling
+└── scripts/             Android consistency and asset-link checks
 ```
 
-Kolekcije korisničkog stanja su indeksirane stabilnim Firebase `userId`-em. `auth_email_usage_v2` čuva samo hashovan rate-limit ključ, vrstu poruke, brojač i vreme; ne čuva adresu, action link ni sadržaj emaila i automatski ističe nakon 48 sati. Stara owner-only kolekcija `user_states` je trajno obrisana 5. avgusta 2026. Nova verzija ne pokušava migraciju starih podataka i svaki Firebase nalog dobija zasebno, prazno stanje.
+## Getting started
 
-## Sync i privatnost između korisnika
-
-- Svaki server-side upit koristi UID iz verifikovanog tokena.
-- Klijent ne šalje niti bira vlasnički UID.
-- Export sadrži samo stanje trenutno prijavljenog korisnika.
-- Import menja samo stanje trenutno prijavljenog korisnika.
-- Lokalni cache koristi ključ `user:<firebase-uid>` i zato se ne meša između naloga.
-- Legacy IndexedDB baza se uklanja pri prvom pokretanju nove verzije.
-- API odgovori imaju `Cache-Control: no-store, private`.
-- Service worker ne kešira `/api/*` zahteve.
-
-## Brisanje naloga i privatnost
-
-- **Settings → Account → Delete account** briše questove, beleške, XP istoriju, skillove, atribute, bossove, šablone, AI usage zapis, profil i Firebase Auth nalog.
-- `/delete-account` pruža isti tok iz browsera čak i kada PWA više nije instalirana.
-- `/privacy` objašnjava koje podatke koriste Firebase, MongoDB, lokalni cache i AI servis.
-- `/terms` pruža javno dostupne uslove korišćenja za testere i budući Play listing.
-- Brisanje zahteva potvrdu i ne može se poništiti.
-- JSON export treba napraviti pre brisanja ako korisnik želi privatnu kopiju.
-
-## AI zaštita
-
-DeepSeek ostaje opcioni AI advisor. Quest sadržaj se šalje samo kada korisnik eksplicitno zatraži XP procenu, prigovor ili generisanje Boss koraka.
-
-Zaštita po korisniku je implementirana, ali je za inicijalne testere isključena:
-
-```dotenv
-AI_LIMITS_ENABLED=false
-```
-
-Kada se uključi, sistem podržava odvojeni dnevni limit za XP procene i Boss korake, kao i cooldown između zahteva. Autentifikacija, veličina zahteva i server-side zaštita API ključa ostaju aktivni bez obzira na ovaj flag.
-
-## Planovi tokom zatvorene bete
-
-Važne razlike moraju ostati definisane u centralnom `PLAN_LIMITS` katalogu i vidljive korisnicima u **Settings → Plan & Usage**.
-
-| Mogućnost | WeAscend Free | Premium |
-| --- | ---: | ---: |
-| XP procene | 15 mesečno | 150 mesečno |
-| XP žalbe | 15 mesečno | 100 mesečno |
-| AI Boss planovi | 1 mesečno | 10 mesečno |
-| Sačuvani questovi | 500 | 1.000 |
-
-- `PREMIUM_BETA_ACCESS=true` daje svim prijavljenim testerima besplatan Premium pristup bez naplate.
-- Quest kapacitet se proverava na klijentu radi jasnog UI-ja i na serveru radi stvarne zaštite. Smanjenje plana nikada ne briše stare questove; korisnik iznad limita može da ih menja ili briše, ali ne i da pravi nove.
-- `AI_LIMITS_ENABLED=false` znači da su AI kvote tokom testiranja prikazane radi transparentnosti, ali se još ne primenjuju.
-- Plan se određuje na serveru i ne ulazi u lokalni AppState ili JSON backup, pa ga klijent ne može sam promeniti.
-- Billing, upgrade dugmad i paywall još nisu aktivni. Personal AI Memory, Smart Daily Plan i Weekly Ascension Report ostaju za kasnije faze.
-
-## Offline režim
-
-Kada internet ili cloud nisu dostupni:
-
-- Dashboard, kalendar, Growth, Bosses, History i Settings mogu da se pregledaju;
-- kreiranje, menjanje, završavanje, arhiviranje, import, reset i brisanje nisu dozvoljeni;
-- export poslednje potvrđene kopije je dozvoljen;
-- neuspešan cloud upis se vraća na poslednju potvrđenu verziju.
-
-## Questovi, XP i istorija
-
-- Jedna quest instanca može dati XP samo jednom.
-- Undo poništava samo transakciju konkretnog questa.
-- Brisanje questa uklanja njegov sadržaj i belešku, ali već legitimno zarađena transakcija ostaje kao anoniman istorijski zapis.
-- Skill ili atribut bez istorije briše se potpuno; onaj sa istorijskim XP-em radi soft-delete da bi ledger ostao tačan.
-- Archive sklanja quest iz podrazumevanog prikaza bez brisanja sadržaja ili XP-a.
-- Quest Templates prave zasebnu instancu po datumu; obično ponavljanje se podešava samo kroz Templates da ne bi postojala dva konkurentna sistema.
-- Boss priprema zarađuje sopstveni XP; Boss Clear nagrada ostaje odvojena.
-
-## Play Store priprema
-
-- Kompanija: WeSystemLabs
-- Trajni Android application ID: `com.wesystemlabs.weascend`
-- Login: Google kao glavni, email/password kao fallback i reviewer pristup.
-- Login i registracija imaju odvojene, stalno vidljive tabove. Email registracija prikazuje minimalno pravilo lozinke i konkretne Firebase greške umesto jedne opšte poruke.
-- Play reviewer nalog mora biti trajan, bez OTP-a, sa engleskim uputstvom i primerima podataka.
-- Privacy Policy i spoljni account-deletion URL moraju biti uneti u Play Console.
-- Android TWA projekat za API 36 nalazi se u `android-twa/`; notifikacije su namerno isključene za prvu test verziju.
-- Potpisani lokalni test APK je spreman, a njegov testni SHA fingerprint je povezan sa domenom kroz Digital Asset Links. Testni ključ se nikada ne koristi za Play izdanje.
-- `npm run android:check` proverava da PWA i Android konfiguracija ostanu usklađene.
-- `npm run android:assetlinks -- "SHA-256-FINGERPRINT"` bezbedno generiše javni Digital Asset Links fajl; signing ključ nikada ne ide u Git.
-- Detaljan redosled za prvi test APK nalazi se u `android-twa/README.md`.
-
-## Troubleshooting
-
-### Login ekran kaže da autentifikacija nije podešena
-
-Proveri svih pet `FIREBASE_*` environment vrednosti i napravi novi deployment. Zatim proveri da li je domen dodat u Firebase Authorized domains.
-
-### Google dugme ostane zaključano posle zatvaranja popup-a
-
-Login ekran otključava Google dugme čim se browser vrati iz popup-a, uz rezervno otključavanje posle pet sekundi. Svaki novi pokušaj poništava zakašnjeli UI rezultat prethodnog pokušaja, pa korisnik može bezbedno pokušati ponovo.
-
-### Email/password korisnik ne može da uđe
-
-Korisnik mora kliknuti verification link. Nova poruka za potvrdu se šalje pri sledećem pokušaju prijave.
-
-WeAscend ima sopstvenu javnu `/email-action` stranicu za Firebase email akcije. Ona obrađuje potvrdu emaila, reset lozinke i vraćanje promenjene email adrese, sa engleskim ili srpskim tekstom prema jeziku email poruke. Firebase kod ostaje u URL-u samo tokom te akcije i ne upisuje se u MongoDB niti u aplikacioni state.
-
-Kada je Resend aktiviran, server traži jednokratni Firebase kod, ugrađuje ga u fiksni WeAscend `/email-action` link i šalje naš brendirani email. Ako custom provider još nije potpuno podešen, klijent koristi postojeći Firebase email kao migracioni fallback. Operativna Resend greška se ne prebacuje tiho na Firebase, kako korisnik ne bi dobijao dve različite poruke.
-
-### Cloud je READ-ONLY
-
-Proveri MongoDB URI, Atlas cluster, database korisnika i Network Access. Zatim proveri da li autentifikovani zahtev dobija važeći Firebase token.
-
-### Lokalno radi, produkcija ne radi
-
-`.env.local` i produkcione environment vrednosti su odvojene. Lokalni development može koristiti bypass kada Firebase nije podešen; produkcija namerno ne može.
-
-### Stari UI posle deploymenta
-
-Uradi hard refresh, potpuno zatvori instaliranu PWA i ponovo je pokreni. Brisanje site podataka koristi samo kao poslednju opciju.
-
-## Testovi
-
-Automatski testovi proveravaju prazno početno stanje, XP formulu, rank pragove, dupli XP, undo, template logiku, Boss pokušaje, cloud validaciju i Firebase granicu između neprijavljenog, nepotvrđenog i dva različita potvrđena korisnika.
-
-Pre produkcije obavezno pokreni:
+Requires **Node.js 22.13+**.
 
 ```bash
-npm test
-npm run lint
-npm run build
+npm run install:all     # installs apps/web and apps/mobile
+cp apps/web/.env.example apps/web/.env.local
+npm run dev             # http://localhost:3000
 ```
 
-## Dokumentacija
+Without Firebase configuration the app runs in local development mode with a test identity and an
+IndexedDB-only cache; without MongoDB it stays read-only. Both paths are intentionally available in
+development only.
 
-- [Firebase Authentication for Web](https://firebase.google.com/docs/auth/web/start)
-- [Firebase ID token verification](https://firebase.google.com/docs/auth/admin/verify-id-tokens)
-- [Firebase Auth REST account deletion](https://firebase.google.com/docs/reference/rest/auth)
-- [MongoDB Atlas IP Access List](https://www.mongodb.com/docs/atlas/security/add-ip-address-to-list/)
-- [DeepSeek Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion)
-- [Android Trusted Web Activities](https://developer.android.com/develop/ui/views/layout/webapps/trusted-web-activities)
-- [Bubblewrap CLI](https://github.com/GoogleChromeLabs/bubblewrap/tree/main/packages/cli)
+```bash
+npm test                # 46 domain and server tests
+npm run lint            # ESLint
+npm run build           # production build
+npm run android:check   # PWA ↔ TWA configuration consistency
+```
+
+Environment variables, deployment notes and troubleshooting live in **[docs/development.md](docs/development.md)**.
+The original Serbian operational notes are kept in **[docs/operations.sr.md](docs/operations.sr.md)**.
+
+## Screenshots are reproducible
+
+The images above are generated from a deterministic demo ledger against a fully mocked API — no
+database, no Firebase project, no production traffic:
+
+```bash
+npm run dev                    # terminal 1, from the repository root
+cd docs/demo && npm install    # terminal 2
+npm run capture
+```
+
+The demo state is validated against the real `isValidCloudState` guard before capture, so the
+screenshots cannot drift away from the schema the product accepts.
+
+## Quality
+
+- **46 unit tests** cover the XP formula, rank thresholds, duplicate awards, undo, templates, boss
+  attempts, cloud-state validation, content limits, plan quotas, auth boundaries and email builders.
+- **CI** runs tests, lint and a production build on every push.
+- **Lint** is clean; Android TWA configuration is checked against the PWA manifest on every run.
+- The API enforces authentication, payload limits, content limits and per-plan storage quotas; secrets
+  never reach the browser bundle.
+
+## Roadmap
+
+- [ ] Route every mutation through the command endpoints and delete the duplicate client-side transitions.
+- [ ] Split the 2k-line web shell into per-view modules and a tested sync hook.
+- [ ] Merge conflicts instead of replacing a device's pending edits with the server snapshot.
+- [ ] Finish the native client: Google sign-in, bosses, AI planning.
+- [ ] Make `tsc --noEmit` part of CI and drive the existing type backlog to zero.
+- [ ] End-to-end tests for sign-in, quest lifecycle and offline recovery.
+
+## License
+
+[MIT](LICENSE) © 2026 Uroš Stefanović
