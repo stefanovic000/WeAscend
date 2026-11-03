@@ -854,7 +854,7 @@ export default function SoloApp() {
   const activeQuests = state.quests.filter(q => q.status === "active");
   const openBossQuests = state.quests.filter(q => q.type === "Boss" && q.status !== "completed" && q.status !== "archived");
   const questTemplates = state.questTemplates ?? [];
-  const todayQuests = activeQuests.filter(q => dayKey(q.date) === today);
+  const todayQuests = state.quests.filter(q => q.status !== "archived" && dayKey(q.date) === today);
   const mainQuest = todayQuests.find(q => q.type === "Main") ?? activeQuests.find(q => q.type === "Main");
 
   const recordBossAttempt = async (boss: Quest, outcome: "failed" | "cleared", result: string) => {
