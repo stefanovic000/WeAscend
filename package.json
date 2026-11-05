@@ -6,7 +6,7 @@
   "homepage": "https://weascend.wesystemlabs.com",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/stefanovic000/weascend.git"
+    "url": "git+https://github.com/stefanovic000/WeAscend.git"
   },
   "author": "Uroš Stefanović",
   "license": "MIT",

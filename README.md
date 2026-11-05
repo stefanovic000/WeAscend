@@ -138,6 +138,11 @@ npm run android:check  # PWA ↔ TWA manifest consistency
 - [ ] Finish the native client: Google sign-in, bosses, AI planning.
 - [ ] End-to-end tests for sign-in, quest lifecycle and offline recovery.
 
+## Security
+
+Found something that looks wrong? Please report it privately through the repository's
+**Security → Advisories** tab rather than in a public issue — see [SECURITY.md](SECURITY.md).
+
 ## License
 
 [MIT](LICENSE) © 2026 Uroš Stefanović

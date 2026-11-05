@@ -4,7 +4,7 @@
 
 # WeAscend — Personal Progress System
 
-Cloud-synced PWA za lični napredak inspirisana „Solo Leveling“ sistemom. Engleski je podrazumevani jezik, a srpski se bira u Settings. Svaki Firebase nalog ima sopstveno MongoDB stanje; IndexedDB čuva odvojenu poslednju potvrđenu verziju po nalogu samo za offline pregled.
+Cloud-synced PWA za lični napredak sa XP-om, nivoima i rangovima. Engleski je podrazumevani jezik, a srpski se bira u Settings. Svaki Firebase nalog ima sopstveno MongoDB stanje; IndexedDB čuva odvojenu poslednju potvrđenu verziju po nalogu samo za offline pregled.
 
 Produkcija: [WeAscend](https://weascend.wesystemlabs.com)
 
