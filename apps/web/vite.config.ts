@@ -10,8 +10,8 @@ const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
 
 const { d1, r2 } = hostingConfig;
 
-// macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
-const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
+// Some sandboxed environments block FSEvents, so preview servers there need polling for HMR.
+const isSandboxedPreview = Boolean(process.env.CODEX_SANDBOX === "seatbelt" || process.env.FORCE_POLLING === "1");
 const whatwgUrlShim = fileURLToPath(
   new URL("./server/whatwg-url-shim.ts", import.meta.url),
 );
@@ -54,7 +54,7 @@ export default defineConfig(async (): Promise<UserConfig> => {
         "whatwg-url": whatwgUrlShim,
       },
     },
-    server: isCodexSeatbeltSandbox
+    server: isSandboxedPreview
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,
     ssr: {
