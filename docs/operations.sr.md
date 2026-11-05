@@ -16,7 +16,7 @@ Produkcija: [WeAscend](https://weascend.wesystemlabs.com)
 - `android-twa/` — prethodni Android web omotač, zadržan dok ga native aplikacija ne zameni.
 - `scripts/` — provere koje povezuju web manifest sa starim Android omotačem.
 
-Mobilni razvoj je izolovan na Git grani `codex/mobile-app`; postojeća objavljena web verzija se time ne menja.
+Mobilni klijent se razvija na grani `mobile-app`; objavljena web verzija se time ne menja.
 
 ## Osnovno ponašanje
 
